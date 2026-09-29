@@ -373,7 +373,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .tool-button { width: 44px; height: 44px; color: var(--muted); }
 .app-page .tool-button .icon { width: 20px; height: 20px; }
 .app-page .web-intent[hidden] { display: none; }
-.app-page .web-intent.is-active { border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+.app-page .web-intent.is-active { background: var(--accent-soft); color: var(--accent); }
 .app-page .web-intent-label { padding: 0 2px; color: var(--muted); font-size: 12px; }
 .app-page .tool-button.unavailable { color: var(--muted); opacity: .58; }
 .app-page .tool-button.unavailable:hover { background: none; cursor: not-allowed; }
