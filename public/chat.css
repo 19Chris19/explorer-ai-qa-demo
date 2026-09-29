@@ -266,7 +266,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
   scroll-padding-bottom: var(--composer-clearance, 110px);
 }
 .app-page .welcome { width: min(1088px, 100%); margin: 0 auto; padding: 0; text-align: center; }
-.app-page .welcome-mark { width: 68px; height: 68px; margin: 0 auto 20px; border: 0; border-radius: 0; background: none; transform: translate(var(--mark-optical-x, 2px), var(--mark-optical-y, -2px)); }
+.app-page .welcome-mark { width: 68px; height: 68px; margin: 0 auto 20px; border: 0; border-radius: 0; background: none; transform: translate(var(--mark-optical-x, 1px), var(--mark-optical-y, 3px)); }
 .app-page .welcome-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .app-page .welcome h2 {
   font-family: "PingFang SC", "Noto Sans CJK SC", sans-serif;
