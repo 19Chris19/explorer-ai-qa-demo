@@ -54,6 +54,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     assert.equal(window.document.querySelector('.welcome h2')?.textContent, '你的 3DGS 疑问，随时来聊。');
     assert.equal(window.document.querySelector('#suggestionStrip').hidden, false);
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
+    assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题…');
     const webToggle = window.document.querySelector('#webSearchButton');
     await until(() => !webToggle.hidden);
     webToggle.click();
@@ -69,6 +70,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     await until(() => window.document.querySelector('.chat-thread .message'));
     assert.equal(main.classList.contains('is-empty'), false);
     assert.equal(window.document.querySelector('.chat-thread .message')?.textContent, '合成首问');
+    assert.equal(window.document.querySelector('#question').placeholder, '');
 
     const empty = [...window.document.querySelectorAll('.conversation-open')]
       .find(button => button.textContent === '空会话');
@@ -76,6 +78,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     await until(() => main.classList.contains('is-empty'));
     assert.ok(window.document.querySelector('.welcome'));
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
+    assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题…');
   } finally {
     for (const [key, descriptor] of saved) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);

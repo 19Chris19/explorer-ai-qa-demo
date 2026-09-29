@@ -78,7 +78,7 @@ function applyPreferences() {
   document.querySelectorAll('[data-color-option]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.colorOption === ui.color));
   });
-  question.placeholder = t('placeholder');
+  updateQuestionPlaceholder();
   updateSendButton();
   renderQueue();
   historySearch.placeholder = t('searchHistory');
@@ -87,6 +87,10 @@ function applyPreferences() {
   document.querySelector('#micButton').title = t('micUnavailable');
   renderSuggestions();
   updateFloatingControls();
+}
+
+function updateQuestionPlaceholder() {
+  question.placeholder = main.classList.contains('is-empty') ? t('placeholder') : '';
 }
 
 function closeMore() {
@@ -688,6 +692,7 @@ function welcome() {
   clearSuggestionMotion();
   log.replaceChildren();
   main.classList.add('is-empty');
+  updateQuestionPlaceholder();
   status('');
   state.queuedJobs = [];
   state.activeQueuedId = '';
@@ -729,6 +734,7 @@ function renderThread(messages) {
   clearSuggestionMotion();
   log.replaceChildren();
   main.classList.remove('is-empty');
+  updateQuestionPlaceholder();
   resizeQuestion();
   state.followLatest = true;
   updateFloatingControls();
