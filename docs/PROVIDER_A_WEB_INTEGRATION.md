@@ -1,6 +1,6 @@
 # 自定义网站接入 Provider A
 
-网站后端连接 Provider A，本项目的 `server.mjs` 和 `provider-a-client.mjs` 是可运行的最小示例。浏览器只调用同源 `/api/qa/*`；它不会持有 Provider A 凭证、知识库 ID 或内部请求键。
+网站后端连接独立部署的 Provider A，本项目的 `server.mjs` 和 `provider-a-client.mjs` 是品牌应用适配层。浏览器只调用同源 `/api/qa/*`；它不会持有 Provider A 凭证、知识库 ID 或内部请求键。公开 Provider A 的可运行通用示例见 `examples/web-bff`，两套页面不共享运行数据。
 
 ## 最短路径
 
@@ -19,7 +19,7 @@
 | 模式容量 | `/internal/provider-a/capacity` | 内部服务 token | 仅脱敏容量摘要 |
 | 账号管理 | `/api/admin/*` | 管理员 token | 不由网站后端代理 |
 
-网站后端用签名的 HttpOnly Cookie 标识演示用户，向 Provider A 传稳定的 `X-IMA-Client-Id`；正式站点应使用自己的登录用户 ID。首问与追问使用同一 `conversationId`。每次提交生成一个 UUID，后端在私有 `runtime/` 中按用户和 UUID 记录不可逆的请求指纹；重复或断流后重试返回冲突，不会再次向 IMA 派发。当前常驻 Provider A 的内部流式接口要求 64 位 `Idempotency-Key`，后端由用户标识和 UUID 稳定派生该键。公开候选的旧内部接口却拒绝带键 SSE；升级它以前，不能宣称公开版兼容此真实模式。已有旧模式会话可读，继续提问须新建会话。
+网站后端用签名的 HttpOnly Cookie 标识演示用户，向 Provider A 传稳定的 `X-IMA-Client-Id`；正式站点应使用自己的登录用户 ID。首问与追问使用同一 `conversationId`。每次提交生成一个 UUID，后端在私有 `runtime/` 中按用户和 UUID 记录不可逆的请求指纹；重复或断流后重试返回冲突，不会再次向 IMA 派发。后端由用户标识和 UUID 稳定派生 `Idempotency-Key`。公开 v0.3.0 不支持这条带键内部 SSE；本地 v0.4.0 候选已提供相应合同，但在发布 tag 和隔离验收前，不能写成已上线兼容。已有旧模式会话可读，继续提问须新建会话。
 
 问答请求的服务器字段固定为 `retrieval_policy: knowledge_agent` 和部署者知识库的 `knowledge_scope_ref`。响应是 SSE：`conversation` 给出会话，`sources` 给出精选来源，`delta` 增量追加正文，`done` 为唯一成功终态，`error` 为失败。断流、取消、没有 `done` 或重复 `done` 均不能显示“回答完成”；断流后已收到的文字可以保留并标记未完成。网站后端不自动重试已经派发的问答。
 
@@ -27,4 +27,4 @@
 
 ## 发布边界
 
-公开 v0.3.0 的接口与本机常驻 Provider A 的原生 Agent 流式契约不同。此示例要求支持该契约的 Provider A 版本；不能仅复制网站示例就让 v0.3.0 获得新能力。公开发布候选须连同对应 Provider A 实现、测试、升级和回退说明一起审查。微信平台收发、群上下文和机器人部署不属于网站示例。
+公开 v0.3.0 的接口与本应用要求的原生 Agent 流式契约不同。此应用要求支持该合同的 Provider A 版本；不能仅复制网站代码就让 v0.3.0 获得新能力。正式拆仓后应在本 README 的兼容表记录确切 Provider A tag、测试日期和脱敏验收结论。公开发布 Provider A 候选须连同实现、测试、升级和回退说明一起审查；网站发布另行审查身份、原型 `/admin`、私有运行数据与反代。微信平台收发、群上下文和机器人部署不属于网站应用。
