@@ -22,7 +22,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
   const json = data => ({ ok: true, json: async () => data });
   const fetchMock = async url => {
     requests.push(url);
-    if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, capacity: 1 });
+    if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(questions);
     if (url === '/api/qa/conversations') return json({ conversations: [
       { conversationId: 'synthetic-empty', title: '空会话' },
@@ -54,6 +54,14 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     assert.equal(window.document.querySelector('.welcome h2')?.textContent, '你的 3DGS 疑问，随时来聊。');
     assert.equal(window.document.querySelector('#suggestionStrip').hidden, false);
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
+    const webToggle = window.document.querySelector('#webSearchButton');
+    await until(() => !webToggle.hidden);
+    webToggle.click();
+    assert.equal(webToggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(window.document.querySelector('#requestStatus').textContent, '');
+    webToggle.click();
+    assert.equal(webToggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(window.document.querySelector('#requestStatus').textContent, '');
 
     const filled = [...window.document.querySelectorAll('.conversation-open')]
       .find(button => button.textContent === '有消息的会话');

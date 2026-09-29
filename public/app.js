@@ -144,7 +144,6 @@ webSearchButton.addEventListener('click', () => {
   if (!state.webIntentSupported) return;
   state.webRequested = !state.webRequested;
   updateWebIntentControl();
-  status(state.webRequested ? t('webIntentOn') : '');
 });
 suggestionStrip.addEventListener('pointerenter', () => { state.carouselHover = true; updateCarouselTimer(); });
 suggestionStrip.addEventListener('pointerleave', () => { state.carouselHover = false; updateCarouselTimer(); });
