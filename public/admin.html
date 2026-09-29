@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>问答管理原型 · 知天下</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body class="admin-page">
+  <main class="admin-shell">
+    <div class="admin-top"><div><div class="eyebrow">知天下 · 内部演示</div><h1>问答管理</h1></div><a href="/">返回问答 ↗</a></div>
+    <p class="admin-lead">管理页面原型。Provider A 的基础状态来自健康接口；B、C 尚未接入。账号、密钥及写操作需在正式管理后台实现权限校验后开放。</p>
+    <div class="admin-note">此页面没有接入 Provider A 管理员凭证，也不执行账号启停、重新登录、并发演练或知识库同步。</div>
+    <nav class="admin-tabs" aria-label="管理模块">
+      <button type="button" class="active" data-tab="overview" aria-current="page">总览</button>
+      <button type="button" data-tab="providers">Provider</button>
+      <button type="button" data-tab="knowledge">知识库</button>
+      <button type="button" data-tab="operations">运行维护</button>
+      <button type="button" data-tab="costs">成本</button>
+    </nav>
+
+    <section id="overview" class="admin-panel">
+      <div class="admin-grid">
+        <article class="admin-card"><h2>Provider A 连接</h2><div id="aConnection" class="admin-value">检查中</div><div class="admin-muted">健康接口只证明服务可连接；真实问答另行验收。</div></article>
+        <article class="admin-card"><h2>默认问答可调度容量</h2><div id="aCapacity" class="admin-value">—</div><div class="admin-muted">读取健康快照；账号总数不等于默认模式并发数。</div></article>
+        <article class="admin-card"><h2>队列</h2><div id="aQueue" class="admin-value">—</div><div class="admin-muted">排队量为快照，不能代表持续吞吐能力。</div></article>
+      </div>
+      <div class="admin-section admin-card"><h2>运行策略</h2><p>首版由 Provider A 提供真实问答。后端统一接入层将来判断可用性并选择 A、B 或 C；用户不选择 Provider。切换时保留业务会话和已完成的消息，中途失败则在同一回复位置重整，显示短暂恢复状态。</p><p class="admin-muted">当前只有 A 的真实接入。跨 Provider 切换与上下文恢复尚未生效，不能作为已上线容灾能力。</p></div>
+    </section>
+
+    <section id="providers" class="admin-panel" hidden>
+      <div class="admin-card"><h2>Provider 清单</h2>
+        <div class="provider-row"><div><strong>A · IMA Web Agent</strong><p>现有已授权账号池；支持流式回答、来源、会话及队列。当前由 MacBook Air 运行。</p></div><span id="aBadge" class="badge">检查中</span></div>
+        <div class="provider-row"><div><strong>B · IMA OpenAPI + 模型生成</strong><p>官方接口检索和读取可访问证据，再由模型生成答案。需验证限额、正文覆盖率和质量。</p></div><span class="badge">未接入</span></div>
+        <div class="provider-row"><div><strong>C · WeKnora 自建知识库</strong><p>自建语料、解析、检索与模型。需维护同步、索引、存储、备份和模型额度。</p></div><span class="badge">未接入</span></div>
+      </div>
+      <div class="admin-section admin-card"><h2>未来自动切换的验收条件</h2><p>每个 Provider 须实现健康检查、会话映射、来源规范、超时、取消与错误分类。故障转移后重答不得把两个未完成答案直接拼接。管理员需要查看实际路由、失败原因和恢复结果。</p></div>
+    </section>
+
+    <section id="knowledge" class="admin-panel" hidden>
+      <div class="admin-grid">
+        <article class="admin-card"><h2>A · IMA 托管资料</h2><p>在 IMA 侧维护共享库成员和内容。问答质量随上游资料、权限与登录态变化。</p><div class="admin-muted">此原型不读取或修改真实语料。</div></article>
+        <article class="admin-card"><h2>B · 官方检索</h2><p>维护 OpenAPI 凭证、固定知识库范围、检索和正文可读率。额度耗尽时需要熔断和恢复记录。</p><div class="admin-muted">未接入</div></article>
+        <article class="admin-card"><h2>C · 自建索引</h2><p>维护原文件、同步任务、解析失败列表、索引版本、更新延迟及来源回链。</p><div class="admin-muted">未接入</div></article>
+      </div>
+      <div class="admin-section admin-card"><h2>未来任务面板</h2><p>需要列出最近同步时间、成功/失败文档数、无法获取原文的资料、待重试队列和当前索引版本；每项操作须有权限和审计记录。</p></div>
+    </section>
+
+    <section id="operations" class="admin-panel" hidden>
+      <div class="admin-grid">
+        <article class="admin-card"><h2>当前可见状态</h2><p>服务连接、队列和容量快照可从 A 健康接口读取。</p></article>
+        <article class="admin-card"><h2>未来告警</h2><p>连续失败、账号可调度数下降、队列持续增长、来源缺失、同步过期、成本异常。</p></article>
+        <article class="admin-card"><h2>恢复手册</h2><p>区分网络隧道、Air 睡眠、账号登录失效、IMA 限流、无证据、数据存储故障。</p></article>
+      </div>
+      <div class="admin-section admin-card"><h2>Air 作为服务器的注意事项</h2><p>现有 LaunchAgent 在用户会话中运行。合盖、睡眠、断电或登录会话未恢复，都可能中断 Provider A 和隧道；长期服务需要单独解决供电、睡眠和重连。</p></div>
+    </section>
+
+    <section id="costs" class="admin-panel" hidden>
+      <div class="admin-card"><h2>成本结构（尚未填入价格或用量）</h2>
+        <ul class="cost-list"><li>A：维护机和网络、账号维护、人工验收与故障处理。上游限额需按实际账户验证。</li><li>B：IMA OpenAPI 调用额度、生成模型 token、资料补全文本、质量评测和维护人工。</li><li>C：首次建库的解析/OCR、Embedding 和索引；持续的新增/重建、模型生成、重排、数据库/对象存储、备份和服务器。</li></ul>
+        <p class="admin-muted">未来接入实际用量、定价和预算后展示“每日用量、单问成本、月度预测、超额告警”。本页不展示未经核实的金额。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

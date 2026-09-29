@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>AI 问答 · 知天下</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/chat.css">
+  <script src="/vendor/marked.umd.js" defer></script>
+  <script src="/vendor/purify.min.js" defer></script>
+  <script src="/answer-markdown.js" defer></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body class="app-page" data-color="blue">
+  <a class="skip-link" href="#main">跳转到问答</a>
+  <div class="shell">
+    <header class="site-header">
+      <a class="brand" href="https://3d.explorerglobal.cn/" aria-label="知天下主页">
+        <span class="brand-cn">知天下</span><span class="brand-en">EXPLORER AI</span>
+      </a>
+      <nav class="top-nav" aria-label="当前板块">
+        <a href="/" class="active" aria-current="page" data-i18n="qaNav">AI 问答</a>
+        <span class="top-nav-pending" title="交流群入口待配置" data-i18n="communityNav">交流群</span>
+      </nav>
+      <div class="header-actions">
+        <button id="moreToggle" class="icon-button more-toggle" type="button" aria-label="打开更多选项" aria-controls="moreMenu" aria-expanded="false" title="更多选项">
+          <svg class="icon" aria-hidden="true"><use href="/icons.svg#ellipsis"></use></svg>
+        </button>
+      </div>
+      <div id="moreMenu" class="more-menu" hidden>
+        <button id="newChat" class="menu-item" type="button">
+          <svg class="icon" aria-hidden="true"><use href="/icons.svg#plus"></use></svg><span data-i18n="newChat">新建对话</span>
+        </button>
+        <button id="showHistory" class="menu-item" type="button">
+          <svg class="icon" aria-hidden="true"><use href="/icons.svg#history"></use></svg><span data-i18n="recentChats">最近对话</span>
+        </button>
+        <div class="menu-divider"></div>
+        <button id="languageButton" class="menu-item menu-setting" type="button" aria-label="切换语言">
+          <span data-i18n="language">语言</span><span id="languageValue" class="menu-value">中文</span>
+        </button>
+        <div class="menu-item menu-setting theme-setting">
+          <span data-i18n="themeColor">主题色</span>
+          <div class="theme-options" role="group" aria-label="主题色">
+            <button class="theme-swatch blue" type="button" data-color-option="blue" aria-label="蓝色" aria-pressed="true" title="蓝色"></button>
+            <button class="theme-swatch teal" type="button" data-color-option="teal" aria-label="青绿" aria-pressed="false" title="青绿"></button>
+            <button class="theme-swatch graphite" type="button" data-color-option="graphite" aria-label="石墨" aria-pressed="false" title="石墨"></button>
+          </div>
+        </div>
+        <button id="darkModeButton" class="menu-item menu-setting" type="button" aria-pressed="false">
+          <span data-i18n="darkMode">深色模式</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+        </button>
+        <div class="menu-divider"></div>
+        <div class="menu-service"><span data-i18n="serviceStatus">服务状态</span><span id="menuConnection">正在检查连接</span></div>
+        <p class="menu-disclaimer" data-i18n="disclaimer">回答可能不完整，请自行核对重要信息。</p>
+      </div>
+    </header>
+
+    <aside class="site-sidebar" aria-label="主站导航">
+      <nav class="site-nav">
+        <a href="https://3d.explorerglobal.cn/"><span class="nav-icon" aria-hidden="true">◈</span><span data-i18n="worldNav">3DGS世界</span></a>
+        <a href="/" class="active" aria-current="page"><span class="nav-icon" aria-hidden="true">○</span><span data-i18n="qaNav">AI 问答</span></a>
+        <a href="https://3d.explorerglobal.cn/compute"><span class="nav-icon" aria-hidden="true">▣</span><span data-i18n="computeNav">免费计算</span></a>
+        <a href="https://3d.explorerglobal.cn/guide"><span class="nav-icon" aria-hidden="true">▤</span><span data-i18n="guideNav">创作指南</span></a>
+        <a href="https://3d.explorerglobal.cn/about"><span class="nav-icon" aria-hidden="true">ⓘ</span><span data-i18n="aboutNav">关于我们</span></a>
+      </nav>
+      <a class="admin-link" href="/admin"><span data-i18n="adminNav">问答管理</span><span aria-hidden="true">↗</span></a>
+    </aside>
+
+    <aside class="history-panel" id="historySidebar" aria-label="会话历史" hidden>
+      <div class="history-head">
+        <h2 data-i18n="recentChats">最近对话</h2>
+        <button id="historyClose" class="icon-button" type="button" aria-label="关闭最近对话" title="关闭">
+          <svg class="icon" aria-hidden="true"><use href="/icons.svg#x"></use></svg>
+        </button>
+      </div>
+      <label class="history-search">
+        <svg class="icon" aria-hidden="true"><use href="/icons.svg#search"></use></svg>
+        <input id="historySearch" type="search" placeholder="搜索对话" aria-label="搜索对话" autocomplete="off">
+      </label>
+      <div id="conversationList" class="conversation-list"></div>
+      <p class="history-foot" data-i18n="historyFoot">对话记录保留 7 天。</p>
+    </aside>
+
+    <main class="chat-main is-empty" id="main">
+      <div id="chatLog" class="chat-log" aria-live="polite" aria-relevant="additions"></div>
+      <div class="composer-wrap" id="composerWrap">
+        <div class="composer-float-actions" id="composerFloatActions" hidden>
+          <button id="jumpLatest" class="floating-action jump-latest" type="button" aria-label="回到最新" title="回到最新" hidden>
+            <svg class="icon" aria-hidden="true"><use href="/icons.svg#arrow-up"></use></svg>
+          </button>
+        </div>
+        <div id="composerExpanded" class="composer-expanded">
+          <div id="queuedTurns" class="queued-turns" aria-label="待发问题" aria-live="polite" hidden></div>
+          <div class="suggestion-strip" id="suggestionStrip" aria-label="提问建议">
+            <div id="suggestionList" class="suggestion-list" aria-live="off"></div>
+          </div>
+          <div id="requestStatus" class="request-status" role="status"></div>
+          <form id="askForm" class="composer">
+            <label class="sr-only" for="question">输入知识库问题</label>
+            <textarea id="question" rows="1" maxlength="2000" placeholder="输入你的 3DGS 问题…"></textarea>
+            <div class="composer-foot">
+              <div class="composer-tools">
+                <button id="webSearchButton" class="icon-button tool-button web-intent" type="button" aria-label="本轮请求联网" aria-pressed="false" title="本轮请求联网">
+                  <svg class="icon" aria-hidden="true"><use href="/icons.svg#globe"></use></svg>
+                </button>
+                <span id="webIntentLabel" class="web-intent-label" hidden data-i18n="webRequested">请求联网</span>
+              </div>
+              <div class="composer-actions">
+                <button id="micButton" class="icon-button tool-button unavailable" type="button" aria-label="语音输入暂不可用" title="语音输入尚未开放" disabled>
+                  <svg class="icon" aria-hidden="true"><use href="/icons.svg#mic"></use></svg>
+                </button>
+                <button id="sendButton" class="icon-button send-button" type="submit" aria-label="发送问题" title="发送问题">
+                  <svg class="icon" aria-hidden="true"><use href="/icons.svg#arrow-up"></use></svg>
+                </button>
+              </div>
+            </div>
+          </form>
+          <div class="composer-meta">
+            <div id="connection" class="connection" role="status">正在检查连接</div>
+            <p class="disclaimer" data-i18n="disclaimer">回答可能不完整，请自行核对重要信息。</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

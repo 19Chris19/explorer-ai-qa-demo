@@ -1,0 +1,24 @@
+{
+  "name": "explorer-ai-qa-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "configure:local": "node scripts/configure-local-provider.mjs",
+    "verify:real": "node scripts/verify-native-demo.mjs",
+    "dev": "node --watch server.mjs",
+    "start": "node server.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.1"
+  }
+}
