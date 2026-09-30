@@ -15,13 +15,14 @@ test('native capacity zero stays unready even when both credentials work', async
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, auth: options.headers?.Authorization });
       if (url.endsWith('/healthz')) return new Response('{"queue":{"queuedRequests":0}}', { status: 200 });
-      if (url.endsWith('/capacity')) return new Response('{"policies":{"knowledge_agent":{"max_concurrent":0}}}', { status: 200 });
+      if (url.endsWith('/capacity')) return new Response('{"schemaVersion":1,"policies":{"knowledge_agent":{"max_concurrent":0}},"features":{"knowledge_agent_keyed_sse_v1":true}}', { status: 200 });
       return new Response('{"conversations":[]}', { status: 200 });
     },
   });
   const result = await client.readiness();
   assert.equal(result.connected, true);
   assert.equal(result.authenticated, true);
+  assert.equal(result.contractSupported, true);
   assert.equal(result.ready, false);
   assert.equal(result.capacity, 0);
   assert.equal(calls.find(call => call.url.endsWith('/capacity')).auth, 'Bearer internal');
@@ -50,12 +51,19 @@ test('readiness advertises web intent only when Provider A declares the internal
     knowledgeScopeRef: 'a'.repeat(64),
     fetchImpl: async url => {
       if (url.endsWith('/healthz')) return new Response('{"queue":{"queuedRequests":0}}', { status: 200 });
-      if (url.endsWith('/capacity')) return new Response(JSON.stringify({ policies: { knowledge_agent: { max_concurrent: 2 } }, features }), { status: 200 });
+      if (url.endsWith('/capacity')) return new Response(JSON.stringify({ schemaVersion: 1, policies: { knowledge_agent: { max_concurrent: 2 } }, features }), { status: 200 });
       return new Response('{"conversations":[]}', { status: 200 });
     },
   });
-  assert.equal((await makeClient({ source_intent_web_requested_v1: true }).readiness()).webIntentSupported, true);
-  assert.equal((await makeClient({}).readiness()).webIntentSupported, false);
+  const compatible = await makeClient({ knowledge_agent_keyed_sse_v1: true, source_intent_web_requested_v1: true }).readiness();
+  assert.equal(compatible.ready, true);
+  assert.equal(compatible.webIntentSupported, true);
+  const older = await makeClient({ source_intent_web_requested_v1: true }).readiness();
+  assert.equal(older.authenticated, true);
+  assert.equal(older.capacity, 2);
+  assert.equal(older.contractSupported, false);
+  assert.equal(older.ready, false);
+  assert.equal(older.webIntentSupported, false);
 });
 
 test('private request ledger blocks duplicate dispatch across restart without retaining question text', () => {

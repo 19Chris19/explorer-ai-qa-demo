@@ -8,7 +8,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const health = await fetchImpl(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(3500) });
     if (!health.ok) throw new Error('provider_unreachable');
     const service = await health.json();
-    if (!configured) return { connected: true, configured: false, authenticated: false, ready: false, capacity: 0, queued: service.queue?.queuedRequests ?? 0, webIntentSupported: false };
+    if (!configured) return { connected: true, configured: false, authenticated: false, contractSupported: false, ready: false, capacity: 0, queued: service.queue?.queuedRequests ?? 0, webIntentSupported: false };
     const [ordinary, capacityResponse] = await Promise.all([
       fetchImpl(`${baseUrl}/api/conversations?limit=1`, {
         headers: { Authorization: `Bearer ${apiToken}`, 'X-IMA-Client-Id': 'demo:readiness' },
@@ -21,14 +21,16 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     ]);
     const authenticated = ordinary.ok && capacityResponse.ok;
     const capacity = capacityResponse.ok ? await capacityResponse.json() : {};
+    const contractSupported = capacity.schemaVersion === 1 && capacity.features?.knowledge_agent_keyed_sse_v1 === true;
     const nativeCapacity = Number(capacity.policies?.knowledge_agent?.max_concurrent ?? capacity.policy_capacity?.knowledge_agent ?? 0);
     return {
       connected: true,
       configured: true,
       authenticated,
-      ready: authenticated && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
+      contractSupported,
+      ready: authenticated && contractSupported && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
       capacity: authenticated ? nativeCapacity : 0,
-      webIntentSupported: authenticated && capacity.features?.source_intent_web_requested_v1 === true,
+      webIntentSupported: authenticated && contractSupported && capacity.features?.source_intent_web_requested_v1 === true,
       active: capacity.active ?? service.queue?.activeRequests ?? 0,
       queued: capacity.queued ?? service.queue?.queuedRequests ?? 0,
     };

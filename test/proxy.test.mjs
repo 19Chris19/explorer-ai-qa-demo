@@ -14,11 +14,12 @@ test('server keeps Provider A credentials private and streams two turns under on
   const seen = [];
   const providerAsks = [];
   let webIntentEnabled = true;
+  let contractEnabled = true;
   let createdCount = 0;
   const fake = createServer(async (req, res) => {
     seen.push({ path: req.url, auth: req.headers.authorization, client: req.headers['x-ima-client-id'], key: req.headers['idempotency-key'] });
     if (req.url === '/healthz') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ ok: true, provider: 'ima-web-agent', queue: { queued: 0 } })); return; }
-    if (req.url === '/internal/provider-a/capacity') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ policies: { knowledge_agent: { max_concurrent: 2 } }, features: { source_intent_web_requested_v1: webIntentEnabled }, active: 0, queued: 0 })); return; }
+    if (req.url === '/internal/provider-a/capacity') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ schemaVersion: 1, policies: { knowledge_agent: { max_concurrent: 2 } }, features: { knowledge_agent_keyed_sse_v1: contractEnabled, source_intent_web_requested_v1: webIntentEnabled }, active: 0, queued: 0 })); return; }
     if (req.url === '/api/conversations?limit=1') { res.setHeader('Content-Type', 'application/json'); res.end('{"conversations":[]}'); return; }
     if (req.url === '/api/conversations' && req.method === 'POST') { createdCount += 1; res.writeHead(201, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, conversation: { conversationId: `demo-${createdCount}` } })); return; }
     if (req.url === '/internal/provider-a/deep-ask') {
@@ -70,6 +71,7 @@ test('server keeps Provider A credentials private and streams two turns under on
     const health = await (await fetch(`http://127.0.0.1:${frontendPort}/api/qa/health`)).json();
     assert.equal(health.connected, true);
     assert.equal(health.ready, true);
+    assert.equal(health.contractSupported, true);
     assert.equal(health.capacity, 2);
     assert.equal(health.webIntentSupported, true);
     const create = await fetch(`http://127.0.0.1:${frontendPort}/api/qa/conversations`, { method: 'POST', headers: { Origin: `http://127.0.0.1:${frontendPort}` } });
@@ -103,6 +105,19 @@ test('server keeps Provider A credentials private and streams two turns under on
     });
     assert.equal(duplicate.status, 409);
     assert.equal(seen.filter(item => item.path === '/internal/provider-a/deep-ask').length, 2);
+    contractEnabled = false;
+    const incompatible = await (await fetch(`http://127.0.0.1:${frontendPort}/api/qa/health`)).json();
+    assert.equal(incompatible.authenticated, true);
+    assert.equal(incompatible.ready, false);
+    assert.equal(incompatible.contractSupported, false);
+    const rejected = await fetch(`http://127.0.0.1:${frontendPort}/api/qa/ask`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: `http://127.0.0.1:${frontendPort}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: '旧合同不能问答', conversationId: 'demo-1', requestId: randomUUID() }),
+    });
+    assert.equal(rejected.status, 409);
+    assert.equal((await rejected.json()).code, 'provider_contract_incompatible');
+    assert.equal(seen.filter(item => item.path === '/internal/provider-a/deep-ask').length, 2);
+    contractEnabled = true;
     webIntentEnabled = false;
     const unsupportedWeb = await fetch(`http://127.0.0.1:${frontendPort}/api/qa/ask`, {
       method: 'POST', headers: { Cookie: cookie, Origin: `http://127.0.0.1:${frontendPort}`, 'Content-Type': 'application/json' },

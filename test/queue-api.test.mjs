@@ -15,11 +15,12 @@ test('BFF queues, edits, removes, isolates, then auto-dispatches the next stream
   const started = new Promise(resolve => { firstStarted = resolve; });
   const gate = new Promise(resolve => { releaseFirst = resolve; });
   const providerAsks = [];
+  let contractEnabled = true;
   let conversationCount = 0;
   const provider = createServer(async (req, res) => {
     if (req.url === '/healthz') { res.setHeader('Content-Type', 'application/json'); res.end('{"ok":true}'); return; }
     if (req.url === '/api/conversations?limit=1') { res.setHeader('Content-Type', 'application/json'); res.end('{"conversations":[]}'); return; }
-    if (req.url === '/internal/provider-a/capacity') { res.setHeader('Content-Type', 'application/json'); res.end('{"policies":{"knowledge_agent":{"max_concurrent":1}},"features":{"source_intent_web_requested_v1":true}}'); return; }
+    if (req.url === '/internal/provider-a/capacity') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ schemaVersion: 1, policies: { knowledge_agent: { max_concurrent: 1 } }, features: { knowledge_agent_keyed_sse_v1: contractEnabled, source_intent_web_requested_v1: true } })); return; }
     if (req.url === '/api/conversations' && req.method === 'POST') {
       conversationCount += 1;
       res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -113,6 +114,14 @@ test('BFF queues, edits, removes, isolates, then auto-dispatches the next stream
     assert.equal(providerAsks[1].body.source_intent, 'web_requested');
     assert.equal(providerAsks[1].clientId, providerAsks[0].clientId);
     assert.notEqual(providerAsks[1].key, providerAsks[0].key);
+    contractEnabled = false;
+    const refused = await fetch(`${base}/api/qa/queue`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ question: '旧合同不可排队', conversationId: 'synthetic-1', requestId: randomUUID() }),
+    });
+    assert.equal(refused.status, 409);
+    assert.equal((await refused.json()).code, 'provider_contract_incompatible');
+    assert.equal(providerAsks.length, 2);
     assert.equal(statSync(join(runtimeDir, 'queued-turns.json')).mode & 0o777, 0o600);
   } finally {
     releaseFirst(); child.kill(); provider.close(); rmSync(runtimeDir, { recursive: true, force: true });

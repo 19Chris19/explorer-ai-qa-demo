@@ -47,7 +47,7 @@ const labels = {
     disclaimer: '回答可能不完整，请自行核对重要信息。', webRequested: '本轮请求联网', webIntentOn: '本轮将请求联网',
     webEvidence: '已取得可验证网页来源 {count} 条', webNoEvidence: '已请求联网 · 未取得可验证网页来源', evidenceUnverified: '来源信息无法验证',
     webSources: '网页来源 {count} 条', micUnavailable: '语音输入尚未开放。',
-    ready: '知识库问答可接收', verified: '知识库问答已验证', noCapacity: '账号容量暂不可用', noCredentials: '等待接入凭证', offline: '服务暂不可用', checking: '正在检查连接',
+    ready: '知识库问答可接收', verified: '知识库问答已验证', noCapacity: '账号容量暂不可用', noCredentials: '等待接入凭证', incompatible: '问答协议版本不兼容', offline: '服务暂不可用', checking: '正在检查连接',
     jumpLatest: '回到最新', sendQuestion: '发送问题', stopAnswer: '停止回答', enqueueQuestion: '加入队列', queued: '排队中', paused: '上一轮未完成，已暂停', starting: '即将回答', editQueued: '编辑待发问题', deleteQueued: '删除待发问题', saveQueued: '保存修改', cancelEdit: '取消编辑',
   },
   en: {
@@ -58,7 +58,7 @@ const labels = {
     disclaimer: 'Answers may be incomplete. Verify important details.', webRequested: 'Request web sources for this turn', webIntentOn: 'Web sources requested for this turn',
     webEvidence: 'Verified web sources: {count}', webNoEvidence: 'Web requested · no verifiable web sources found', evidenceUnverified: 'Source evidence could not be verified',
     webSources: 'Web sources: {count}', micUnavailable: 'Voice input is not available yet.',
-    ready: 'Knowledge Q&A available', verified: 'Knowledge Q&A verified', noCapacity: 'No account capacity', noCredentials: 'Waiting for credentials', offline: 'Service unavailable', checking: 'Checking connection',
+    ready: 'Knowledge Q&A available', verified: 'Knowledge Q&A verified', noCapacity: 'No account capacity', noCredentials: 'Waiting for credentials', incompatible: 'Incompatible Q&A contract', offline: 'Service unavailable', checking: 'Checking connection',
     jumpLatest: 'Jump to latest', sendQuestion: 'Send question', stopAnswer: 'Stop answer', enqueueQuestion: 'Queue next', queued: 'Queued', paused: 'Paused after an incomplete turn', starting: 'Starting next answer', editQueued: 'Edit queued question', deleteQueued: 'Remove queued question', saveQueued: 'Save changes', cancelEdit: 'Cancel editing',
   },
 };
@@ -266,7 +266,7 @@ async function checkHealth() {
     if (!state.webIntentSupported) state.webRequested = false;
     updateWebIntentControl();
     const ready = response.ok && data.ready;
-    const text = ready ? (data.lastRealSuccessAt ? t('verified') : t('ready')) : data.connected ? (data.authenticated ? t('noCapacity') : t('noCredentials')) : t('offline');
+    const text = ready ? (data.lastRealSuccessAt ? t('verified') : t('ready')) : data.connected ? (!data.authenticated ? t('noCredentials') : data.contractSupported === false ? t('incompatible') : t('noCapacity')) : t('offline');
     const title = ready ? `原生知识库 Agent 容量 ${data.capacity}；${data.lastRealSuccessAt ? '最近一次真实回答已完成' : '尚无本次运行中的真实回答记录'}` : '';
     setConnection(text, ready, title);
   } catch {

@@ -76,7 +76,14 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, '127.0.0.1', () => console.log(`QA demo: http://127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => {
+  console.log(`QA demo: http://127.0.0.1:${port}`);
+  if (provider.configured) {
+    void provider.readiness().then(status => {
+      if (status.authenticated && !status.contractSupported) console.warn('Provider A contract incompatible: knowledge_agent_keyed_sse_v1 missing');
+    }).catch(() => console.warn('Provider A startup contract check unavailable'));
+  }
+});
 
 function readPrivateEnv(file) {
   try {
@@ -153,8 +160,25 @@ async function health(res) {
     const status = await provider.readiness();
     sendJson(res, 200, { ...status, lastRealSuccessAt });
   } catch {
-    sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt });
+    sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt });
   }
+}
+
+async function requireNativeContract(res) {
+  const status = await provider.readiness().catch(() => null);
+  if (!status?.connected) {
+    sendJson(res, 503, { error: 'Provider A 服务暂不可用', code: 'provider_unavailable' });
+    return false;
+  }
+  if (!status.authenticated) {
+    sendJson(res, 503, { error: 'Provider A 接入凭证不可用', code: 'provider_auth_unavailable' });
+    return false;
+  }
+  if (!status.contractSupported) {
+    sendJson(res, 409, { error: '当前 Provider A 版本与网站问答协议不兼容', code: 'provider_contract_incompatible' });
+    return false;
+  }
+  return true;
 }
 
 const validConversationId = value => typeof value === 'string' && /^[a-zA-Z0-9-]{1,100}$/u.test(value);
@@ -199,6 +223,7 @@ async function queueRoute(req, res, pathname) {
   try { input = await readBody(req); validateQueuedInput(input, true); }
   catch (error) { sendJson(res, 400, { error: error.message }); return; }
   if (!nativeSessions.belongsToNative(input.conversationId, clientId)) { sendJson(res, 404, { error: '会话不存在' }); return; }
+  if (!await requireNativeContract(res)) return;
   if (input.sourceIntent === 'web' && !await supportsWebIntent()) { sendJson(res, 409, { error: '当前问答服务尚未启用本轮联网请求' }); return; }
   const result = turnQueue.enqueue({
     clientId, conversationId: input.conversationId, requestId: input.requestId,
@@ -221,6 +246,8 @@ async function supportsWebIntent() {
 
 async function dispatchQueuedTurn(job, emit, signal) {
   if (!nativeSessions.belongsToNative(job.conversationId, job.clientId)) throw new Error('conversation_not_owned');
+  const status = await provider.readiness().catch(() => null);
+  if (!status?.authenticated || !status.contractSupported) throw new Error('provider_contract_unavailable');
   if (job.sourceIntent === 'web' && !await supportsWebIntent()) throw new Error('web_intent_unavailable');
   const claim = requestLedger.claim(job);
   if (!claim.accepted) throw new Error('request_already_dispatched');
@@ -280,6 +307,7 @@ async function proxy(req, res, route) {
   let activeConversationId = '';
   let completed = false;
   if (route === '/api/ask') {
+    if (!await requireNativeContract(res)) return;
     if (sourceIntent === 'web') {
       const readiness = await provider.readiness().catch(() => null);
       if (!readiness?.webIntentSupported) {
