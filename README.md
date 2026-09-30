@@ -2,6 +2,12 @@
 
 这是从另一台 Mac 的源码快照导入的独立演示应用，包含问答页、同源 Node BFF、模拟测试和后续 A/B/C 规划。原始导出背景见 [HANDOFF.md](HANDOFF.md)；其中关于 SSH 隧道的步骤只适用于原机器，不是 Air 本机启动要求。
 
+## 在线预览与主站交接
+
+Air 承载的 Vercel 在线预览通路已经有独立代码与[配置指南](./docs/ONLINE_PREVIEW.md)，但只有固定 ngrok HTTPS 域名、Vercel 项目、私有网关密钥及真实链路验收全部完成后才会在此处提供稳定链接。私有仓库权限不会限制预览链接的访问者；Air 休眠或断网时不可用。当前未开放公网入口。
+
+主站集成使用[Vue 适配组件](./src/vue/ExplorerQaModule.vue)与[Linux 交接指南](./docs/LINUX_HANDOFF.md)。主站保留自己的页头和侧栏，将问答模块挂在 `/qa-app/`；后端仍独立使用同源 BFF 和经合同校验的 Provider A。当前组件是复用已验收问答体验的同源嵌入适配层，不代表主站源码已经接入或云端账号已经登录。
+
 ## 与 Provider A 的关系
 
 本应用是知天下的品牌网站，不是 Provider A 的 fork。Provider A 独立管理授权账号、IMA 会话、调度和问答；本应用独立管理页面、网站身份和业务后端。两个服务通过有版本约束的接口连接，不共享账号库、运行目录或凭证文件。本应用暂按私有仓库维护；不要把整个根项目推到 [Provider A 公开仓库](https://github.com/19Chris19/ima-qa-web-agent)。
