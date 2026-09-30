@@ -4,7 +4,7 @@
 
 ## 最短路径
 
-1. 启动已经接入账号的 Provider A，确认其版本支持 `knowledge_agent` 流式内部接口，且 `GET /internal/provider-a/capacity` 中 `policies.knowledge_agent.max_concurrent > 0`。
+1. 使用公开 tag `v0.4.0` 的 Provider A，确认受保护的 `GET /internal/provider-a/capacity` 返回 `schemaVersion: 1`、`features.knowledge_agent_keyed_sse_v1: true`，且 `policies.knowledge_agent.max_concurrent > 0`。后续兼容补丁也须保持该合同；旧版即使显示账号容量也不能作为本网站的问答后端。
 2. 在网站后端的私有 `.env.local` 中配置 `PROVIDER_A_BASE_URL`、普通 `PROVIDER_A_API_TOKEN`、独立 `PROVIDER_A_INTERNAL_SERVICE_TOKEN`、`PROVIDER_A_KNOWLEDGE_SCOPE_REF` 和独立的 `DEMO_COOKIE_SECRET`。知识库范围是目标知识库 ID 原文的 SHA-256 十六进制摘要，不是知识库 ID。与 Provider A 同机时可用 `npm run configure:local -- --provider-env /私有配置路径` 自动写入；脚本会生成并保留 Cookie 密钥。
 3. `npm ci`、`npm test`、`npm start`。打开 `http://127.0.0.1:4317/`，用 `npm run verify:real` 显式完成一问一追问验收。
 
@@ -19,7 +19,7 @@
 | 模式容量 | `/internal/provider-a/capacity` | 内部服务 token | 仅脱敏容量摘要 |
 | 账号管理 | `/api/admin/*` | 管理员 token | 不由网站后端代理 |
 
-网站后端用签名的 HttpOnly Cookie 标识演示用户，向 Provider A 传稳定的 `X-IMA-Client-Id`；正式站点应使用自己的登录用户 ID。首问与追问使用同一 `conversationId`。每次提交生成一个 UUID，后端在私有 `runtime/` 中按用户和 UUID 记录不可逆的请求指纹；重复或断流后重试返回冲突，不会再次向 IMA 派发。后端由用户标识和 UUID 稳定派生 `Idempotency-Key`。公开 v0.3.0 不支持这条带键内部 SSE；本地 v0.4.0 候选已提供相应合同，但在发布 tag 和隔离验收前，不能写成已上线兼容。已有旧模式会话可读，继续提问须新建会话。
+网站后端用签名的 HttpOnly Cookie 标识演示用户，向 Provider A 传稳定的 `X-IMA-Client-Id`；正式站点应使用自己的登录用户 ID。首问与追问使用同一 `conversationId`。每次提交生成一个 UUID，后端在私有 `runtime/` 中按用户和 UUID 记录不可逆的请求指纹；重复或断流后重试返回冲突，不会再次向 IMA 派发。后端由用户标识和 UUID 稳定派生 `Idempotency-Key`。本应用在启动和新问答派发前检查带键流式合同；缺失时仍可查看页面和已有历史，但新问答和新排队返回固定的不兼容错误。已有旧模式会话可读，继续提问须新建会话。
 
 问答请求的服务器字段固定为 `retrieval_policy: knowledge_agent` 和部署者知识库的 `knowledge_scope_ref`。响应是 SSE：`conversation` 给出会话，`sources` 给出精选来源，`delta` 增量追加正文，`done` 为唯一成功终态，`error` 为失败。断流、取消、没有 `done` 或重复 `done` 均不能显示“回答完成”；断流后已收到的文字可以保留并标记未完成。网站后端不自动重试已经派发的问答。
 
@@ -27,4 +27,4 @@
 
 ## 发布边界
 
-公开 v0.3.0 的接口与本应用要求的原生 Agent 流式契约不同。此应用要求支持该合同的 Provider A 版本；不能仅复制网站代码就让 v0.3.0 获得新能力。正式拆仓后应在本 README 的兼容表记录确切 Provider A tag、测试日期和脱敏验收结论。公开发布 Provider A 候选须连同实现、测试、升级和回退说明一起审查；网站发布另行审查身份、原型 `/admin`、私有运行数据与反代。微信平台收发、群上下文和机器人部署不属于网站应用。
+v0.3.1 及更早版本的接口与本应用要求的原生 Agent 流式契约不同；不能仅复制网站代码让旧版获得新能力。本仓库固定记录已发布的 Provider A v0.4.0 tag，但维护者尚未在隔离授权账号上完成该 tag 的真实 IMA 复验。运营者按本指南验收后只记录日期、版本和脱敏结论；不得提交真实问题、回答或来源。网站发布仍需另行审查身份、原型 `/admin`、私有运行数据与反代。微信平台收发、群上下文和机器人部署不属于网站应用。
