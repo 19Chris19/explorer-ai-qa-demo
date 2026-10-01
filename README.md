@@ -4,7 +4,7 @@
 
 ## 在线预览与主站交接
 
-Air 承载的 Vercel 在线预览通路已经有独立代码与[配置指南](./docs/ONLINE_PREVIEW.md)，但只有固定 ngrok HTTPS 域名、Vercel 项目、私有网关密钥及真实链路验收全部完成后才会在此处提供稳定链接。私有仓库权限不会限制预览链接的访问者；Air 休眠或断网时不可用。当前未开放公网入口。
+[在线体验知天下 AI 问答](https://explorer-ai-qa-demo.vercel.app/)由 Vercel 提供入口，实际页面、会话、问答后端和 Provider A 仍运行在 Air 上。2026-10-02 经该入口完成了一问一追问：两轮均有流式正文、结构化来源和唯一成功终态，同一会话历史可读取；此验收不代表全天候可用。私有仓库权限不会限制链接访问者，Air 休眠、断网或隧道额度耗尽时预览会不可用。部署边界与撤销方式见[配置指南](./docs/ONLINE_PREVIEW.md)。
 
 主站集成使用[Vue 适配组件](./src/vue/ExplorerQaModule.vue)与[Linux 交接指南](./docs/LINUX_HANDOFF.md)。主站保留自己的页头和侧栏，将问答模块挂在 `/qa-app/`；后端仍独立使用同源 BFF 和经合同校验的 Provider A。当前组件是复用已验收问答体验的同源嵌入适配层，不代表主站源码已经接入或云端账号已经登录。
 
