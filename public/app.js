@@ -1,6 +1,9 @@
 import { createQuestionRotation } from './question-rotation.mjs';
 import { inspectSourceEvidence } from './source-evidence.mjs';
 
+const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
+const sitePath = path => `${assetPrefix}${path}`;
+
 const log = document.querySelector('#chatLog');
 const main = document.querySelector('#main');
 const list = document.querySelector('#conversationList');
@@ -22,6 +25,19 @@ const composerWrap = document.querySelector('#composerWrap');
 const composerFloatActions = document.querySelector('#composerFloatActions');
 const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
+if (['localhost', '127.0.0.1'].includes(window.location?.hostname)) document.querySelector('.admin-link').hidden = false;
+if (document.body.classList.contains('qa-embedded')) {
+  window.addEventListener('message', event => {
+    if (event.origin !== window.location.origin) return;
+    const commands = {
+      'explorer-qa:new': '#newChat',
+      'explorer-qa:history': '#showHistory',
+      'explorer-qa:more': '#moreToggle',
+    };
+    const selector = commands[event.data?.type];
+    if (selector) document.querySelector(selector)?.click();
+  });
+}
 const state = {
   conversationId: sessionStorage.getItem('qa-native-conversation-id') || '',
   legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false,
@@ -103,7 +119,7 @@ function closeHistory() { history.hidden = true; }
 document.querySelector('#newChat').addEventListener('click', async () => {
   if (state.busy || state.preparing || state.queueSubmitting || state.queuedJobs.length) return;
   try {
-    const data = await api('/api/qa/conversations', { method: 'POST' });
+    const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
     setConversation(data.conversation.conversationId);
     question.value = '';
     state.suggestionSelected = false;
@@ -239,7 +255,7 @@ sendButton.addEventListener('click', async () => {
   if (!state.busy || question.value.trim()) return;
   sendButton.disabled = true;
   if (state.activeQueuedId) {
-    try { await api(`/api/qa/queue/${encodeURIComponent(state.activeQueuedId)}`, { method: 'DELETE' }); }
+    try { await api(sitePath(`/api/qa/queue/${encodeURIComponent(state.activeQueuedId)}`), { method: 'DELETE' }); }
     catch (error) { status(error.message, true); sendButton.disabled = false; }
   } else if (state.controller && !state.controller.signal.aborted) state.controller.abort();
   else sendButton.disabled = false;
@@ -260,9 +276,10 @@ async function init() {
 
 async function checkHealth() {
   try {
-    const response = await fetch('/api/qa/health');
+    const response = await fetch(sitePath('/api/qa/health'));
     const data = await response.json();
     state.webIntentSupported = response.ok && data.webIntentSupported === true;
+    document.querySelector('#runtimeVersion').textContent = `${data.websiteRelease || 'local-dev'} · Provider 合同 ${data.contractSupported ? 'v1' : '未确认'}`;
     if (!state.webIntentSupported) state.webRequested = false;
     updateWebIntentControl();
     const ready = response.ok && data.ready;
@@ -294,7 +311,7 @@ async function api(url, options = {}) {
 
 async function loadConversations() {
   try {
-    const data = await api('/api/qa/conversations');
+    const data = await api(sitePath('/api/qa/conversations'));
     conversationItems = data.conversations || [];
     renderConversationList();
   } catch { conversationItems = []; renderConversationList(); }
@@ -320,7 +337,7 @@ function renderConversationList() {
       remove.addEventListener('click', async () => {
         if (state.busy || state.preparing || state.queueSubmitting || !confirm(t('deleteConfirm'))) return;
         try {
-          await api(`/api/qa/conversations/${encodeURIComponent(item.conversationId)}`, { method: 'DELETE' });
+          await api(sitePath(`/api/qa/conversations/${encodeURIComponent(item.conversationId)}`), { method: 'DELETE' });
           if (state.conversationId === item.conversationId) { setConversation(''); welcome(); }
           await loadConversations();
         } catch (error) { status(error.message, true); closeHistory(); }
@@ -331,7 +348,7 @@ function renderConversationList() {
 
 async function loadConversation(id) {
   try {
-    const data = await api(`/api/qa/conversations/${encodeURIComponent(id)}`);
+    const data = await api(sitePath(`/api/qa/conversations/${encodeURIComponent(id)}`));
     setConversation(data.conversation.conversationId);
     state.legacyMode = data.legacyMode === true;
     const messages = Array.isArray(data.messages) ? data.messages : [];
@@ -381,7 +398,7 @@ function updateSendButton() {
   sendButton.type = stopping ? 'button' : 'submit';
   sendButton.disabled = state.preparing || state.queueSubmitting;
   sendButton.classList.toggle('is-busy', stopping);
-  sendButton.querySelector('use').setAttribute('href', stopping ? '/icons.svg#square' : '/icons.svg#arrow-up');
+  sendButton.querySelector('use').setAttribute('href', sitePath(stopping ? '/icons.svg#square' : '/icons.svg#arrow-up'));
   sendButton.setAttribute('aria-label', label);
   sendButton.title = label;
 }
@@ -396,7 +413,7 @@ function queueIcon(symbol, label) {
   icon.classList.add('icon');
   icon.setAttribute('aria-hidden', 'true');
   const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `/icons.svg#${symbol}`);
+  use.setAttribute('href', sitePath(`/icons.svg#${symbol}`));
   icon.append(use);
   button.append(icon);
   return button;
@@ -431,7 +448,7 @@ function renderQueue() {
           if (!questionText) { editor.focus(); return; }
           save.disabled = true;
           try {
-            await api(`/api/qa/queue/${encodeURIComponent(job.id)}`, {
+            await api(sitePath(`/api/qa/queue/${encodeURIComponent(job.id)}`), {
               method: 'PATCH', body: JSON.stringify({ question: questionText, ...(job.sourceIntent === 'web' ? { sourceIntent: 'web' } : {}) }),
             });
             await syncQueue(false);
@@ -442,7 +459,7 @@ function renderQueue() {
       });
       remove.addEventListener('click', async () => {
         remove.disabled = true;
-        try { await api(`/api/qa/queue/${encodeURIComponent(job.id)}`, { method: 'DELETE' }); await syncQueue(false); }
+        try { await api(sitePath(`/api/qa/queue/${encodeURIComponent(job.id)}`), { method: 'DELETE' }); await syncQueue(false); }
         catch (error) { remove.disabled = false; status(error.message, true); }
       });
       controls.append(edit, remove); row.append(controls);
@@ -455,7 +472,7 @@ async function syncQueue(autoConsume = true) {
   const conversationId = state.conversationId;
   if (!conversationId) { state.queuedJobs = []; renderQueue(); return false; }
   try {
-    const data = await api(`/api/qa/queue?conversationId=${encodeURIComponent(conversationId)}`);
+    const data = await api(sitePath(`/api/qa/queue?conversationId=${encodeURIComponent(conversationId)}`));
     if (conversationId !== state.conversationId) return false;
     const fresh = Array.isArray(data.queue) ? data.queue : [];
     const replay = autoConsume ? state.queuedJobs.filter(job =>
@@ -467,7 +484,7 @@ async function syncQueue(autoConsume = true) {
     if (autoConsume && next && !state.controller && !state.activeQueuedId) {
       state.activeQueuedId = next.id;
       renderQueue();
-      void streamAnswer(next.question, next.sourceIntent === 'web', signal => fetch(`/api/qa/queue/${encodeURIComponent(next.id)}/events`, { signal }), next.id);
+      void streamAnswer(next.question, next.sourceIntent === 'web', signal => fetch(sitePath(`/api/qa/queue/${encodeURIComponent(next.id)}/events`), { signal }), next.id);
       return true;
     }
     renderQueue();
@@ -488,7 +505,7 @@ async function enqueueQuestion(text) {
   state.queueSubmitting = true;
   updateSendButton();
   try {
-    const data = await api('/api/qa/queue', {
+    const data = await api(sitePath('/api/qa/queue'), {
       method: 'POST',
       body: JSON.stringify({ question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(), ...(state.webRequested ? { sourceIntent: 'web' } : {}) }),
     });
@@ -534,7 +551,7 @@ function updateWebIntentControl() {
 
 async function loadQuestionBank() {
   try {
-    const response = await fetch('/questions.json');
+    const response = await fetch(sitePath('/questions.json'));
     if (!response.ok) throw new Error('question_bank_unavailable');
     const items = await response.json();
     if (!Array.isArray(items) || items.length !== 50) throw new Error('question_bank_invalid');
@@ -703,7 +720,7 @@ function welcome() {
   suggestionStrip.hidden = false;
   const welcome = document.createElement('section'); welcome.className = 'welcome';
   const mark = document.createElement('div'); mark.className = 'welcome-mark';
-  const image = document.createElement('img'); image.src = '/brand-orbit.png'; image.alt = '';
+  const image = document.createElement('img'); image.src = sitePath('/brand-orbit.png'); image.alt = '';
   mark.append(image);
   const title = document.createElement('h2');
   const lead = document.createElement('span'); lead.textContent = t('titleLead');
@@ -817,7 +834,7 @@ async function ask(raw) {
     state.preparing = true;
     updateSendButton();
     try {
-      const data = await api('/api/qa/conversations', { method: 'POST' });
+      const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
       setConversation(data.conversation.conversationId);
       await loadConversations();
     } catch (error) { status(error.message, true); return; }
@@ -827,7 +844,7 @@ async function ask(raw) {
   state.webRequested = false;
   updateWebIntentControl();
   const requestId = crypto.randomUUID();
-  await streamAnswer(text, requestedWeb, signal => fetch('/api/qa/ask', {
+  await streamAnswer(text, requestedWeb, signal => fetch(sitePath('/api/qa/ask'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify({ question: text, conversationId: state.conversationId, requestId, ...(requestedWeb ? { sourceIntent: 'web' } : {}) }),

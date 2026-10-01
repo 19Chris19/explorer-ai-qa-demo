@@ -7,20 +7,26 @@ import { createProviderAClient, createStreamObserver } from './provider-a-client
 import { SessionModeStore } from './session-mode-store.mjs';
 import { RequestLedger } from './request-ledger.mjs';
 import { ConversationTurnQueue } from './conversation-turn-queue.mjs';
+import { PreviewAdmission } from './preview-admission.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const env = readPrivateEnv(join(root, '.env.local'));
 const port = Number(process.env.PORT || env.PORT || 4317);
+const listenHost = process.env.DEMO_LISTEN_HOST || env.DEMO_LISTEN_HOST || '127.0.0.1';
 const providerBaseUrl = process.env.PROVIDER_A_BASE_URL || env.PROVIDER_A_BASE_URL || 'http://127.0.0.1:3117';
 const providerApiToken = process.env.PROVIDER_A_API_TOKEN || env.PROVIDER_A_API_TOKEN || '';
 const providerServiceToken = process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || '';
 const knowledgeScopeRef = process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || '';
 const cookieSecret = process.env.DEMO_COOKIE_SECRET || env.DEMO_COOKIE_SECRET || providerApiToken;
+const releaseRevision = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_REVISION || 'local-dev';
+const disableAdmin = (process.env.DEMO_DISABLE_ADMIN || env.DEMO_DISABLE_ADMIN) === '1';
+const assetPrefix = process.env.DEMO_ASSET_PREFIX || env.DEMO_ASSET_PREFIX || '';
 const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef });
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');
 const nativeSessions = new SessionModeStore(join(runtimeDir, 'native-sessions.json'));
 const requestLedger = new RequestLedger(join(runtimeDir, 'request-ledger.json'));
 const turnQueue = new ConversationTurnQueue(join(runtimeDir, 'queued-turns.json'), dispatchQueuedTurn);
+const previewAdmission = new PreviewAdmission();
 let lastRealSuccessAt = '';
 const staticFiles = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
@@ -40,15 +46,25 @@ const staticFiles = new Map([
 ]);
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
+if (!['127.0.0.1', '0.0.0.0'].includes(listenHost)) throw new Error('Invalid DEMO_LISTEN_HOST');
+if (assetPrefix && !/^\/[a-z0-9-]+$/u.test(assetPrefix)) throw new Error('Invalid DEMO_ASSET_PREFIX');
 
 const server = createServer(async (req, res) => {
-  setSecurityHeaders(res);
   try {
-    const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+    const url = new URL(req.url || '/', 'http://localhost');
+    const pathname = url.pathname;
+    const embedded = pathname === '/' && url.searchParams.get('embed') === '1';
+    setSecurityHeaders(res, embedded);
+    if (disableAdmin && ['/admin', '/admin.js'].includes(pathname)) { sendJson(res, 404, { error: 'Not found' }); return; }
     if (req.method === 'GET' && staticFiles.has(pathname)) {
       const [file, type] = staticFiles.get(pathname);
       res.writeHead(200, { 'Content-Type': type });
-      res.end(readFileSync(join(root, file)));
+      if (pathname === '/') {
+        let html = readFileSync(join(root, file), 'utf8');
+        if (embedded) html = html.replace('class="app-page"', 'class="app-page qa-embedded"');
+        if (assetPrefix) html = html.replaceAll('href="/', `href="${assetPrefix}/`).replaceAll('src="/', `src="${assetPrefix}/`);
+        res.end(html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`));
+      } else res.end(readFileSync(join(root, file)));
       return;
     }
     if (pathname === '/api/qa/health' && req.method === 'GET') {
@@ -76,8 +92,8 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`QA demo: http://127.0.0.1:${port}`);
+server.listen(port, listenHost, () => {
+  console.log(`QA demo listening on ${listenHost}:${port}`);
   if (provider.configured) {
     void provider.readiness().then(status => {
       if (status.authenticated && !status.contractSupported) console.warn('Provider A contract incompatible: knowledge_agent_keyed_sse_v1 missing');
@@ -97,11 +113,11 @@ function readPrivateEnv(file) {
   }
 }
 
-function setSecurityHeaders(res) {
+function setSecurityHeaders(res, embedded = false) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'");
+  res.setHeader('Content-Security-Policy', `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors ${embedded ? "'self'" : "'none'"}; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'`);
 }
 
 function sendJson(res, status, data) {
@@ -132,8 +148,17 @@ function getClientId(req, res) {
   const match = /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
   if (match && validSignature(match[1], match[2], providerApiToken)) return match[1];
   const id = randomUUID();
-  res.setHeader('Set-Cookie', `qa_demo_client_v2=${id}.${signClientId(id)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
+  res.setHeader('Set-Cookie', `qa_demo_client_v2=${id}.${signClientId(id)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${isPreview(req) ? '; Secure' : ''}`);
   return `demo:${id}`;
+}
+
+function previewVisitor(req) {
+  const value = String(req.headers['x-explorer-preview-visitor'] || '');
+  return /^[a-f0-9]{64}$/u.test(value) ? value : '';
+}
+
+function isPreview(req) {
+  return Boolean(previewVisitor(req));
 }
 
 function validSignature(id, signature, secret = cookieSecret) {
@@ -158,9 +183,9 @@ async function readBody(req) {
 async function health(res) {
   try {
     const status = await provider.readiness();
-    sendJson(res, 200, { ...status, lastRealSuccessAt });
+    sendJson(res, 200, { ...status, lastRealSuccessAt, websiteRelease: releaseRevision });
   } catch {
-    sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt });
+    sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt, websiteRelease: releaseRevision });
   }
 }
 
@@ -225,9 +250,16 @@ async function queueRoute(req, res, pathname) {
   if (!nativeSessions.belongsToNative(input.conversationId, clientId)) { sendJson(res, 404, { error: '会话不存在' }); return; }
   if (!await requireNativeContract(res)) return;
   if (input.sourceIntent === 'web' && !await supportsWebIntent()) { sendJson(res, 409, { error: '当前问答服务尚未启用本轮联网请求' }); return; }
+  const visitor = previewVisitor(req);
+  if (visitor && !previewAdmission.hasRoom(turnQueue.previewPendingCount())) {
+    sendJson(res, 429, { error: '公开预览待发问题已满，请稍后再试。' }); return;
+  }
+  if (visitor && !previewAdmission.admit(visitor, input.requestId)) {
+    sendJson(res, 429, { error: '提交过于频繁，请一分钟后再试。' }); return;
+  }
   const result = turnQueue.enqueue({
     clientId, conversationId: input.conversationId, requestId: input.requestId,
-    question: input.question.trim(), sourceIntent: input.sourceIntent || '',
+    question: input.question.trim(), sourceIntent: input.sourceIntent || '', preview: Boolean(visitor),
   });
   const errors = { conflict: '此请求编号已用于另一问题，请重新提交。', paused: '上一轮未完整结束，请先处理待发问题。', full: '本会话最多排队 3 条问题。' };
   sendJson(res, result.error ? 409 : 202, result.error ? { error: errors[result.error] } : result);
@@ -252,7 +284,9 @@ async function dispatchQueuedTurn(job, emit, signal) {
   const claim = requestLedger.claim(job);
   if (!claim.accepted) throw new Error('request_already_dispatched');
   const timeout = setTimeout(() => job.controller?.abort(), 190000);
+  let releasePreview;
   try {
+    if (job.preview) releasePreview = await previewAdmission.enter(signal);
     const upstream = await provider.request({
       route: '/api/ask', method: 'POST', clientId: job.clientId, requestId: job.requestId,
       body: JSON.stringify({ question: job.question, conversationId: job.conversationId }),
@@ -270,7 +304,7 @@ async function dispatchQueuedTurn(job, emit, signal) {
     nativeSessions.remember(result.conversationId, job.clientId);
     if (result.sourceCount > 0) lastRealSuccessAt = new Date().toISOString();
     requestLedger.complete(claim.key);
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); releasePreview?.(); }
 }
 
 async function proxy(req, res, route) {
@@ -306,6 +340,7 @@ async function proxy(req, res, route) {
   let claim;
   let activeConversationId = '';
   let completed = false;
+  let releasePreview;
   if (route === '/api/ask') {
     if (!await requireNativeContract(res)) return;
     if (sourceIntent === 'web') {
@@ -320,14 +355,31 @@ async function proxy(req, res, route) {
       sendJson(res, 409, { error: '这段会话已有正在处理或待发的问题，请使用排队入口。' });
       return;
     }
-    claim = requestLedger.claim({ clientId, requestId, question: JSON.parse(body).question, conversationId: requestedConversationId, sourceIntent });
+    const visitor = previewVisitor(req);
+    if (visitor) {
+      if (!previewAdmission.hasRoom(turnQueue.previewPendingCount()) || !(releasePreview = previewAdmission.tryEnter())) {
+        sendJson(res, 429, { error: '公开预览正在回答，请稍后再试。' }); return;
+      }
+      if (!previewAdmission.admit(visitor, requestId)) {
+        releasePreview();
+        sendJson(res, 429, { error: '提交过于频繁，请一分钟后再试。' }); return;
+      }
+    }
+    try {
+      claim = requestLedger.claim({ clientId, requestId, question: JSON.parse(body).question, conversationId: requestedConversationId, sourceIntent });
+    } catch (error) {
+      releasePreview?.();
+      throw error;
+    }
     if (!claim.accepted) {
+      releasePreview?.();
       sendJson(res, 409, { error: claim.reason === 'conflict'
         ? '此请求编号已用于另一问题，请重新提交。'
         : '此请求已经提交过，请先查看会话历史；为避免重复问答，系统不会自动重发。' });
       return;
     }
     if (!turnQueue.beginDirect(clientId, activeConversationId)) {
+      releasePreview?.();
       sendJson(res, 409, { error: '这段会话已有正在处理或待发的问题，请使用排队入口。' });
       return;
     }
@@ -380,5 +432,6 @@ async function proxy(req, res, route) {
     clearTimeout(timeout);
     controller.abort();
     if (activeConversationId) turnQueue.finishDirect(clientId, activeConversationId, completed);
+    releasePreview?.();
   }
 }

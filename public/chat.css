@@ -150,6 +150,14 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
   color: var(--accent);
 }
 .app-page .admin-link:hover { background: var(--hover); }
+.app-page .admin-link[hidden] { display: none; }
+
+.app-page.qa-embedded .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.app-page.qa-embedded .site-header,
+.app-page.qa-embedded .site-sidebar { display: none; }
+.app-page.qa-embedded .chat-main { grid-column: 1; grid-row: 1; }
+.app-page.qa-embedded .history-panel { top: 12px; }
+.app-page.qa-embedded .chat-main.is-empty .composer-wrap { margin-bottom: calc(100dvh * .22); }
 
 .app-page .more-menu,
 .app-page .history-panel {

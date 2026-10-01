@@ -27,7 +27,7 @@ test('server keeps Provider A credentials private and streams two turns under on
       for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks).toString());
       providerAsks.push(body);
-      assert.match(body.conversationId, /^demo-[12]$/u);
+      assert.match(body.conversationId, /^demo-[123]$/u);
       assert.equal(body.retrieval_policy, 'knowledge_agent');
       assert.equal(body.knowledge_scope_ref, 'a'.repeat(64));
       assert.match(req.headers['idempotency-key'], /^[a-f0-9]{64}$/u);
@@ -39,7 +39,9 @@ test('server keeps Provider A credentials private and streams two turns under on
       const done = body.source_intent
         ? { conversationId: body.conversationId, source_intent: body.source_intent, answer_basis: 'mixed', source_count: 2, knowledge_source_count: 1, web_source_count: 1 }
         : { conversationId: body.conversationId, source_intent: '', answer_basis: 'knowledge', source_count: 1, knowledge_source_count: 1, web_source_count: 0 };
-      res.end(`event: done\ndata: ${JSON.stringify(done)}\n\n`);
+      if (body.question === '公开慢问') {
+        setTimeout(() => res.end(`event: done\ndata: ${JSON.stringify(done)}\n\n`), 300);
+      } else res.end(`event: done\ndata: ${JSON.stringify(done)}\n\n`);
       return;
     }
     res.writeHead(404); res.end();
@@ -145,6 +147,25 @@ test('server keeps Provider A credentials private and streams two turns under on
       body: JSON.stringify({ question: '旧会话', conversationId: 'old-session', requestId: randomUUID() }),
     });
     assert.equal(legacy.status, 409);
+    const visitor = 'b'.repeat(64);
+    const previewSession = await fetch(`http://127.0.0.1:${frontendPort}/api/qa/conversations`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: `http://127.0.0.1:${frontendPort}`, 'X-Explorer-Preview-Visitor': visitor },
+    });
+    assert.equal((await previewSession.json()).conversation.conversationId, 'demo-3');
+    const previewHeaders = { Cookie: cookie, Origin: `http://127.0.0.1:${frontendPort}`, 'Content-Type': 'application/json', 'X-Explorer-Preview-Visitor': visitor };
+    const slow = await fetch(`http://127.0.0.1:${frontendPort}/api/qa/ask`, {
+      method: 'POST', headers: previewHeaders,
+      body: JSON.stringify({ question: '公开慢问', conversationId: 'demo-1', requestId: randomUUID() }),
+    });
+    assert.equal(slow.status, 200);
+    const simultaneous = await fetch(`http://127.0.0.1:${frontendPort}/api/qa/ask`, {
+      method: 'POST', headers: previewHeaders,
+      body: JSON.stringify({ question: '另一会话同步问', conversationId: 'demo-3', requestId: randomUUID() }),
+    });
+    assert.equal(simultaneous.status, 429);
+    assert.match((await simultaneous.json()).error, /正在回答/u);
+    assert.match(await slow.text(), /event: done/u);
+    assert.equal(providerAsks.filter(item => item.question === '另一会话同步问').length, 0);
   } finally {
     child.kill(); fake.close(); rmSync(runtimeDir, { recursive: true, force: true });
   }

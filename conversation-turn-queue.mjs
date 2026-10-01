@@ -66,7 +66,11 @@ export class ConversationTurnQueue {
     return job?.owner === ownerOf(clientId) ? job : null;
   }
 
-  enqueue({ clientId, conversationId, requestId, question, sourceIntent = '' }) {
+  previewPendingCount() {
+    return [...this.jobs.values()].filter(job => job.preview && ['queued', 'paused'].includes(job.status)).length;
+  }
+
+  enqueue({ clientId, conversationId, requestId, question, sourceIntent = '', preview = false }) {
     this.prune();
     const owner = ownerOf(clientId);
     const lane = laneOf(owner, conversationId);
@@ -77,7 +81,7 @@ export class ConversationTurnQueue {
     if (jobs.some(job => job.status === 'paused')) return { error: 'paused' };
     if (jobs.filter(job => job.status === 'queued').length >= maxPendingPerConversation) return { error: 'full' };
     const job = {
-      id: randomUUID(), owner, clientId, conversationId, requestId, question, sourceIntent,
+      id: randomUUID(), owner, clientId, conversationId, requestId, question, sourceIntent, preview,
       createdAt: this.now(), status: 'queued', events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0,
     };
     this.jobs.set(job.id, job);
@@ -208,7 +212,7 @@ export class ConversationTurnQueue {
 
   save() {
     const rows = [...this.jobs.values()].filter(job => ['queued', 'paused', 'running'].includes(job.status))
-      .map(({ id, owner, conversationId, requestId, question, sourceIntent, createdAt, status }) => ({ id, owner, conversationId, requestId, question, sourceIntent, createdAt, status }));
+      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status }));
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
     const temp = `${this.file}.${randomUUID()}.tmp`;
     writeFileSync(temp, JSON.stringify(rows), { mode: 0o600 });

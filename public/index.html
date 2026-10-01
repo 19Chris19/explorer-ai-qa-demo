@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
+  <meta name="qa-asset-prefix" content="">
   <title>AI 问答 · 知天下</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/chat.css">
@@ -52,6 +53,7 @@
         </button>
         <div class="menu-divider"></div>
         <div class="menu-service"><span data-i18n="serviceStatus">服务状态</span><span id="menuConnection">正在检查连接</span></div>
+        <div class="menu-service"><span>运行版本</span><span id="runtimeVersion">正在读取</span></div>
         <p class="menu-disclaimer" data-i18n="disclaimer">回答可能不完整，请自行核对重要信息。</p>
       </div>
     </header>
@@ -64,7 +66,7 @@
         <a href="https://3d.explorerglobal.cn/guide"><span class="nav-icon" aria-hidden="true">▤</span><span data-i18n="guideNav">创作指南</span></a>
         <a href="https://3d.explorerglobal.cn/about"><span class="nav-icon" aria-hidden="true">ⓘ</span><span data-i18n="aboutNav">关于我们</span></a>
       </nav>
-      <a class="admin-link" href="/admin"><span data-i18n="adminNav">问答管理</span><span aria-hidden="true">↗</span></a>
+      <a class="admin-link" href="/admin" hidden><span data-i18n="adminNav">问答管理</span><span aria-hidden="true">↗</span></a>
     </aside>
 
     <aside class="history-panel" id="historySidebar" aria-label="会话历史" hidden>

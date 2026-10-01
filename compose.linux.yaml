@@ -1,0 +1,18 @@
+services:
+  explorer-qa:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      PORT: "4317"
+      DEMO_DISABLE_ADMIN: "1"
+      DEMO_ASSET_PREFIX: /qa-app
+      DEMO_RUNTIME_DIR: /var/lib/explorer-qa
+    volumes:
+      - ${EXPLORER_QA_CONFIG:?set private config path}:/app/.env.local:ro
+      - ${EXPLORER_QA_RUNTIME:?set private runtime path}:/var/lib/explorer-qa
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
