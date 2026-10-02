@@ -34,6 +34,7 @@ test('deployment keeps admin blocked, streams unbuffered and isolates fixture eg
   const compose = readFileSync(new URL('../compose.linux.yaml', import.meta.url), 'utf8');
   assert.doesNotMatch(compose, /network_mode: host/);
   assert.match(compose, /127\.0\.0\.1:/);
+  assert.ok(compose.includes('DEMO_ASSET_PREFIX: ${DEMO_ASSET_PREFIX:-}'));
   const synthetic = readFileSync(new URL('../deploy/docker/compose.synthetic.yaml', import.meta.url), 'utf8');
   assert.match(synthetic, /internal: true/);
   assert.match(synthetic, /networks: \[backend, browser-access\]/);

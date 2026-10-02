@@ -24,6 +24,7 @@ services:
       PORT: "4317"
       DEMO_LISTEN_HOST: 0.0.0.0
       DEMO_DISABLE_ADMIN: "1"
+      DEMO_ASSET_PREFIX: ${DEMO_ASSET_PREFIX:-}
       DEMO_RUNTIME_DIR: /var/lib/explorer-qa
       PROVIDER_A_BASE_URL: http://provider-a:3000
       DEMO_RELEASE_REVISION: ${EXPLORER_REVISION:-docker-lab}
