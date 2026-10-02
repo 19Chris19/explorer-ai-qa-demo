@@ -10,6 +10,8 @@
 
 ## 与 Provider A 的关系
 
+双服务容器部署请从 [Docker 空池演练与恢复指南](./docs/DOCKER_REHEARSAL.md) 开始。该演练使用全新私有配置，不复制 Air 账号；本机演练入口为 4417，与既有 4317 在线预览完全分离。合成问答通过不等于真实 IMA 或云服务器长期运行验收。
+
 本应用是知天下的品牌网站，不是 Provider A 的 fork。Provider A 独立管理授权账号、IMA 会话、调度和问答；本应用独立管理页面、网站身份和业务后端。两个服务通过有版本约束的接口连接，不共享账号库、运行目录或凭证文件。本应用暂按私有仓库维护；不要把整个根项目推到 [Provider A 公开仓库](https://github.com/19Chris19/ima-qa-web-agent)。
 
 ```text

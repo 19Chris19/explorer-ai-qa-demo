@@ -25,7 +25,8 @@ const composerWrap = document.querySelector('#composerWrap');
 const composerFloatActions = document.querySelector('#composerFloatActions');
 const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
-if (['localhost', '127.0.0.1'].includes(window.location?.hostname)) document.querySelector('.admin-link').hidden = false;
+const adminLink = document.querySelector('.admin-link');
+if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
 if (document.body.classList.contains('qa-embedded')) {
   window.addEventListener('message', event => {
     if (event.origin !== window.location.origin) return;
@@ -63,7 +64,7 @@ const labels = {
     disclaimer: '回答可能不完整，请自行核对重要信息。', webRequested: '本轮请求联网', webIntentOn: '本轮将请求联网',
     webEvidence: '已取得可验证网页来源 {count} 条', webNoEvidence: '已请求联网 · 未取得可验证网页来源', evidenceUnverified: '来源信息无法验证',
     webSources: '网页来源 {count} 条', micUnavailable: '语音输入尚未开放。',
-    ready: '知识库问答可接收', verified: '知识库问答已验证', noCapacity: '账号容量暂不可用', noCredentials: '等待接入凭证', incompatible: '问答协议版本不兼容', offline: '服务暂不可用', checking: '正在检查连接',
+    ready: '知识库问答可接收', verified: '知识库问答已验证', noCapacity: '已连接，暂无可用账号', noCredentials: '等待接入凭证', incompatible: '问答协议版本不兼容', offline: '服务暂不可用', checking: '正在检查连接',
     jumpLatest: '回到最新', sendQuestion: '发送问题', stopAnswer: '停止回答', enqueueQuestion: '加入队列', queued: '排队中', paused: '上一轮未完成，已暂停', starting: '即将回答', editQueued: '编辑待发问题', deleteQueued: '删除待发问题', saveQueued: '保存修改', cancelEdit: '取消编辑',
   },
   en: {

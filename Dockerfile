@@ -13,6 +13,7 @@ ENV NODE_ENV=production PORT=4317 DEMO_DISABLE_ADMIN=1 DEMO_RUNTIME_DIR=/var/lib
 WORKDIR /app
 COPY --from=build --chown=node:node /app/dist ./
 RUN npm ci --omit=dev
+RUN mkdir -p /var/lib/explorer-qa && chown node:node /var/lib/explorer-qa
 USER node
 EXPOSE 4317
 CMD ["node", "server.mjs"]

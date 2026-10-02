@@ -61,6 +61,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': type });
       if (pathname === '/') {
         let html = readFileSync(join(root, file), 'utf8');
+        if (disableAdmin) html = html.replace(/<a class="admin-link"[^>]*>.*?<\/a>/su, '');
         if (embedded) html = html.replace('class="app-page"', 'class="app-page qa-embedded"');
         if (assetPrefix) html = html.replaceAll('href="/', `href="${assetPrefix}/`).replaceAll('src="/', `src="${assetPrefix}/`);
         res.end(html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`));

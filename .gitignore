@@ -6,3 +6,4 @@ coverage/
 runtime/
 *.log
 .DS_Store
+.docker-lab/

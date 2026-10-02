@@ -35,11 +35,14 @@ the website's 961-line UI controller has been rewritten in native Vue.
    service tokens, the knowledge-scope digest and an independent cookie
    secret. Keep it outside Git with mode 0600. `/admin` is not used by the
    website and must not be reverse-proxied.
-4. Prepare a website-only runtime directory writable by UID 1000, mode 0700.
-   Set `EXPLORER_QA_CONFIG` and `EXPLORER_QA_RUNTIME` in a private Compose
-   environment file and run `docker compose -f compose.linux.yaml up -d --build`.
-   This Linux-only recipe uses host networking so BFF and Provider A can both
-   use loopback. It does not add Provider A credentials to the image.
+4. Follow [the bridge-network Docker rehearsal](./DOCKER_REHEARSAL.md) first.
+   `compose.linux.yaml` now runs Provider A, the website and Nginx on a private
+   container network, with independent named volumes; it does not require
+   host networking. The website image initializes its volume for UID 1000.
+   Replace synthetic configuration with server-specific private settings only
+   when real-account deployment is explicitly scheduled. Never use the lab
+   generator to overwrite an existing installation. This replaces the older
+   `EXPLORER_QA_CONFIG` / `EXPLORER_QA_RUNTIME` host-network recipe.
 5. Have the host reverse proxy publish only the AI QA route's assets and
    `/qa-app/` to `127.0.0.1:4317` with the prefix stripped. Use
    [nginx-qa-snippet.conf](./nginx-qa-snippet.conf) as a starting point.
@@ -54,7 +57,8 @@ the website's 961-line UI controller has been rewritten in native Vue.
 
 Back up the website runtime and private config separately from Provider A's
 encrypted volume. On rollback, stop the BFF, restore only its versioned code
-and compatible runtime snapshot, then restart. Never use a website rollback
+without replacing current runtime data, then restart. Test incompatible schema
+recovery separately into fresh volumes. Never use a website rollback
 to overwrite Provider A account data. A 24/7 production promise requires a
 server with monitoring, backups, patching and independent real-question
 acceptance; this Air-backed preview does not provide that guarantee.
