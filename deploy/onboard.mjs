@@ -11,6 +11,7 @@ export const DEFAULT_SHARE_URL = 'https://ima.qq.com/wiki/?shareId=e528d98d02873
 export function parseOnboardingOptions(args) {
   const { values } = parseArgs({ args, options: {
     'share-url': { type: 'string', default: DEFAULT_SHARE_URL },
+    'target-file': { type: 'string' },
     mode: { type: 'string', default: ['darwin', 'win32'].includes(process.platform) ? 'desktop' : 'server' },
     project: { type: 'string', default: 'zhitianxia-qa' },
     'web-port': { type: 'string', default: '4417' }, 'provider-port': { type: 'string', default: '3317' },
@@ -18,7 +19,7 @@ export function parseOnboardingOptions(args) {
   if (!['desktop', 'server'].includes(values.mode)) throw Error('invalid_deployment_mode');
   const base = parseOptions(['--kb', '999000111', '--project', values.project,
     '--web-port', values['web-port'], '--provider-port', values['provider-port']]);
-  return { ...base, mode: values.mode, shareUrl: values['share-url'] };
+  return { ...base, mode: values.mode, shareUrl: values['share-url'], targetFile: values['target-file'] };
 }
 export function providerTools(directory) {
   try {
@@ -27,7 +28,7 @@ export function providerTools(directory) {
     if (!/^0\.4\.(?:[2-9]|[1-9][0-9]+)$/.test(metadata.version) || metadata.name !== 'ima-qa-web') throw Error();
     const tools = require('./src/guided-deployment.js');
     const target = require('./src/shared-kb-target.js');
-    if (typeof tools.guided !== 'function' || typeof target.verifySharedMembership !== 'function') throw Error();
+    if (typeof tools.guided !== 'function' || typeof tools.resolveGuidedTarget !== 'function' || typeof target.verifySharedMembership !== 'function') throw Error();
     return { ...tools, ...target, playwrightVersion: require('playwright-core/package.json').version };
   } catch { throw Error('provider_tooling_required'); }
 }
@@ -76,7 +77,6 @@ export async function onboard(root, command, args, dependencies = {}) {
     const options = parseOnboardingOptions(args);
     if (['provider.env', 'explorer.env', 'deployment.json', 'release.env'].some(name => existsSync(join(dir, name)))) throw Error('existing_installation_protected');
     await tools.guided(source, 'doctor', {}, emit);
-    const target = await tools.resolveSharedTarget(options.shareUrl);
     if (await execute(['ps', '-aq', '--filter', `label=com.docker.compose.project=${options.project}`], true)) throw Error('existing_compose_project_protected');
     await (dependencies.freePort || freePort)(options.webPort); await (dependencies.freePort || freePort)(options.providerPort);
     const images = [process.env.PROVIDER_IMAGE || 'ghcr.io/19chris19/ima-qa-web-agent:v0.4.2',
@@ -88,6 +88,8 @@ export async function onboard(root, command, args, dependencies = {}) {
     const inspected = JSON.parse(await execute(['image', 'inspect', ...images], true));
     await execute(['run', '--rm', '--network', 'none', '--entrypoint', 'node', images[0], '-e',
       `if(require('playwright-core/package.json').version!==${JSON.stringify(tools.playwrightVersion)}||typeof require('./src/shared-kb-target').verifySharedMembership!=='function')process.exit(1)`]);
+    const target = await tools.resolveGuidedTarget(source, { shareUrl: options.shareUrl, mode: options.mode,
+      project: options.project, directory: helperDir, targetFile: options.targetFile }, emit);
     if (options.mode === 'desktop') await tools.guided(source, 'browser-install', { project: options.project, directory: helperDir }, emit);
     const metadata = initialize(dir, { ...options, shareUrl: tools.parseShareUrl(target.shareUrl).url, kb: target.knowledgeBaseId,
       onboarding: { version: 1, mode: options.mode, providerSource: source } }, inspected);

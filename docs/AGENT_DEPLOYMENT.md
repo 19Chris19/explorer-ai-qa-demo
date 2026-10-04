@@ -54,6 +54,8 @@ Shell/PowerShell 包装自动取得固定 Provider tag 的源码，引导器下�
 
 ## Linux 服务器
 
+登录受限的分享页由桌面维护机使用 Provider 的 `resolve --mode desktop --target-file` 先解析，再通过已授权 SSH/SCP 传送不含凭证的目标元数据文件。服务器安装可加 `--target-file .maintenance/resolved-target.json`；后续扫码权限仍需验证，文件不代表账号已获授权。
+
 服务器运行双服务 Compose，网页入口仍需按生产方案配置 HTTPS/域名；一键初始化不自动做 DNS、证书或主站接入。维护电脑拉同一 Provider 版本后按其 `docs/AGENT_DEPLOYMENT.md`：
 
 ```sh

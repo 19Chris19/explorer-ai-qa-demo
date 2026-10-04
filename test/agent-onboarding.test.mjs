@@ -19,7 +19,7 @@ test('synthetic double-service setup prepares the desktop helper before starting
     Config: { Labels: { 'org.opencontainers.image.revision': char.repeat(40) } } }));
   const deps = {
     tools: { playwrightVersion: 'synthetic', guided: async (_, command) => calls.push(command),
-      resolveSharedTarget: async () => ({ shareUrl: 'https://ima.qq.com/wiki/?shareId=' + 'a'.repeat(64), knowledgeBaseId: '999000111' }),
+      resolveGuidedTarget: async () => ({ shareUrl: 'https://ima.qq.com/wiki/?shareId=' + 'a'.repeat(64), knowledgeBaseId: '999000111' }),
       parseShareUrl: url => ({ url }) },
     docker: async args => { calls.push(args.join(' ')); return args[0] === 'ps' ? '' : args[0] === 'image' ? JSON.stringify(images)
       : args.includes('provider-a') && args.includes('exec') ? JSON.stringify({ protocol: 'shared_library_membership_v1', browserReady: true }) : ''; },
@@ -46,7 +46,7 @@ test('synthetic double-service setup prepares the desktop helper before starting
 test('a helper setup failure creates no website credentials and can be retried', async () => {
   const root = mkdtempSync(join(tmpdir(), 'website-helper-failure-'));
   const deps = { tools: { playwrightVersion: 'synthetic', guided: async (_, command) => { if (command === 'browser-install') throw Error('synthetic_helper_offline'); },
-    resolveSharedTarget: async () => ({ shareUrl: DEFAULT_SHARE_URL, knowledgeBaseId: '999000111' }), parseShareUrl: url => ({ url }) },
+    resolveGuidedTarget: async () => ({ shareUrl: DEFAULT_SHARE_URL, knowledgeBaseId: '999000111' }), parseShareUrl: url => ({ url }) },
     docker: async args => args[0] === 'ps' ? '' : '[]', freePort: async () => {}, emit: () => {} };
   try {
     await assert.rejects(onboard(root, 'init', ['--mode', 'desktop'], deps), /synthetic_helper_offline/);

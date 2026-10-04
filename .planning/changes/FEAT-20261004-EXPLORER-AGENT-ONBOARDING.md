@@ -7,3 +7,9 @@
 - Verification: configuration/delegation synthetic tests, application tests/build and clean-directory checks. Windows native, real remote Linux, new account and real QA NOT RUN.
 - Rollout: local candidates only; no Air 4317/4318/3317/3117/Bot/Docker cutover or remote publish.
 - Rollback: revert adapter and retain current runtime/account data and previous fixed images.
+
+## Installation rehearsal follow-up
+
+- Delegate login-gated target resolution and optional credential-free manifests to Provider too, rather than requiring anonymous metadata in the website adapter.
+- Match the actual Compose service name (`provider-a`) for protected helper checks. Image/port checks precede any human login request.
+- Fixed code does not change the webpage or existing runtime. Verify the final candidate separately; earlier Docker evidence remains tied to its own source SHA.
