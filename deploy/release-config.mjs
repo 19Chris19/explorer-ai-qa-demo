@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -31,11 +31,14 @@ export function initialize(dir, options, images) {
     throw Error('Existing installation protected; do not initialize during upgrade');
   }
   if (!Array.isArray(images) || images.length !== 2) throw Error('Both inspected images required');
+  if (options.shareUrl && !/^https:\/\/ima\.qq\.com\/wiki\/\?shareId=[a-f0-9]{64}$/i.test(options.shareUrl)) throw Error('Official canonical share URL required');
   const provider = imageMetadata(images[0]), website = imageMetadata(images[1]);
   const metadata = { schemaVersion: 1, project: options.project, providerImage: provider.image,
     providerRevision: provider.revision, explorerImage: website.image, explorerRevision: website.revision,
     webPort: options.webPort, providerPort: options.providerPort };
+  if (options.onboarding) metadata.onboarding = options.onboarding;
   prepareConfiguration(dir, options.kb);
+  if (options.shareUrl) appendFileSync(resolve(dir, 'provider.env'), `IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_SHARE_URL=${options.shareUrl}\n`);
   writeFileSync(resolve(dir, 'deployment.json'), JSON.stringify(metadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   writeFileSync(resolve(dir, 'release.env'), [
     `COMPOSE_PROJECT_NAME=${metadata.project}`, `PROVIDER_IMAGE=${metadata.providerImage}`,

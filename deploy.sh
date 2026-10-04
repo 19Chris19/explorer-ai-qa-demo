@@ -12,8 +12,9 @@ command=${1:-help}
 if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
   init)
-    provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:v0.4.1}
-    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.0}
+    provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:v0.4.2}
+    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.1}
+    echo 'Advanced numeric-ID initialization does not prepare QR tooling. New installations should use onboard.sh/onboard.ps1.' >&2
     project=zhitianxia-qa
     next_project=0
     for argument in "$@"; do
