@@ -13,7 +13,7 @@ if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
   init)
     provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:v0.4.1}
-    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v0.1.0}
+    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.0}
     project=zhitianxia-qa
     next_project=0
     for argument in "$@"; do

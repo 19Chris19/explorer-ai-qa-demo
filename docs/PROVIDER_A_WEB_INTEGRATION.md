@@ -4,7 +4,7 @@
 
 ## 最短路径
 
-1. 使用公开 tag `v0.4.0` 的 Provider A，确认受保护的 `GET /internal/provider-a/capacity` 返回 `schemaVersion: 1`、`features.knowledge_agent_keyed_sse_v1: true`，且 `policies.knowledge_agent.max_concurrent > 0`。后续兼容补丁也须保持该合同；旧版即使显示账号容量也不能作为本网站的问答后端。
+1. 新部署使用公开 tag `v0.4.1` 的 Provider A，确认受保护的 `GET /internal/provider-a/capacity` 返回 `schemaVersion: 1`、`features.knowledge_agent_keyed_sse_v1: true`，且 `policies.knowledge_agent.max_concurrent > 0`。后续兼容补丁也须保持该合同；旧版即使显示账号容量也不能作为本网站的问答后端。
 2. 在网站后端的私有 `.env.local` 中配置 `PROVIDER_A_BASE_URL`、普通 `PROVIDER_A_API_TOKEN`、独立 `PROVIDER_A_INTERNAL_SERVICE_TOKEN`、`PROVIDER_A_KNOWLEDGE_SCOPE_REF` 和独立的 `DEMO_COOKIE_SECRET`。知识库范围是目标知识库 ID 原文的 SHA-256 十六进制摘要，不是知识库 ID。与 Provider A 同机时可用 `npm run configure:local -- --provider-env /私有配置路径` 自动写入；脚本会生成并保留 Cookie 密钥。
 3. `npm ci`、`npm test`、`npm start`。打开 `http://127.0.0.1:4317/`，用 `npm run verify:real` 显式完成一问一追问验收。
 
@@ -27,4 +27,4 @@
 
 ## 发布边界
 
-v0.3.1 及更早版本的接口与本应用要求的原生 Agent 流式契约不同；不能仅复制网站代码让旧版获得新能力。本仓库固定记录已发布的 Provider A v0.4.0 tag，但维护者尚未在隔离授权账号上完成该 tag 的真实 IMA 复验。运营者按本指南验收后只记录日期、版本和脱敏结论；不得提交真实问题、回答或来源。网站发布仍需另行审查身份、原型 `/admin`、私有运行数据与反代。微信平台收发、群上下文和机器人部署不属于网站应用。
+v0.3.1 及更早版本的接口与本应用要求的原生 Agent 流式契约不同；不能仅复制网站代码让旧版获得新能力。本仓库固定部署基线为已发布的 Provider A v0.4.1 tag；v0.4.0 问答合同兼容，但新部署应使用包含 Docker 修复的 v0.4.1。维护者尚未在隔离授权账号上完成该 tag 的真实 IMA 复验。运营者按本指南验收后只记录日期、版本和脱敏结论；不得提交真实问题、回答或来源。网站发布仍需另行审查身份、原型 `/admin`、私有运行数据与反代。微信平台收发、群上下文和机器人部署不属于网站应用。
