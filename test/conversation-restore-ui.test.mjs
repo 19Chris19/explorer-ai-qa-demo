@@ -31,8 +31,10 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     if (url === '/api/qa/conversations/synthetic-empty') return json({ conversation: { conversationId: 'synthetic-empty' }, messages: [] });
     if (url === '/api/qa/conversations/synthetic-filled') return json({ conversation: { conversationId: 'synthetic-filled' }, messages: [
       { role: 'user', content: '合成首问' },
+      { role: 'assistant', content: '合成回答', process: [{ kind: 'status', text: '合成检索进度' }], timing: { elapsed_ms: 1200, queue_wait_ms: 400 } },
     ] });
     if (url.startsWith('/api/qa/queue?')) return json({ queue: [] });
+    if (url === '/api/qa/ask') return { ok: false, json: async () => ({ error: '合成接入失败' }) };
     throw new Error(`Unexpected request: ${url}`);
   };
   const globals = ['window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'fetch'];
@@ -40,9 +42,18 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
   try {
     copyFileSync(join(root, 'public/app.js'), join(moduleDir, 'app.mjs'));
     for (const name of ['question-rotation.mjs', 'source-evidence.mjs']) copyFileSync(join(root, name), join(moduleDir, name));
+    copyFileSync(join(root, 'public/turn-lifecycle.mjs'), join(moduleDir, 'turn-lifecycle.mjs'));
+    copyFileSync(join(root, 'public/answer-process.mjs'), join(moduleDir, 'answer-process.mjs'));
+    copyFileSync(join(root, 'public/prompt-sparks.mjs'), join(moduleDir, 'prompt-sparks.mjs'));
+    copyFileSync(join(root, 'public/voice-preview.mjs'), join(moduleDir, 'voice-preview.mjs'));
+    copyFileSync(join(root, 'public/message-shape.mjs'), join(moduleDir, 'message-shape.mjs'));
+    copyFileSync(join(root, 'public/composer-shape.mjs'), join(moduleDir, 'composer-shape.mjs'));
+    copyFileSync(join(root, 'public/composer-controls.mjs'), join(moduleDir, 'composer-controls.mjs'));
+    copyFileSync(join(root, 'public/answer-copy.mjs'), join(moduleDir, 'answer-copy.mjs'));
+    copyFileSync(join(root, 'public/selection-copy.mjs'), join(moduleDir, 'selection-copy.mjs'));
     Object.assign(globalThis, {
       window, document: window.document, localStorage: window.localStorage, sessionStorage: window.sessionStorage,
-      ResizeObserver: class { observe() {} },
+      ResizeObserver: class { observe() {} disconnect() {} },
       requestAnimationFrame: callback => setTimeout(callback, 0),
       cancelAnimationFrame: clearTimeout,
       fetch: fetchMock,
@@ -55,21 +66,52 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     assert.equal(window.document.querySelector('#suggestionStrip').hidden, false);
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
     assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题…');
+    assert.equal(window.document.querySelector('#askForm').dataset.textShape, 'single');
     const webToggle = window.document.querySelector('#webSearchButton');
     await until(() => !webToggle.hidden);
     webToggle.click();
     assert.equal(webToggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(window.document.querySelector('#askForm').classList.contains('is-web-armed'), true);
     assert.equal(window.document.querySelector('#requestStatus').textContent, '');
     webToggle.click();
     assert.equal(webToggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(window.document.querySelector('#askForm').classList.contains('is-web-armed'), false);
     assert.equal(window.document.querySelector('#requestStatus').textContent, '');
+    assert.equal(window.document.querySelectorAll('#sendButton .send-glyph').length, 2);
+    const mic = window.document.querySelector('#micButton');
+    const draft = window.document.querySelector('#question');
+    assert.equal(window.document.querySelector('#sendButton').disabled, true);
+    draft.value = '合成草稿';
+    draft.dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal(window.document.querySelector('#sendButton').disabled, false);
+    const requestCount = requests.length;
+    mic.click();
+    assert.equal(mic.getAttribute('aria-pressed'), 'true');
+    assert.match(mic.title, /不录音/);
+    assert.equal(window.document.querySelector('#voicePreviewHint').hidden, false);
+    assert.match(window.document.querySelector('#voicePreviewHint').textContent, /不录音/);
+    assert.equal(mic.querySelectorAll('.voice-equalizer i').length, 3);
+    assert.equal(draft.value, '合成草稿');
+    assert.equal(requests.length, requestCount);
+    window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+    assert.equal(mic.getAttribute('aria-pressed'), 'false');
+    mic.click();
 
     const filled = [...window.document.querySelectorAll('.conversation-open')]
       .find(button => button.textContent === '有消息的会话');
     filled.click();
     await until(() => window.document.querySelector('.chat-thread .message'));
     assert.equal(main.classList.contains('is-empty'), false);
+    assert.equal(mic.getAttribute('aria-pressed'), 'false');
     assert.equal(window.document.querySelector('.chat-thread .message')?.textContent, '合成首问');
+    assert.equal(window.document.querySelector('.chat-thread .message.assistant .message-content')?.textContent, '合成回答');
+    assert.equal(window.document.querySelector('.chat-thread .message-label'), null);
+    const process = window.document.querySelector('.answer-process');
+    assert.equal(process.open, false);
+    process.open = true;
+    assert.equal(process.querySelector('li').textContent, '合成检索进度');
+    assert.equal(process.previousElementSibling.className.includes('answer-lifecycle'), true);
+    assert.equal(window.document.querySelector('.answer-lifecycle-details').textContent, '等待 0.4 秒 · 用时 1.2 秒');
     assert.equal(window.document.querySelector('#question').placeholder, '');
 
     const empty = [...window.document.querySelectorAll('.conversation-open')]
@@ -79,6 +121,12 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     assert.ok(window.document.querySelector('.welcome'));
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
     assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题…');
+    draft.value = '连接失败也保留这条合成草稿';
+    draft.dispatchEvent(new window.Event('input', { bubbles: true }));
+    window.document.querySelector('#askForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await until(() => window.document.querySelector('.message-error'));
+    assert.equal(draft.value, '连接失败也保留这条合成草稿');
+    assert.equal(requests.filter(url => url === '/api/qa/ask').length, 1);
   } finally {
     for (const [key, descriptor] of saved) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);

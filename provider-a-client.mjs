@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 
 export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowledgeScopeRef, fetchImpl = fetch }) {
-  if (!/^http:\/\/127\.0\.0\.1:\d+$/u.test(baseUrl)) throw new Error('Provider A must use a localhost address or tunnel');
+  const localPort = /^http:\/\/127\.0\.0\.1:(\d+)$/u.exec(baseUrl)?.[1];
+  if (!(localPort && Number(localPort) > 0 && Number(localPort) <= 65535) && baseUrl !== 'http://provider-a:3000') {
+    throw new Error('Provider A must use a localhost address or the private Compose service http://provider-a:3000');
+  }
   const configured = Boolean(apiToken && serviceToken && /^[a-f0-9]{64}$/u.test(knowledgeScopeRef));
 
   async function readiness() {

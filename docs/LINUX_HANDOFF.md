@@ -22,7 +22,15 @@ the website's 961-line UI controller has been rewritten in native Vue.
 
 ## Linux server
 
-1. Install Provider A v0.4.0 (or a verified compatible patch) separately.
+Fresh installations start with [the one-command Docker path](./DOCKER_QUICKSTART.md).
+This builds the checked-out frontend rather than a stale demo image. The script
+records image digests, refuses existing deployments and keeps configuration
+private. Account authorization remains a deliberate human action on a maintenance
+computer; a Linux server does not gain a desktop browser from containerization.
+
+1. Prepare the Provider A v0.4.0 (or verified compatible patch) image separately.
+   The joint Compose recipe starts it; do not also start a second service on
+   the same host port or point two containers at the same runtime.
    Its account library, encrypted key and conversations must live in its own
    private persistent volume. The website never receives those files.
 2. Manually authorize dedicated IMA accounts and the target knowledge base.
@@ -31,18 +39,24 @@ the website's 961-line UI controller has been rewritten in native Vue.
    tokens, account database or encryption key. Reusing the same IMA accounts
    on two hosts may invalidate sessions, so use separate accounts where
    possible.
-3. Create a private website `.env.local` with distinct ordinary and internal
+3. Create private website configuration with distinct ordinary and internal
    service tokens, the knowledge-scope digest and an independent cookie
    secret. Keep it outside Git with mode 0600. `/admin` is not used by the
-   website and must not be reverse-proxied.
-4. Prepare a website-only runtime directory writable by UID 1000, mode 0700.
-   Set `EXPLORER_QA_CONFIG` and `EXPLORER_QA_RUNTIME` in a private Compose
-   environment file and run `docker compose -f compose.linux.yaml up -d --build`.
-   This Linux-only recipe uses host networking so BFF and Provider A can both
-   use loopback. It does not add Provider A credentials to the image.
-5. Have the host reverse proxy publish only the AI QA route's assets and
-   `/qa-app/` to `127.0.0.1:4317` with the prefix stripped. Use
-   [nginx-qa-snippet.conf](./nginx-qa-snippet.conf) as a starting point.
+   website and must not be reverse-proxied. Compose reads `.docker-lab/explorer.env`;
+   `.env.local` is for direct host Node deployments, not this container recipe.
+4. Follow [the bridge-network Docker rehearsal](./DOCKER_REHEARSAL.md) first.
+   `compose.linux.yaml` now runs Provider A, the website and Nginx on a private
+   container network, with independent named volumes; it does not require
+   host networking. The website image initializes its volume for UID 1000.
+   Replace synthetic configuration with server-specific private settings only
+   when real-account deployment is explicitly scheduled. Never use the lab
+   generator to overwrite an existing installation. This replaces the older
+   `EXPLORER_QA_CONFIG` / `EXPLORER_QA_RUNTIME` host-network recipe.
+5. For the main-site subpath, set `DEMO_ASSET_PREFIX=/qa-app` in the private
+   Compose interpolation environment. Have the host reverse proxy forward
+   `/qa-app/` to the Docker gateway `127.0.0.1:4417` with the prefix stripped.
+   [nginx-qa-snippet.conf](./nginx-qa-snippet.conf) is the older direct-Node
+   example: change its 4317 upstream to 4417 when using this Docker recipe.
    Preserve SSE streaming, forward cookies,
    disable response buffering and caching, and set a read timeout above 190s.
    Exclude `/admin` and all Provider A `/internal/` paths. Keep HTTPS at the
@@ -54,7 +68,8 @@ the website's 961-line UI controller has been rewritten in native Vue.
 
 Back up the website runtime and private config separately from Provider A's
 encrypted volume. On rollback, stop the BFF, restore only its versioned code
-and compatible runtime snapshot, then restart. Never use a website rollback
+without replacing current runtime data, then restart. Test incompatible schema
+recovery separately into fresh volumes. Never use a website rollback
 to overwrite Provider A account data. A 24/7 production promise requires a
 server with monitoring, backups, patching and independent real-question
 acceptance; this Air-backed preview does not provide that guarantee.

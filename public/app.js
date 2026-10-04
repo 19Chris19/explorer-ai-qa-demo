@@ -1,14 +1,26 @@
 import { createQuestionRotation } from './question-rotation.mjs';
+import { createPromptSparks } from './prompt-sparks.mjs';
+import { createVoicePreview } from './voice-preview.mjs';
 import { inspectSourceEvidence } from './source-evidence.mjs';
+import { lifecycleView } from './turn-lifecycle.mjs';
+import { createAnswerProcess } from './answer-process.mjs';
+import { createMessageShapes } from './message-shape.mjs';
+import { resizeComposer, observeComposerWidth } from './composer-shape.mjs';
+import { composerControlState, providerAccessState } from './composer-controls.mjs';
+import { createAnswerCopy } from './answer-copy.mjs';
+import { createSelectionCopy } from './selection-copy.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
+const answerCopies = new WeakMap();
 
 const log = document.querySelector('#chatLog');
 const main = document.querySelector('#main');
 const list = document.querySelector('#conversationList');
 const question = document.querySelector('#question');
 const form = document.querySelector('#askForm');
+const messageShapes = createMessageShapes();
+document.fonts?.ready.then(() => messageShapes.refresh());
 const connection = document.querySelector('#connection');
 const menuConnection = document.querySelector('#menuConnection');
 const requestStatus = document.querySelector('#requestStatus');
@@ -21,11 +33,21 @@ const suggestionStrip = document.querySelector('#suggestionStrip');
 const suggestionList = document.querySelector('#suggestionList');
 const webSearchButton = document.querySelector('#webSearchButton');
 const webIntentLabel = document.querySelector('#webIntentLabel');
+const composerSparks = createPromptSparks(document.querySelector('#composerSparks'), { root: form });
+const micButton = document.querySelector('#micButton');
+const voicePreviewHint = document.querySelector('#voicePreviewHint');
+const accessNote = document.querySelector('#composerAccessNote');
+let voiceHintTimer = 0;
+const voicePreview = createVoicePreview({
+  setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
+  onChange: updateVoicePreviewControl,
+});
 const composerWrap = document.querySelector('#composerWrap');
 const composerFloatActions = document.querySelector('#composerFloatActions');
 const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
-if (['localhost', '127.0.0.1'].includes(window.location?.hostname)) document.querySelector('.admin-link').hidden = false;
+const adminLink = document.querySelector('.admin-link');
+if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
 if (document.body.classList.contains('qa-embedded')) {
   window.addEventListener('message', event => {
     if (event.origin !== window.location.origin) return;
@@ -40,15 +62,17 @@ if (document.body.classList.contains('qa-embedded')) {
 }
 const state = {
   conversationId: sessionStorage.getItem('qa-native-conversation-id') || '',
-  legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false,
+  legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false, access: 'checking',
+  activeWebRequest: false, webRequestState: 'idle',
   queuedJobs: [], queueSubmitting: false, preparing: false, activeQueuedId: '',
-  questionBank: [], questionRotation: null, currentSuggestions: null, carouselTimer: 0, carouselHover: false, carouselFocus: false, suggestionSelected: false,
+  questionBank: [], questionRotation: null, currentSuggestions: null, carouselTimer: 0, carouselHover: false, carouselFocus: false, suggestionSelected: false, composing: false,
   followLatest: true,
 };
 let conversationItems = [];
 let suggestionFlight = null;
 let composerImpact = null;
 let exitingWelcome = null;
+let webStateTimer = 0;
 const ui = {
   locale: localStorage.getItem('qa-ui-locale') === 'en' ? 'en' : 'zh',
   color: ['blue', 'teal', 'graphite'].includes(localStorage.getItem('qa-ui-color')) ? localStorage.getItem('qa-ui-color') : 'blue',
@@ -57,33 +81,41 @@ const ui = {
 const labels = {
   zh: {
     qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们', adminNav: '问答管理',
-    newChat: '新建对话', recentChats: '最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
+    newChat: '新建对话', recentChats: '最近对话', moreOptions: '更多选项', historyClose: '关闭最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
     titleLead: '你的 3DGS 疑问，', titleSubject: '随时来聊。', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验强势驱动。', placeholder: '输入你的 3DGS 问题…',
     searchHistory: '搜索对话', noHistory: '还没有对话', noMatches: '没有匹配的对话', newConversation: '新对话', deleteConfirm: '确定删除这段对话吗？',
     disclaimer: '回答可能不完整，请自行核对重要信息。', webRequested: '本轮请求联网', webIntentOn: '本轮将请求联网',
     webEvidence: '已取得可验证网页来源 {count} 条', webNoEvidence: '已请求联网 · 未取得可验证网页来源', evidenceUnverified: '来源信息无法验证',
-    webSources: '网页来源 {count} 条', micUnavailable: '语音输入尚未开放。',
+    webSources: '网页来源 {count} 条', micPreview: '预览语音动画（不录音）', micPreviewStop: '结束语音动画预览（不录音）', micPreviewHint: '仅动画预览，不录音',
     ready: '知识库问答可接收', verified: '知识库问答已验证', noCapacity: '账号容量暂不可用', noCredentials: '等待接入凭证', incompatible: '问答协议版本不兼容', offline: '服务暂不可用', checking: '正在检查连接',
     jumpLatest: '回到最新', sendQuestion: '发送问题', stopAnswer: '停止回答', enqueueQuestion: '加入队列', queued: '排队中', paused: '上一轮未完成，已暂停', starting: '即将回答', editQueued: '编辑待发问题', deleteQueued: '删除待发问题', saveQueued: '保存修改', cancelEdit: '取消编辑',
+    copyAnswer: '复制回答 Markdown', copyPartial: '复制已收到的部分回答', copied: '已复制', copyFailed: '复制失败，请选择下面的文字复制', closeCopyText: '关闭可复制文字',
+    copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
   },
   en: {
     qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About', adminNav: 'Q&A Admin',
-    newChat: 'New conversation', recentChats: 'Recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
+    newChat: 'New conversation', recentChats: 'Recent conversations', moreOptions: 'More options', historyClose: 'Close recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
     titleLead: 'Have a 3DGS question?', titleSubject: "Let's talk.", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience.', placeholder: 'Ask a 3DGS question…',
     searchHistory: 'Search conversations', noHistory: 'No conversations yet', noMatches: 'No matching conversations', newConversation: 'New conversation', deleteConfirm: 'Delete this conversation?',
     disclaimer: 'Answers may be incomplete. Verify important details.', webRequested: 'Request web sources for this turn', webIntentOn: 'Web sources requested for this turn',
     webEvidence: 'Verified web sources: {count}', webNoEvidence: 'Web requested · no verifiable web sources found', evidenceUnverified: 'Source evidence could not be verified',
-    webSources: 'Web sources: {count}', micUnavailable: 'Voice input is not available yet.',
+    webSources: 'Web sources: {count}', micPreview: 'Preview voice animation (no recording)', micPreviewStop: 'End voice animation preview (no recording)', micPreviewHint: 'Animation only; no recording',
     ready: 'Knowledge Q&A available', verified: 'Knowledge Q&A verified', noCapacity: 'No account capacity', noCredentials: 'Waiting for credentials', incompatible: 'Incompatible Q&A contract', offline: 'Service unavailable', checking: 'Checking connection',
     jumpLatest: 'Jump to latest', sendQuestion: 'Send question', stopAnswer: 'Stop answer', enqueueQuestion: 'Queue next', queued: 'Queued', paused: 'Paused after an incomplete turn', starting: 'Starting next answer', editQueued: 'Edit queued question', deleteQueued: 'Remove queued question', saveQueued: 'Save changes', cancelEdit: 'Cancel editing',
+    copyAnswer: 'Copy answer Markdown', copyPartial: 'Copy received partial answer', copied: 'Copied', copyFailed: 'Copy failed; select the text below to copy', closeCopyText: 'Close selectable text',
+    copySelection: 'Copy selected text', selectionActions: 'Selected text actions', selectionCopyFailed: 'Copy failed; select the text below',
   },
 };
 function t(key) { return labels[ui.locale][key] || key; }
 
+const selectionCopy = createSelectionCopy(log, { getLabel: t });
 applyPreferences();
 resizeQuestion();
+observeComposerWidth(question, resizeQuestion);
+document.fonts?.ready.then(resizeQuestion);
 
 function applyPreferences() {
+  selectionCopy.refresh();
   document.documentElement.lang = ui.locale === 'zh' ? 'zh-CN' : 'en';
   document.body.dataset.color = ui.color;
   document.body.classList.toggle('dark', ui.dark);
@@ -98,9 +130,16 @@ function applyPreferences() {
   updateSendButton();
   renderQueue();
   historySearch.placeholder = t('searchHistory');
+  for (const message of log.querySelectorAll('.message.assistant')) answerCopies.get(message)?.control.refresh();
   historySearch.setAttribute('aria-label', t('searchHistory'));
+  moreToggle.setAttribute('aria-label', t('moreOptions'));
+  moreToggle.title = t('moreOptions');
+  moreMenu.setAttribute('aria-label', t('moreOptions'));
+  history.setAttribute('aria-label', t('recentChats'));
+  document.querySelector('#historyClose').setAttribute('aria-label', t('historyClose'));
+  document.querySelector('#historyClose').title = t('historyClose');
   updateWebIntentControl();
-  document.querySelector('#micButton').title = t('micUnavailable');
+  updateVoicePreviewControl();
   renderSuggestions();
   updateFloatingControls();
 }
@@ -109,14 +148,22 @@ function updateQuestionPlaceholder() {
   question.placeholder = main.classList.contains('is-empty') ? t('placeholder') : '';
 }
 
-function closeMore() {
+function closeMore({ restore = false } = {}) {
+  const ownedFocus = moreMenu.contains(document.activeElement);
   moreMenu.hidden = true;
   moreToggle.setAttribute('aria-expanded', 'false');
+  if (restore && ownedFocus) moreToggle.focus();
 }
 
-function closeHistory() { history.hidden = true; }
+function closeHistory({ restore = false } = {}) {
+  const ownedFocus = history.contains(document.activeElement);
+  history.hidden = true;
+  document.querySelector('#showHistory').setAttribute('aria-expanded', 'false');
+  if (restore && ownedFocus) moreToggle.focus();
+}
 
 document.querySelector('#newChat').addEventListener('click', async () => {
+  voicePreview.stop();
   if (state.busy || state.preparing || state.queueSubmitting || state.queuedJobs.length) return;
   try {
     const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
@@ -130,17 +177,20 @@ document.querySelector('#newChat').addEventListener('click', async () => {
     question.focus();
   } catch (error) { status(error.message, true); closeMore(); }
 });
-moreToggle.addEventListener('click', () => {
+moreToggle.addEventListener('click', event => {
   closeHistory();
-  moreMenu.hidden = !moreMenu.hidden;
-  moreToggle.setAttribute('aria-expanded', String(!moreMenu.hidden));
+  if (!moreMenu.hidden) return closeMore();
+  moreMenu.hidden = false;
+  moreToggle.setAttribute('aria-expanded', 'true');
+  if (event.detail === 0) document.querySelector('#newChat').focus();
 });
 document.querySelector('#showHistory').addEventListener('click', () => {
   closeMore();
   history.hidden = false;
+  document.querySelector('#showHistory').setAttribute('aria-expanded', 'true');
   historySearch.focus();
 });
-document.querySelector('#historyClose').addEventListener('click', closeHistory);
+document.querySelector('#historyClose').addEventListener('click', () => closeHistory({ restore: true }));
 historySearch.addEventListener('input', renderConversationList);
 document.querySelector('#languageButton').addEventListener('click', () => {
   ui.locale = ui.locale === 'zh' ? 'en' : 'zh';
@@ -160,6 +210,18 @@ document.querySelector('#darkModeButton').addEventListener('click', () => {
   localStorage.setItem('qa-ui-dark', String(ui.dark));
   applyPreferences();
 });
+micButton.addEventListener('click', () => {
+  voicePreview.toggle();
+  clearTimeout(voiceHintTimer);
+  voicePreviewHint.textContent = t('micPreviewHint');
+  voicePreviewHint.hidden = false;
+  voiceHintTimer = window.setTimeout(() => { voicePreviewHint.hidden = true; }, 2400);
+});
+window.addEventListener('pagehide', () => {
+  voicePreview.stop();
+  composerSparks.setActive(false);
+});
+window.addEventListener('pageshow', updateWebIntentControl);
 webSearchButton.addEventListener('click', () => {
   if (!state.webIntentSupported) return;
   state.webRequested = !state.webRequested;
@@ -173,7 +235,7 @@ suggestionStrip.addEventListener('focusout', event => {
 });
 suggestionList.addEventListener('click', event => {
   const button = event.target.closest('[data-question-id]');
-  if (!button || state.suggestionSelected) return;
+  if (!button || state.suggestionSelected || state.composing || question.value.trim()) return;
   const source = button.getBoundingClientRect();
   const computed = getComputedStyle(button);
   const style = { font: computed.font, lineHeight: computed.lineHeight, color: computed.color };
@@ -189,12 +251,15 @@ suggestionList.addEventListener('click', event => {
 });
 question.addEventListener('focus', updateCarouselTimer);
 question.addEventListener('blur', updateCarouselTimer);
+question.addEventListener('compositionstart', () => { state.composing = true; updateCarouselTimer(); });
+question.addEventListener('compositionend', () => { state.composing = false; updateSuggestionVisibility(); updateCarouselTimer(); });
 question.addEventListener('input', () => {
   if (state.suggestionSelected && !question.value.trim()) {
     state.suggestionSelected = false;
     clearSuggestionMotion();
     renderSuggestions();
   }
+  updateSuggestionVisibility();
   resizeQuestion(); updateSendButton(); updateCarouselTimer();
 });
 document.addEventListener('visibilitychange', updateCarouselTimer);
@@ -249,7 +314,8 @@ document.addEventListener('pointerdown', event => {
 });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
-  closeMore(); closeHistory();
+  if (!history.hidden) closeHistory({ restore: true });
+  else if (!moreMenu.hidden) closeMore({ restore: true });
 });
 sendButton.addEventListener('click', async () => {
   if (!state.busy || question.value.trim()) return;
@@ -282,16 +348,21 @@ async function checkHealth() {
     document.querySelector('#runtimeVersion').textContent = `${data.websiteRelease || 'local-dev'} · Provider 合同 ${data.contractSupported ? 'v1' : '未确认'}`;
     if (!state.webIntentSupported) state.webRequested = false;
     updateWebIntentControl();
-    const ready = response.ok && data.ready;
+    state.access = providerAccessState(response.ok, data);
+    const ready = state.access === 'ready';
     const text = ready ? (data.lastRealSuccessAt ? t('verified') : t('ready')) : data.connected ? (!data.authenticated ? t('noCredentials') : data.contractSupported === false ? t('incompatible') : t('noCapacity')) : t('offline');
     const title = ready ? `原生知识库 Agent 容量 ${data.capacity}；${data.lastRealSuccessAt ? '最近一次真实回答已完成' : '尚无本次运行中的真实回答记录'}` : '';
     setConnection(text, ready, title);
   } catch {
+    state.access = 'offline';
     state.webIntentSupported = false;
     state.webRequested = false;
     updateWebIntentControl();
     setConnection(t('offline'), false);
   }
+  accessNote.textContent = ['ready', 'checking'].includes(state.access) ? '' : t(state.access);
+  accessNote.hidden = !accessNote.textContent;
+  updateSendButton();
 }
 
 function setConnection(text, ready, title = '') {
@@ -355,15 +426,16 @@ async function loadConversation(id) {
     if (messages.length) renderThread(messages);
     else welcome();
     if (state.legacyMode) status('这段历史可查看。继续提问请新建会话，使用原生知识库 Agent。', true);
+    closeHistory({ restore: true });
     await loadConversations();
     await syncQueue();
-    closeHistory();
   } catch {
     if (id === state.conversationId) { setConversation(''); welcome(); }
   }
 }
 
 function setConversation(id) {
+  voicePreview.stop();
   state.conversationId = id;
   state.legacyMode = false;
   if (id) sessionStorage.setItem('qa-native-conversation-id', id);
@@ -389,18 +461,18 @@ function status(message, showInThread = false) {
 function busy(value) {
   state.busy = value;
   updateSendButton();
+  updateWebIntentControl();
   updateFloatingControls();
 }
 
 function updateSendButton() {
-  const stopping = state.busy && !question.value.trim();
-  const label = t(stopping ? 'stopAnswer' : state.busy ? 'enqueueQuestion' : 'sendQuestion');
+  const { stopping, disabled, action } = composerControlState({ ...state, draft: question.value });
+  const label = t(action);
   sendButton.type = stopping ? 'button' : 'submit';
-  sendButton.disabled = state.preparing || state.queueSubmitting;
+  sendButton.disabled = disabled;
   sendButton.classList.toggle('is-busy', stopping);
-  sendButton.querySelector('use').setAttribute('href', sitePath(stopping ? '/icons.svg#square' : '/icons.svg#arrow-up'));
   sendButton.setAttribute('aria-label', label);
-  sendButton.title = label;
+  sendButton.title = disabled && state.access !== 'ready' ? t(state.access) : label;
 }
 
 function queueIcon(symbol, label) {
@@ -484,7 +556,13 @@ async function syncQueue(autoConsume = true) {
     if (autoConsume && next && !state.controller && !state.activeQueuedId) {
       state.activeQueuedId = next.id;
       renderQueue();
-      void streamAnswer(next.question, next.sourceIntent === 'web', signal => fetch(sitePath(`/api/qa/queue/${encodeURIComponent(next.id)}/events`), { signal }), next.id);
+      void streamAnswer(
+        next.question,
+        next.sourceIntent === 'web',
+        signal => fetch(sitePath(`/api/qa/queue/${encodeURIComponent(next.id)}/events`), { signal }),
+        next.id,
+        next.createdAt,
+      );
       return true;
     }
     renderQueue();
@@ -493,8 +571,10 @@ async function syncQueue(autoConsume = true) {
 }
 
 async function submitQuestion() {
+  voicePreview.stop();
   const text = question.value.trim();
   if (!text || state.preparing || state.queueSubmitting) return;
+  if (state.access !== 'ready') { status(t(state.access), true); return; }
   if (state.busy) { await enqueueQuestion(text); return; }
   if (state.queuedJobs.some(job => job.status === 'paused')) { status('请先删除上一轮未完成的待发问题，再继续提问。', true); return; }
   await ask(text);
@@ -536,8 +616,7 @@ function updateFloatingControls() {
 }
 
 function resizeQuestion() {
-  question.style.height = '0px';
-  question.style.height = `${Math.min(question.scrollHeight, 144)}px`;
+  resizeComposer(form, question);
 }
 
 function updateWebIntentControl() {
@@ -547,6 +626,32 @@ function updateWebIntentControl() {
   webSearchButton.title = t('webRequested');
   webSearchButton.setAttribute('aria-label', t('webRequested'));
   webIntentLabel.hidden = !state.webRequested;
+  form.classList.toggle('is-web-armed', state.webRequested && !state.busy);
+  form.classList.toggle('is-web-searching', state.activeWebRequest && state.webRequestState === 'searching');
+  form.classList.toggle('is-web-verified', state.webRequestState === 'verified');
+  form.classList.toggle('is-web-missing', state.webRequestState === 'missing');
+  composerSparks.setActive(state.webRequested || (state.activeWebRequest && state.webRequestState === 'searching'));
+}
+
+function updateVoicePreviewControl() {
+  micButton.classList.toggle('is-previewing', voicePreview.active);
+  micButton.setAttribute('aria-pressed', String(voicePreview.active));
+  const label = t(voicePreview.active ? 'micPreviewStop' : 'micPreview');
+  micButton.title = label;
+  micButton.setAttribute('aria-label', label);
+}
+
+function setWebRequestState(value) {
+  if (webStateTimer) clearTimeout(webStateTimer);
+  webStateTimer = 0;
+  state.webRequestState = value;
+  updateWebIntentControl();
+  if (!['verified', 'missing'].includes(value)) return;
+  webStateTimer = setTimeout(() => {
+    webStateTimer = 0;
+    state.webRequestState = 'idle';
+    updateWebIntentControl();
+  }, 2400);
 }
 
 async function loadQuestionBank() {
@@ -577,14 +682,22 @@ function renderSuggestions(advance = false) {
     button.className = 'suggestion-question';
     button.dataset.questionId = item.id;
     button.dataset.question = ui.locale === 'en' ? item.en : item.zh;
-    button.textContent = button.dataset.question;
+    const text = document.createElement('span'); text.textContent = button.dataset.question;
+    const arrow = document.createElement('span'); arrow.className = 'suggestion-arrow'; arrow.textContent = '→'; arrow.setAttribute('aria-hidden', 'true');
+    button.append(text, arrow);
     button.title = button.dataset.question;
     suggestionList.append(button);
   }
-  suggestionStrip.classList.toggle('is-selected', state.suggestionSelected);
-  if (state.suggestionSelected) suggestionList.querySelector('button')?.setAttribute('tabindex', '-1');
+  updateSuggestionVisibility();
   suggestionStrip.hidden = !main.classList.contains('is-empty');
   if (advance) updateCarouselTimer();
+}
+
+function updateSuggestionVisibility() {
+  const hidden = state.suggestionSelected || Boolean(question.value.trim());
+  suggestionStrip.classList.toggle('has-draft', hidden);
+  suggestionStrip.classList.toggle('is-selected', state.suggestionSelected);
+  for (const button of suggestionList.querySelectorAll('button')) button.tabIndex = hidden ? -1 : 0;
 }
 
 function rotateSuggestions() {
@@ -597,7 +710,7 @@ function updateCarouselTimer() {
   if (state.carouselTimer) clearTimeout(state.carouselTimer);
   state.carouselTimer = 0;
   const paused = !state.questionRotation || !main.classList.contains('is-empty')
-    || state.suggestionSelected
+    || state.suggestionSelected || state.composing
     || state.carouselHover || state.carouselFocus || document.hidden
     || document.activeElement === question || question.value.trim()
     || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -613,6 +726,77 @@ function clearSuggestionMotion() {
   suggestionFlight = null;
   composerImpact?.cancel();
   composerImpact = null;
+}
+
+function reducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function animateContentIn(element, { distance = 8, duration = 240 } = {}) {
+  if (!element || typeof element.animate !== 'function') return;
+  if (reducedMotion()) {
+    element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'linear' });
+    return;
+  }
+  element.animate([
+    { opacity: 0, transform: `translateY(${distance}px)` },
+    { opacity: 1, transform: 'translateY(0)' },
+  ], { duration, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+}
+
+function fadeContentIn(element, duration = 180) {
+  if (!element || typeof element.animate !== 'function') return;
+  element.animate([{ opacity: 0 }, { opacity: 1 }], {
+    duration: reducedMotion() ? 100 : duration,
+    easing: 'ease-out',
+  });
+}
+
+function createAnswerLifecycle(message) {
+  const lifecycle = document.createElement('div');
+  lifecycle.className = 'answer-lifecycle';
+  const mark = document.createElement('span');
+  mark.className = 'answer-status-mark';
+  mark.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  label.className = 'answer-lifecycle-label';
+  label.setAttribute('role', 'status');
+  const details = document.createElement('span');
+  details.className = 'answer-lifecycle-details';
+  lifecycle.append(mark, label, details);
+  message.querySelector('.message-content')?.before(lifecycle);
+  return lifecycle;
+}
+
+function renderAnswerLifecycle(lifecycle, timing) {
+  if (!lifecycle) return;
+  const view = lifecycleView({ ...timing, locale: ui.locale });
+  lifecycle.dataset.status = view.status;
+  const label = lifecycle.querySelector('.answer-lifecycle-label');
+  const details = lifecycle.querySelector('.answer-lifecycle-details');
+  if (label.textContent !== view.label) label.textContent = view.label;
+  details.textContent = view.details;
+  lifecycle.classList.toggle('is-settled', view.settled);
+}
+
+function startAnswerLifecycle(lifecycle, timing) {
+  renderAnswerLifecycle(lifecycle, timing);
+  return setInterval(() => {
+    renderAnswerLifecycle(lifecycle, {
+      ...timing,
+      elapsedMs: performance.now() - timing.startedAt,
+    });
+  }, 250);
+}
+
+function settleAnswerLifecycle(lifecycle, ticker, timing, outcome) {
+  if (ticker) clearInterval(ticker);
+  if (!lifecycle) return;
+  renderAnswerLifecycle(lifecycle, {
+    ...timing,
+    elapsedMs: Math.max(0, performance.now() - timing.startedAt),
+    outcome,
+  });
 }
 
 function animateSuggestionSelection(text, source, style) {
@@ -656,7 +840,8 @@ function captureComposerPosition() {
 }
 
 function animateComposerPosition(previous, content) {
-  if (!previous || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!previous) { animateContentIn(content, { distance: 10, duration: 260 }); return; }
+  if (reducedMotion()) { fadeContentIn(content); return; }
   const next = form.getBoundingClientRect();
   const x = previous.left - next.left;
   const y = previous.top - next.top;
@@ -666,7 +851,7 @@ function animateComposerPosition(previous, content) {
       { transform: 'translate(0, 0)' },
     ], { duration: 380, easing: 'cubic-bezier(.2, .8, .2, 1)' });
   }
-  content.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+  fadeContentIn(content, 220);
 }
 
 function clearWelcomeExit() {
@@ -677,7 +862,7 @@ function clearWelcomeExit() {
 
 function fadeWelcomeOut() {
   const current = log.querySelector('.welcome');
-  if (!current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!current || reducedMotion()) return;
   const bounds = current.getBoundingClientRect();
   const copy = current.cloneNode(true);
   copy.setAttribute('aria-hidden', 'true');
@@ -707,6 +892,7 @@ function welcome() {
   const previous = main.classList.contains('is-empty') ? null : captureComposerPosition();
   clearWelcomeExit();
   clearSuggestionMotion();
+  messageShapes.reset();
   log.replaceChildren();
   main.classList.add('is-empty');
   updateQuestionPlaceholder();
@@ -749,6 +935,7 @@ function renderThread(messages) {
   clearWelcomeExit();
   if (fromWelcome) fadeWelcomeOut();
   clearSuggestionMotion();
+  messageShapes.reset();
   log.replaceChildren();
   main.classList.remove('is-empty');
   updateQuestionPlaceholder();
@@ -772,7 +959,6 @@ function currentThread() {
 
 function createMessage(role, text, sources = [], sourceCount, evidence = {}, historic = false) {
   const outer = document.createElement('article'); outer.className = `message ${role === 'user' ? 'user' : 'assistant'}`;
-  if (role !== 'user') { const label = document.createElement('div'); label.className = 'message-label'; label.textContent = '知天下 AI'; outer.append(label); }
   const content = document.createElement('div'); content.className = 'message-content';
   if (role === 'user') content.textContent = text || '';
   else {
@@ -780,9 +966,24 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
     renderAnswer(content, prepared?.text ?? text ?? '', sources);
   }
   outer.append(content);
+  if (role === 'user') messageShapes.observe(content);
   if (role !== 'user') {
+    if (historic) {
+      renderAnswerLifecycle(createAnswerLifecycle(outer), {
+        elapsedMs: evidence.timing?.elapsed_ms, queueWaitMs: evidence.timing?.queue_wait_ms,
+        outcome: Number.isFinite(evidence.timing?.elapsed_ms) ? 'done' : 'history',
+      });
+    }
+    if (historic) createAnswerProcess(outer, { locale: ui.locale, history: evidence.process });
     setSourceCount(outer, sourceCount ?? evidence.source_count ?? sources.length);
     setEvidenceStatus(outer, inspectSourceEvidence(evidence, false, sourceCount ?? sources.length));
+    const copy = { text: text || '', sources };
+    copy.control = createAnswerCopy(outer, {
+      getLabel: t,
+      getMarkdown: () => globalThis.ImaAnswerMarkdown?.answerMarkdownForCopy(copy.text, { sourceIndexes: sourceIndexes(copy.sources) }) ?? copy.text,
+    });
+    answerCopies.set(outer, copy);
+    copy.control.setReady(historic && Boolean(copy.text.trim()), { partial: evidence.complete === false || evidence.interrupted === true });
   }
   return outer;
 }
@@ -791,7 +992,7 @@ function setSourceCount(message, value) {
   const count = Number.isSafeInteger(Number(value)) ? Math.max(0, Number(value)) : 0;
   let badge = message.querySelector('.source-count');
   if (!count) { badge?.remove(); return; }
-  if (!badge) { badge = document.createElement('div'); badge.className = 'source-count'; message.append(badge); }
+  if (!badge) { badge = document.createElement('div'); badge.className = 'source-count'; appendAnswerMeta(message, badge); }
   badge.textContent = `检索资料 ${count} 条`;
 }
 
@@ -809,7 +1010,13 @@ function setEvidenceStatus(message, evidence, requestedWeb = false) {
   const note = document.createElement('div');
   note.className = `evidence-status${evidence?.verified ? ' verified' : ''}`;
   note.textContent = text;
-  message.append(note);
+  appendAnswerMeta(message, note);
+}
+
+function appendAnswerMeta(message, node) {
+  const tools = message.querySelector('.answer-tools');
+  if (tools) tools.before(node);
+  else message.append(node);
 }
 
 function sourceIndexes(sources) {
@@ -817,11 +1024,14 @@ function sourceIndexes(sources) {
 }
 
 function renderAnswer(element, text, sources = [], answerComplete = true) {
-  if (globalThis.ImaAnswerMarkdown?.updateAnswerElement) {
+  const copy = answerCopies.get(element.parentElement);
+  if (copy) { copy.text = text; copy.sources = sources; }
+  try {
+    if (!globalThis.ImaAnswerMarkdown?.updateAnswerElement) throw new Error('answer_renderer_unavailable');
     globalThis.ImaAnswerMarkdown.updateAnswerElement(element, text, {
       answerComplete, hideCitations: true, sourceIndexes: sourceIndexes(sources),
     });
-  } else {
+  } catch {
     element.textContent = text;
   }
 }
@@ -852,26 +1062,53 @@ async function ask(raw) {
   }));
 }
 
-async function streamAnswer(text, requestedWeb, request, queuedId = '') {
+async function streamAnswer(text, requestedWeb, request, queuedId = '', queuedCreatedAt = '') {
   let displayText = text;
+  const draftBeforeRequest = question.value;
+  let clearedDraft = false;
   const controller = new AbortController(); state.controller = controller;
+  state.activeWebRequest = requestedWeb;
+  setWebRequestState(requestedWeb ? 'searching' : 'idle');
   busy(true); status(queuedId ? '正在等待上一轮完成…' : '正在连接知识库…');
-  if (!queuedId && question.value.trim() === text) { question.value = ''; resizeQuestion(); question.blur(); updateSendButton(); }
+  if (!queuedId && question.value.trim() === text) {
+    question.value = ''; clearedDraft = true;
+    resizeQuestion(); question.blur(); updateSendButton();
+  }
   updateCarouselTimer();
-  let reply, content;
+  let reply, content, lifecycle, processView, lifecycleTicker = 0;
+  let lifecycleTiming = null;
+  const numericQueuedAt = Number(queuedCreatedAt);
+  const queuedAt = Number.isFinite(numericQueuedAt) && numericQueuedAt > 0 ? numericQueuedAt : Date.parse(queuedCreatedAt);
+  const setLifecyclePhase = phase => {
+    if (!lifecycleTiming) return;
+    lifecycleTiming.phase = phase;
+    renderAnswerLifecycle(lifecycle, {
+      ...lifecycleTiming,
+      elapsedMs: performance.now() - lifecycleTiming.startedAt,
+    });
+  };
   const beginTurn = () => {
     if (reply) return;
     const thread = currentThread();
     thread.querySelector('.chat-notice')?.remove();
     if (!queuedId) state.followLatest = true;
     updateFloatingControls();
-    thread.append(createMessage('user', displayText));
+    const userMessage = createMessage('user', displayText);
+    thread.append(userMessage);
     reply = createMessage('assistant', '正在查找相关资料…');
     content = reply.querySelector('.message-content'); content.classList.add('typing');
+    lifecycle = createAnswerLifecycle(reply);
+    processView = createAnswerProcess(reply, { locale: ui.locale });
+    lifecycleTiming = {
+      phase: 'connecting', startedAt: performance.now(),
+      queueWaitMs: queuedId && Number.isFinite(queuedAt) ? Math.max(0, Date.now() - queuedAt) : 0,
+    };
+    lifecycleTicker = startAnswerLifecycle(lifecycle, lifecycleTiming);
     thread.append(reply);
+    animateContentIn(userMessage, { distance: 6, duration: 220 });
+    fadeContentIn(reply, 200);
     if (state.followLatest) scrollBottom();
   };
-  if (!queuedId) beginTurn();
   let doneCount = 0, receivedDelta = false, parser = '', answerText = '', answerSources = [], doneMetadata = null;
   let renderFrame = 0;
   const scheduleRender = () => {
@@ -883,12 +1120,14 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '') {
     });
   };
   try {
+    if (!queuedId) beginTurn();
     const response = await request(controller.signal);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.error || '问答服务暂不可用');
     }
     if (!response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('服务返回了意外的响应格式');
+    setLifecyclePhase('retrieving');
     const reader = response.body.getReader(), decoder = new TextDecoder();
     while (true) {
       const { value, done: streamDone } = await reader.read();
@@ -913,22 +1152,36 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '') {
             state.queuedJobs = state.queuedJobs.filter(job => job.id !== queuedId);
             renderQueue();
             status('正在连接知识库…');
+            setLifecyclePhase('connecting');
           }
         }
         if (queuedId && data.conversationId && data.conversationId !== state.conversationId) throw new Error('待发问题的会话不一致');
-        if (queuedId && ['conversation', 'sources', 'delta', 'done'].includes(event)) beginTurn();
+        if (queuedId && ['conversation', 'process', 'sources', 'delta', 'done'].includes(event)) beginTurn();
         if (event === 'conversation' && data.conversationId) setConversation(data.conversationId);
+        if (event === 'process') {
+          processView?.push(data);
+          if (state.followLatest) scrollBottom();
+        }
         if (event === 'sources') {
           answerSources = Array.isArray(data.sources) ? data.sources : [];
           setSourceCount(reply, data.sourceCount ?? answerSources.length);
           if (receivedDelta) scheduleRender();
-          status('已找到资料，正在组织回答…');
+          if (!receivedDelta) {
+            status('已找到资料，正在组织回答…');
+            setLifecyclePhase('composing');
+          }
         }
         if (event === 'delta' && typeof data.text === 'string') {
-          if (!receivedDelta) { content.textContent = ''; content.classList.remove('typing'); receivedDelta = true; }
+          if (!receivedDelta) {
+            content.textContent = '';
+            content.classList.remove('typing');
+            receivedDelta = true;
+            fadeContentIn(content, 180);
+          }
           answerText += data.text;
           scheduleRender();
           status('正在生成回答…');
+          setLifecyclePhase('generating');
         }
         if (event === 'done') {
           doneCount += 1;
@@ -947,9 +1200,25 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '') {
     setSourceCount(reply, finalSourceCount);
     setEvidenceStatus(reply, evidence, requestedWeb);
     content.classList.remove('typing'); status('回答已完成');
+    answerCopies.get(reply)?.control.setReady(Boolean(answerText.trim()));
+    processView?.settle('done');
+    settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, 'done');
+    if (Number.isFinite(doneMetadata?.timing?.elapsed_ms)) {
+      renderAnswerLifecycle(lifecycle, {
+        elapsedMs: doneMetadata.timing.elapsed_ms,
+        queueWaitMs: lifecycleTiming.queueWaitMs + (doneMetadata.timing.queue_wait_ms || 0), outcome: 'done',
+      });
+    }
+    lifecycleTicker = 0;
+    if (requestedWeb) setWebRequestState(evidence.kind === 'requested_web_found' ? 'verified' : 'missing');
     updateFloatingControls();
     await loadConversations();
   } catch (error) {
+    processView?.settle(controller.signal.aborted ? 'cancelled' : 'interrupted');
+    if (clearedDraft && !receivedDelta && !controller.signal.aborted && !question.value.trim()) {
+      question.value = draftBeforeRequest;
+      resizeQuestion(); renderSuggestions();
+    }
     if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
     if (reply) {
       if (receivedDelta) renderAnswer(content, answerText, answerSources, false);
@@ -957,12 +1226,24 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '') {
       if (!receivedDelta) content.textContent = '';
       const warning = document.createElement('div'); warning.className = 'message-error';
       warning.textContent = controller.signal.aborted ? '已停止本次回答。' : `${error.message}。这轮回答未完成，可稍后重试。`;
-      reply.append(warning);
+      appendAnswerMeta(reply, warning);
+      answerCopies.get(reply)?.control.setReady(receivedDelta && Boolean(answerText.trim()), { partial: true });
     }
+    settleAnswerLifecycle(
+      lifecycle,
+      lifecycleTicker,
+      lifecycleTiming,
+      controller.signal.aborted ? 'cancelled' : receivedDelta ? 'interrupted' : 'failed',
+    );
+    lifecycleTicker = 0;
+    if (requestedWeb) setWebRequestState('idle');
     status(controller.signal.aborted ? '已停止' : reply ? '回答未完成' : error.message, !reply);
     updateFloatingControls();
   } finally {
+    if (lifecycleTicker) clearInterval(lifecycleTicker);
     state.controller = null;
+    state.activeWebRequest = false;
+    updateWebIntentControl();
     if (queuedId) state.activeQueuedId = '';
     const nextStarted = await syncQueue();
     if (!nextStarted || !state.activeQueuedId) busy(false);

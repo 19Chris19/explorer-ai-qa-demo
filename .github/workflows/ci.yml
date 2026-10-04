@@ -25,3 +25,23 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run check:release
+
+  containers:
+    name: Docker synthetic acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPLORER_IMAGE: explorer-ci:${{ github.sha }}
+      EXPLORER_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/prepare-docker-lab.mjs
+      - run: docker build --build-arg SOURCE_REVISION="$EXPLORER_REVISION" -t "$EXPLORER_IMAGE" .
+      - run: docker compose -p air-qa-synthetic -f compose.linux.yaml -f deploy/docker/compose.synthetic.yaml up -d --no-build --wait --wait-timeout 180
+      - run: node scripts/verify-docker-lab.mjs --synthetic
+      - if: always()
+        run: docker compose -p air-qa-synthetic -f compose.linux.yaml -f deploy/docker/compose.synthetic.yaml stop

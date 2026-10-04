@@ -44,6 +44,43 @@
     }
   }
 
+  function answerMarkdownForCopy(value, options = {}) {
+    const source = String(value ?? '');
+    const known = new Set((options.sourceIndexes || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0));
+    if (!known.size || !marked) return source;
+    const edits = [];
+    // Work from parser token boundaries so code, links and escaped literals stay intact.
+    function visit(tokens, lower, upper) {
+      let cursor = lower;
+      for (const token of tokens || []) {
+        const at = token.raw ? source.indexOf(token.raw, cursor) : -1;
+        const located = at >= cursor && at + token.raw.length <= upper;
+        const start = located ? at : cursor;
+        const end = located ? at + token.raw.length : upper;
+        if (token.type === 'link' && isContextRef(token.href) && known.has(Number(token.text))) {
+          if (located) edits.push([start, end]);
+        } else if (!['code', 'codespan', 'link', 'image', 'html', 'escape'].includes(token.type)) {
+          if (token.type === 'text' && !token.tokens && located) {
+            for (const match of token.raw.matchAll(/(?<!\\)\[(\d+)\]/gu)) {
+              if (known.has(Number(match[1]))) edits.push([start + match.index, start + match.index + match[0].length]);
+            }
+          } else {
+            let childCursor = visit(token.tokens, start, end);
+            for (const item of token.items || []) childCursor = visit(item.tokens, childCursor, end);
+            for (const cell of [...(token.header || []), ...(token.rows || []).flat()]) childCursor = visit(cell.tokens, childCursor, end);
+            if (!located) cursor = childCursor;
+          }
+        }
+        if (located) cursor = end;
+      }
+      return cursor;
+    }
+    visit(marked.lexer(source, { gfm: true }), 0, source.length);
+    let result = source;
+    for (const [start, end] of edits.sort((a, b) => b[0] - a[0])) result = result.slice(0, start) + result.slice(end);
+    return result;
+  }
+
   function tableCells(line) {
     const inner = line.trim().replace(/^\|/u, '').replace(/(?<!\\)\|$/u, '');
     return inner.split(/(?<!\\)\|/u).map((cell) => cell.trim());
@@ -150,5 +187,5 @@
     element.append(...next.slice(stable));
   }
 
-  root.ImaAnswerMarkdown = { formatAnswerHtml, updateAnswerElement, prepareLegacyAnswer };
+  root.ImaAnswerMarkdown = { formatAnswerHtml, updateAnswerElement, prepareLegacyAnswer, answerMarkdownForCopy };
 })(globalThis);

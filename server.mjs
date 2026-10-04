@@ -38,10 +38,19 @@ const staticFiles = new Map([
   ['/questions.json', ['public/questions.json', 'application/json; charset=utf-8']],
   ['/question-rotation.mjs', ['question-rotation.mjs', 'text/javascript; charset=utf-8']],
   ['/source-evidence.mjs', ['source-evidence.mjs', 'text/javascript; charset=utf-8']],
+  ['/turn-lifecycle.mjs', ['public/turn-lifecycle.mjs', 'text/javascript; charset=utf-8']],
+  ['/answer-process.mjs', ['public/answer-process.mjs', 'text/javascript; charset=utf-8']],
+  ['/prompt-sparks.mjs', ['public/prompt-sparks.mjs', 'text/javascript; charset=utf-8']],
+  ['/voice-preview.mjs', ['public/voice-preview.mjs', 'text/javascript; charset=utf-8']],
+  ['/message-shape.mjs', ['public/message-shape.mjs', 'text/javascript; charset=utf-8']],
+  ['/composer-shape.mjs', ['public/composer-shape.mjs', 'text/javascript; charset=utf-8']],
+  ['/composer-controls.mjs', ['public/composer-controls.mjs', 'text/javascript; charset=utf-8']],
+  ['/answer-copy.mjs', ['public/answer-copy.mjs', 'text/javascript; charset=utf-8']],
+  ['/selection-copy.mjs', ['public/selection-copy.mjs', 'text/javascript; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/answer-markdown.js', ['public/answer-markdown.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/marked.umd.js', ['node_modules/marked/lib/marked.umd.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/purify.min.js', ['node_modules/dompurify/dist/purify.min.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/marked.umd.js', ['public/vendor/marked.umd.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/purify.min.js', ['public/vendor/purify.min.js', 'text/javascript; charset=utf-8']],
   ['/admin.js', ['public/admin.js', 'text/javascript; charset=utf-8']],
 ]);
 
@@ -61,6 +70,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': type });
       if (pathname === '/') {
         let html = readFileSync(join(root, file), 'utf8');
+        if (disableAdmin) html = html.replace(/<a class="admin-link"[^>]*>.*?<\/a>/su, '');
         if (embedded) html = html.replace('class="app-page"', 'class="app-page qa-embedded"');
         if (assetPrefix) html = html.replaceAll('href="/', `href="${assetPrefix}/`).replaceAll('src="/', `src="${assetPrefix}/`);
         res.end(html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`));

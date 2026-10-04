@@ -52,7 +52,7 @@ test('server keeps Provider A credentials private and streams two turns under on
   const runtimeDir = mkdtempSync(join(tmpdir(), 'ima-web-demo-test-'));
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: fileURLToPath(new URL('../', import.meta.url)),
-    env: { ...process.env, PORT: String(frontendPort), DEMO_RUNTIME_DIR: runtimeDir, DEMO_COOKIE_SECRET: 'synthetic-cookie-secret', PROVIDER_A_BASE_URL: `http://127.0.0.1:${fakePort}`, PROVIDER_A_API_TOKEN: 'test-only-token', PROVIDER_A_INTERNAL_SERVICE_TOKEN: 'test-only-service-token', PROVIDER_A_KNOWLEDGE_SCOPE_REF: 'a'.repeat(64) },
+    env: { ...process.env, DEMO_DISABLE_ADMIN: '1', PORT: String(frontendPort), DEMO_RUNTIME_DIR: runtimeDir, DEMO_COOKIE_SECRET: 'synthetic-cookie-secret', PROVIDER_A_BASE_URL: `http://127.0.0.1:${fakePort}`, PROVIDER_A_API_TOKEN: 'test-only-token', PROVIDER_A_INTERNAL_SERVICE_TOKEN: 'test-only-service-token', PROVIDER_A_KNOWLEDGE_SCOPE_REF: 'a'.repeat(64) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   try {
@@ -61,6 +61,8 @@ test('server keeps Provider A credentials private and streams two turns under on
     assert.equal(page.status, 200);
     const html = await page.text();
     assert.equal(html.includes('test-only-token'), false);
+    assert.equal(html.includes('class="admin-link"'), false);
+    assert.equal((await fetch(`http://127.0.0.1:${frontendPort}/admin`)).status, 404);
     assert.match(html, /\/answer-markdown\.js/u);
     const renderer = await fetch(`http://127.0.0.1:${frontendPort}/answer-markdown.js`);
     assert.equal(renderer.status, 200);
