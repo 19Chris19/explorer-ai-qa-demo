@@ -8,6 +8,7 @@ import { SessionModeStore } from './session-mode-store.mjs';
 import { RequestLedger } from './request-ledger.mjs';
 import { ConversationTurnQueue } from './conversation-turn-queue.mjs';
 import { PreviewAdmission } from './preview-admission.mjs';
+import { deploymentPaths, routePath, storageNamespace } from './deployment-paths.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const env = readPrivateEnv(join(root, '.env.local'));
@@ -20,7 +21,8 @@ const knowledgeScopeRef = process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || env.PROV
 const cookieSecret = process.env.DEMO_COOKIE_SECRET || env.DEMO_COOKIE_SECRET || providerApiToken;
 const releaseRevision = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_REVISION || 'local-dev';
 const disableAdmin = (process.env.DEMO_DISABLE_ADMIN || env.DEMO_DISABLE_ADMIN) === '1';
-const assetPrefix = process.env.DEMO_ASSET_PREFIX || env.DEMO_ASSET_PREFIX || '';
+const paths = deploymentPaths({ ...env, ...process.env });
+const assetPrefix = paths.prefix;
 const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef });
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');
 const nativeSessions = new SessionModeStore(join(runtimeDir, 'native-sessions.json'));
@@ -47,6 +49,7 @@ const staticFiles = new Map([
   ['/composer-controls.mjs', ['public/composer-controls.mjs', 'text/javascript; charset=utf-8']],
   ['/answer-copy.mjs', ['public/answer-copy.mjs', 'text/javascript; charset=utf-8']],
   ['/selection-copy.mjs', ['public/selection-copy.mjs', 'text/javascript; charset=utf-8']],
+  ['/host-bridge.mjs', ['public/host-bridge.mjs', 'text/javascript; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/answer-markdown.js', ['public/answer-markdown.js', 'text/javascript; charset=utf-8']],
   ['/vendor/marked.umd.js', ['public/vendor/marked.umd.js', 'text/javascript; charset=utf-8']],
@@ -56,12 +59,11 @@ const staticFiles = new Map([
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
 if (!['127.0.0.1', '0.0.0.0'].includes(listenHost)) throw new Error('Invalid DEMO_LISTEN_HOST');
-if (assetPrefix && !/^\/[a-z0-9-]+$/u.test(assetPrefix)) throw new Error('Invalid DEMO_ASSET_PREFIX');
 
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', 'http://localhost');
-    const pathname = url.pathname;
+    const pathname = routePath(url.pathname, assetPrefix);
     const embedded = pathname === '/' && url.searchParams.get('embed') === '1';
     setSecurityHeaders(res, embedded);
     if (disableAdmin && ['/admin', '/admin.js'].includes(pathname)) { sendJson(res, 404, { error: 'Not found' }); return; }
@@ -73,7 +75,8 @@ const server = createServer(async (req, res) => {
         if (disableAdmin) html = html.replace(/<a class="admin-link"[^>]*>.*?<\/a>/su, '');
         if (embedded) html = html.replace('class="app-page"', 'class="app-page qa-embedded"');
         if (assetPrefix) html = html.replaceAll('href="/', `href="${assetPrefix}/`).replaceAll('src="/', `src="${assetPrefix}/`);
-        res.end(html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`));
+        res.end(html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`)
+          .replace('name="qa-storage-namespace" content=""', `name="qa-storage-namespace" content="${storageNamespace(paths)}"`));
       } else res.end(readFileSync(join(root, file)));
       return;
     }
@@ -153,12 +156,12 @@ function isSameOrigin(req) {
 }
 
 function getClientId(req, res) {
-  const current = /(?:^|;\s*)qa_demo_client_v2=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
-  if (current && (validSignature(current[1], current[2]) || validSignature(current[1], current[2], providerApiToken))) return `demo:${current[1]}`;
-  const match = /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
+  const current = new RegExp(`(?:^|;\\s*)${paths.cookieName}=([a-f0-9-]{36})\\.([a-f0-9]{64})(?:;|$)`, 'iu').exec(req.headers.cookie || '');
+  if (current && (validSignature(current[1], current[2]) || (!storageNamespace(paths) && validSignature(current[1], current[2], providerApiToken)))) return `demo:${current[1]}`;
+  const match = !storageNamespace(paths) && /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
   if (match && validSignature(match[1], match[2], providerApiToken)) return match[1];
   const id = randomUUID();
-  res.setHeader('Set-Cookie', `qa_demo_client_v2=${id}.${signClientId(id)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${isPreview(req) ? '; Secure' : ''}`);
+  res.setHeader('Set-Cookie', `${paths.cookieName}=${id}.${signClientId(id)}; HttpOnly; SameSite=Lax; Path=${paths.cookiePath}; Max-Age=2592000${paths.secure || isPreview(req) ? '; Secure' : ''}`);
   return `demo:${id}`;
 }
 

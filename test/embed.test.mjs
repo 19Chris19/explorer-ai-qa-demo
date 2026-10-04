@@ -16,7 +16,9 @@ test('main-site embed keeps QA assets prefixed and disables the admin prototype'
   const runtime = mkdtempSync(join(tmpdir(), 'explorer-embed-test-'));
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: fileURLToPath(new URL('../', import.meta.url)),
-    env: { ...process.env, PORT: String(port), DEMO_RUNTIME_DIR: runtime, DEMO_ASSET_PREFIX: '/qa-app', DEMO_DISABLE_ADMIN: '1', DEMO_RELEASE_REVISION: 'synthetic-revision' },
+    env: { ...process.env, PORT: String(port), DEMO_RUNTIME_DIR: runtime, DEMO_ASSET_PREFIX: '/qa-app', DEMO_DISABLE_ADMIN: '1', DEMO_RELEASE_REVISION: 'synthetic-revision',
+      PROVIDER_A_BASE_URL: 'http://127.0.0.1:1', PROVIDER_A_API_TOKEN: 'synthetic-api', PROVIDER_A_INTERNAL_SERVICE_TOKEN: 'synthetic-service',
+      PROVIDER_A_KNOWLEDGE_SCOPE_REF: '0'.repeat(64), DEMO_COOKIE_SECRET: 'synthetic-cookie' },
     stdio: 'ignore',
   });
   try {
@@ -31,6 +33,13 @@ test('main-site embed keeps QA assets prefixed and disables the admin prototype'
     assert.match(html, /src="\/qa-app\/app.js"/u);
     assert.match(html, /name="qa-asset-prefix" content="\/qa-app"/u);
     assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'self'/u);
+    const prefixed = await fetch(`http://127.0.0.1:${port}/qa-app/?embed=1`);
+    assert.equal(prefixed.status, 200);
+    assert.match(await prefixed.text(), /qa-embedded/u);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/qa-app/host-bridge.mjs`)).status, 200);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/qa-app/api/qa/health`)).status, 503);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/qa-app/admin`)).status, 404);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/qa-app/internal/capacity`)).status, 404);
     assert.equal((await fetch(`http://127.0.0.1:${port}/admin`)).status, 404);
     assert.equal((await fetch(`http://127.0.0.1:${port}/admin.js`)).status, 404);
     const standalone = await fetch(`http://127.0.0.1:${port}/`);
