@@ -1,6 +1,6 @@
 services:
   provider-a:
-    image: ${PROVIDER_IMAGE:-air-provider-baseline-ima-qa-web:latest}
+    image: ${PROVIDER_IMAGE:?Initialize with onboard and use the generated release.env}
     restart: unless-stopped
     env_file: .docker-lab/provider.env
     ports:
@@ -16,7 +16,7 @@ services:
       start_period: 120s
       retries: 5
   explorer-qa:
-    image: ${EXPLORER_IMAGE:-air-explorer:lab}
+    image: ${EXPLORER_IMAGE:?Initialize with onboard and use the generated release.env}
     build:
       context: .
       args:

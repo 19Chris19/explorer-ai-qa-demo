@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { initialize, parseOptions } from './release-config.mjs';
+import { readBundle, selectBundleImages, verifyBundleImages } from './bundle.mjs';
 
 export const DEFAULT_SHARE_URL = 'https://ima.qq.com/wiki/?shareId=e528d98d028732fcd9b6adcc879db1463a8b3e4c8f8beb82a7519c4b4fdf8e64';
 export function parseOnboardingOptions(args) {
@@ -21,11 +22,11 @@ export function parseOnboardingOptions(args) {
     '--web-port', values['web-port'], '--provider-port', values['provider-port']]);
   return { ...base, mode: values.mode, shareUrl: values['share-url'], targetFile: values['target-file'] };
 }
-export function providerTools(directory) {
+export function providerTools(directory, tag = readBundle().PROVIDER_TAG) {
   try {
     const require = createRequire(join(resolve(directory), 'package.json'));
     const metadata = require('./package.json');
-    if (!/^0\.4\.(?:[2-9]|[1-9][0-9]+)$/.test(metadata.version) || metadata.name !== 'ima-qa-web') throw Error();
+    if (`v${metadata.version}` !== tag || metadata.name !== 'ima-qa-web') throw Error();
     const tools = require('./src/guided-deployment.js');
     const target = require('./src/shared-kb-target.js');
     if (typeof tools.guided !== 'function' || typeof tools.resolveGuidedTarget !== 'function' || typeof target.verifySharedMembership !== 'function') throw Error();
@@ -61,8 +62,9 @@ async function checkEnrollment(execute, compose, mode) {
   if (result.protocol !== 'shared_library_membership_v1' || mode === 'desktop' && result.browserReady !== true) throw Error('enrollment_path_not_ready');
 }
 export async function onboard(root, command, args, dependencies = {}) {
-  const source = resolve(process.env.PROVIDER_SOURCE_DIR || join(root, '.maintenance/provider-v0.4.2'));
-  const tools = dependencies.tools || providerTools(source);
+  const bundle = readBundle();
+  const source = resolve(process.env.PROVIDER_SOURCE_DIR || join(root, `.maintenance/provider-${bundle.PROVIDER_TAG}`));
+  const tools = dependencies.tools || providerTools(source, bundle.PROVIDER_TAG);
   const execute = dependencies.docker || ((args, capture) => docker(root, args, capture));
   const emit = dependencies.emit || (value => console.log(JSON.stringify(value)));
   const dir = join(root, '.docker-lab');
@@ -71,28 +73,31 @@ export async function onboard(root, command, args, dependencies = {}) {
   if (command === 'doctor') {
     await tools.guided(source, 'doctor', {}, emit);
     emit({ stage: 'website_preflight', existingInstallation: existsSync(join(dir, 'deployment.json')),
-      providerBaseline: 'v0.4.2', candidate: true, realQaVerified: false }); return;
+      providerBaseline: bundle.PROVIDER_TAG, websiteVersion: bundle.WEBSITE_VERSION,
+      topology: 'dedicated-provider', candidate: bundle.STATUS === 'candidate', realQaVerified: false }); return;
   }
   if (command === 'init') {
     const options = parseOnboardingOptions(args);
     if (['provider.env', 'explorer.env', 'deployment.json', 'release.env'].some(name => existsSync(join(dir, name)))) throw Error('existing_installation_protected');
+    const images = selectBundleImages(bundle, dependencies.env || process.env);
     await tools.guided(source, 'doctor', {}, emit);
     if (await execute(['ps', '-aq', '--filter', `label=com.docker.compose.project=${options.project}`], true)) throw Error('existing_compose_project_protected');
     await (dependencies.freePort || freePort)(options.webPort); await (dependencies.freePort || freePort)(options.providerPort);
-    const images = [process.env.PROVIDER_IMAGE || 'ghcr.io/19chris19/ima-qa-web-agent:v0.4.2',
-      process.env.EXPLORER_IMAGE || 'ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.1'];
     for (const image of images) {
       if (!/^[a-z0-9][a-z0-9./:_@-]+$/.test(image)) throw Error('invalid_image');
       if (!await execute(['image', 'inspect', image], true).catch(() => '')) await execute(['pull', image]);
     }
     const inspected = JSON.parse(await execute(['image', 'inspect', ...images], true));
+    verifyBundleImages(bundle, inspected);
     await execute(['run', '--rm', '--network', 'none', '--entrypoint', 'node', images[0], '-e',
       `if(require('playwright-core/package.json').version!==${JSON.stringify(tools.playwrightVersion)}||typeof require('./src/shared-kb-target').verifySharedMembership!=='function')process.exit(1)`]);
     const target = await tools.resolveGuidedTarget(source, { shareUrl: options.shareUrl, mode: options.mode,
       project: options.project, directory: helperDir, targetFile: options.targetFile }, emit);
     if (options.mode === 'desktop') await tools.guided(source, 'browser-install', { project: options.project, directory: helperDir }, emit);
     const metadata = initialize(dir, { ...options, shareUrl: tools.parseShareUrl(target.shareUrl).url, kb: target.knowledgeBaseId,
-      onboarding: { version: 1, mode: options.mode, providerSource: source } }, inspected);
+      onboarding: { version: 1, mode: options.mode, providerSource: source },
+      bundle: { websiteVersion: bundle.WEBSITE_VERSION, providerTag: bundle.PROVIDER_TAG,
+        status: bundle.STATUS, topology: 'dedicated-provider' } }, inspected);
     emit({ stage: 'configured', project: metadata.project, credentialsConfigured: true });
     return onboard(root, 'resume', [], dependencies);
   }

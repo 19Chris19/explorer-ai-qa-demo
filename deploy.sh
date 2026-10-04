@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 umask 077
-cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$ROOT"
+. "$ROOT/deploy/bundle.sh"
 
 compose() {
   test -f .docker-lab/release.env || { echo 'Initialize a new installation first; existing legacy installations use their recorded procedure.' >&2; exit 1; }
@@ -12,8 +14,11 @@ command=${1:-help}
 if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
   init)
-    provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:v0.4.2}
-    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.1}
+    if [ "$BUNDLE_STATUS" = candidate ] && { [ -z "${PROVIDER_IMAGE:-}" ] || [ -z "${EXPLORER_IMAGE:-}" ]; }; then
+      echo 'Unpublished candidate: explicit reviewed image pair required.' >&2; exit 1
+    fi
+    provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:$PROVIDER_TAG}
+    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v$WEBSITE_VERSION}
     echo 'Advanced numeric-ID initialization does not prepare QR tooling. New installations should use onboard.sh/onboard.ps1.' >&2
     project=zhitianxia-qa
     next_project=0

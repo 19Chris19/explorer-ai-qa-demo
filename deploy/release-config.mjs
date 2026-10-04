@@ -37,6 +37,7 @@ export function initialize(dir, options, images) {
     providerRevision: provider.revision, explorerImage: website.image, explorerRevision: website.revision,
     webPort: options.webPort, providerPort: options.providerPort };
   if (options.onboarding) metadata.onboarding = options.onboarding;
+  if (options.bundle) metadata.bundle = options.bundle;
   prepareConfiguration(dir, options.kb);
   if (options.shareUrl) appendFileSync(resolve(dir, 'provider.env'), `IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_SHARE_URL=${options.shareUrl}\n`);
   writeFileSync(resolve(dir, 'deployment.json'), JSON.stringify(metadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });

@@ -17,4 +17,10 @@ Date: 2026-10-04. Baseline e99aff24 (v0.2.0). Depends on Provider v0.4.2, not ye
 
 No public PR, Release or cutover has occurred. Do not describe this candidate as already shipped.
 
+## 2026-10-05 deployment normalization
+
+Website candidate now centralizes version selection in `deploy/bundle.env`, blocks implicit unpublished installs, records the resolved pair, and makes the image workflow record Provider as well as website provenance. New installations remain dedicated to their own Provider and volumes. Old/manual routes are explicitly advanced.
+
+Clean npm ci and build passed; 93/93 application tests passed, including synthetic BFF streaming/queue/history coverage and version/candidate guards. Shell syntax, workflow YAML and Compose configuration passed without starting containers. The 2026-10-04 ARM64 container evidence above covers earlier code, not a new Docker execution of this normalization. PowerShell execution, full installation of the new candidate, published image pull and real IMA acceptance remain NOT RUN. Candidate release gates must not be bypassed by merely changing STATUS.
+
 Adapter commits `dcdbb41` and `2ae76ca` are retained on `codex/FEAT-20261004-EXPLORER-AGENT-ONBOARDING`; they depend on Provider's onboarding contract, not its branded UI. Roll back the website adapter before removing Provider tooling. Published v0.2.0 remains untouched; code rollback must preserve current runtime/account volumes.

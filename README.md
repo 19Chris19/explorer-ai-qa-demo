@@ -1,10 +1,27 @@
-# 知天下 AI 问答演示前端
+# 知天下 AI 问答网站
 
-这是从另一台 Mac 的源码快照导入的独立演示应用，包含问答页、同源 Node BFF、模拟测试和后续 A/B/C 规划。原始导出背景见 [HANDOFF.md](HANDOFF.md)；其中关于 SSH 隧道的步骤只适用于原机器，不是 Air 本机启动要求。
+本仓库交付品牌问答页和同源网站后端（BFF），通过独立的 Provider A 服务使用腾讯 IMA 知识库。**部署知天下只从本仓库进入：安装工具准备匹配的 Provider A，不需要你手工拼接两个项目，也不依赖维护者的 Air。**
+
+## 一套产品，两个分工明确的仓库
+
+```text
+访客浏览器 → 网站入口 Nginx → 知天下网页 / BFF → Provider A → 腾讯 IMA
+                              网站身份、待发队列    账号、会话、调度
+                                   独立数据卷        独立数据卷
+维护电脑 → 官方扫码窗口 → Provider 管理接口 → 加密账号库（服务端）
+```
+
+默认一个 Compose 项目启动网关、网站和专用 Provider 三个容器，可以全部在一台机器上运行。回答沿原路流式返回，浏览器不取得 Provider 凭证；扫码浏览器只用于维护，不是每轮问答的运行依赖。Provider 的公共通用问答页可以单独使用；知天下的品牌网页不是其 fork，也不包含第二份 IMA 登录实现。
+
+两仓分开开发，整套部署按配套版本交付。共用既有 Provider（例如机器人账号池）是高级接入：并发额度、维护窗口和故障会互相影响，不能自动绑定现有 Air 服务。
 
 ## Agent 安装与扫码接入（v0.2.1 候选）
 
-新流程默认预设“3DGS 知识答疑”官方分享链接，复用 Provider A v0.4.2 的专用扫码工具，不另做一份登录实现。两版候选尚未发布；当前 v0.2.0 的部署说明继续有效。候选的完整操作与平台边界见 [Agent 部署说明](./docs/AGENT_DEPLOYMENT.md)。
+这是新安装的唯一推荐入口。预设“3DGS 知识答疑”分享链接，也支持显式配置其他官方分享链接。先准备私有仓库和私有镜像拉取权限、Docker 与 Git，再交给 Agent；需要扫码、手机确认或加入知识库时由人完成。
+
+**当前 v0.2.1 / Provider v0.4.2 是未发布候选**，不能直接下载这两个新 tag。候选安装必须显式指定审查过的源码与镜像，否则工具在下载或启动前阻断。已发布 v0.2.0 安装者继续使用其 tag 内的文档，不用候选命令混改旧安装。
+
+完整流程见 [Agent 部署说明](./docs/AGENT_DEPLOYMENT.md)。[配套清单](./deploy/bundle.env)统一选择版本；[版本与候选门槛](./docs/DEPLOYMENT_MODEL.md)解释镜像摘要、独立部署和发布顺序。
 
 > 请部署此私有仓库最新已发布稳定版本，先读 README 与 docs/AGENT_DEPLOYMENT.md。检查私有仓库及镜像权限、系统、Docker、端口和已有安装，使用仓库引导工具部署网站与匹配的 Provider A；默认知识库为“3DGS 知识答疑”。不要输出凭证、覆盖账号或会话，不开放管理/内部接口。需要扫码、手机确认、加入知识库、服务器信息或系统授权时暂停。完成后报告版本、网站地址、扫码接入状态、未通过项目与恢复方式；真实一问一追问须先授权，不把服务启动当成问答成功。
 
@@ -16,15 +33,13 @@
 
 ## 与 Provider A 的关系
 
-新服务器请先看[版本部署入口](./docs/VERSIONED_RELEASES.md)和
-[Docker 一键启动与加账号](./docs/DOCKER_QUICKSTART.md)。下载固定 Release，
-使用对应镜像、生成独立私有配置并校验接口合同；升级不会重新生成密钥。
+新服务器按上面的 Agent 引导安装；升级和回退见[版本部署入口](./docs/VERSIONED_RELEASES.md)。下载固定 Release，使用对应镜像、生成独立私有配置并校验接口合同；升级不会重新生成密钥。
 v0.2.0 保留已验收的输入、阅读、流式格式、复制与划词复制体验，并加入真实
 主站桌面导航外壳及[同域接入适配](./docs/MAIN_SITE_ADAPTER.md)。窄屏使用紧凑
 导航，嵌入模式隐藏内部导航；没有声称主站已经上线。容器与网页健康接口显示
 各自实际运行提交，发布 Release 本身不会自动更新所有运行环境。
 
-双服务容器部署请从 [Docker 空池演练与恢复指南](./docs/DOCKER_REHEARSAL.md) 开始。该演练使用全新私有配置，不复制 Air 账号；本机演练入口为 4417，与既有 4317 在线预览完全分离。合成问答通过不等于真实 IMA 或云服务器长期运行验收。
+[Docker 空池演练与恢复指南](./docs/DOCKER_REHEARSAL.md)仅是维护者的历史验收记录，不是新用户安装入口。合成问答通过不等于真实 IMA 或云服务器长期运行验收。
 
 本应用是知天下的品牌网站，不是 Provider A 的 fork。Provider A 独立管理授权账号、IMA 会话、调度和问答；本应用独立管理页面、网站身份和业务后端。两个服务通过有版本约束的接口连接，不共享账号库、运行目录或凭证文件。本应用暂按私有仓库维护；不要把整个根项目推到 [Provider A 公开仓库](https://github.com/19Chris19/ima-qa-web-agent)。
 
@@ -34,37 +49,20 @@ v0.2.0 保留已验收的输入、阅读、流式格式、复制与划词复制�
                                     └─ 服务 token：原生 Agent 容量与流式问答
 ```
 
-| Provider A 版本 | 本应用真实问答兼容性 |
+| Provider A 版本 | 网站配套范围 |
 | --- | --- |
 | v0.4.2 候选 | v0.2.1 引导扫码基线，尚未发布及真实新账号验收；不可称开箱完成。 |
 | v0.3.1 及更早版本 | 不兼容本应用使用的带键内部 SSE；不能仅凭健康检查宣称已接通。 |
-| [v0.4.1](https://github.com/19Chris19/ima-qa-web-agent/releases/tag/v0.4.1) | 本应用固定部署基线；启动及派发前校验 `schemaVersion: 1` 和 `knowledge_agent_keyed_sse_v1`。合成合同通过不代替部署者真实 IMA 验收。 |
+| [v0.4.1](https://github.com/19Chris19/ima-qa-web-agent/releases/tag/v0.4.1) | 已发布网站 v0.2.0 的部署基线，不是本次引导扫码基线；启动及派发前校验 `schemaVersion: 1` 和 `knowledge_agent_keyed_sse_v1`。 |
 | v0.4.0 | 保留相同问答合同，但缺少 v0.4.1 的 Docker 初始化与扫码接入修复；新部署采用 v0.4.1。 |
 
 如需使用后续 Provider A 补丁版本，先确认受保护的容量接口仍声明同一合同，并在隔离环境按[接入指南](./docs/PROVIDER_A_WEB_INTEGRATION.md)完成真实一问一追问。Provider A 的发布不会自动替换本机正在运行的 3117；本网站也没有因此上线主站。
 
 拆为独立私有仓库时，只导出本目录的源码、合成测试和文档；排除 `.env.local`、`runtime/`、`dist/`、账号信息与真实会话。正式网站还必须替换本机原型 `/admin`、接入自身用户认证并审查公网反代策略。公开网站仓库与发布许可是后续独立决策。
 
-## 在 Provider A 所在的 Air 上预览
+## 高级部署与开发
 
-需要 Node.js 20 或更新版本。演示服务默认监听 `127.0.0.1:4317`，默认从服务端连接 `127.0.0.1:3117`；不会启动第二套 Provider A，也不需要重新扫码。
-
-```sh
-cd apps/explorer-ai-qa-demo
-npm ci
-npm test
-npm run build
-npm start
-```
-
-打开 `http://127.0.0.1:4317/`。真实原生知识库问答需要普通 API token、独立内部服务 token 和目标知识库范围摘要，均保存在 Git 忽略的 `.env.local`（权限 `0600`）。在 Provider A 所在机器上运行：
-
-```sh
-npm run configure:local -- --provider-env /你的私有/provider-a.env
-npm start
-```
-
-接入脚本读取 Provider A 的私有部署配置，不打印凭证或知识库 ID。另一台机器需要先通过 SSH 隧道访问 Provider A，再在自身后端安全配置这三项；管理员 token 不参与业务问答。服务端适配代码、接口与远程配置见 [网站接入指南](./docs/PROVIDER_A_WEB_INTEGRATION.md)。
+手工 Node、共用已部署 Provider 和历史源码 Docker 路径见[高级部署](./docs/ADVANCED_DEPLOYMENT.md)。这不是首次安装的必做步骤，不应从 Air 复制账号或要求普通使用者手工找数字 ID。原始导出背景 [HANDOFF.md](HANDOFF.md) 仅供开发溯源。
 
 `/api/qa/health` 分开报告连接、两类鉴权、原生 Agent 容量和本进程最近完成的真实问答。检查接口不会自动提问。完成配置后可显式运行 `npm run verify:real`：它经演示网页后端串行发起一问一追问，只输出脱敏事件计数与耗时。知识库来源和正文均由真实 IMA 回答提供。
 

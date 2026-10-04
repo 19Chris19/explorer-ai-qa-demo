@@ -1,6 +1,8 @@
-# Docker 部署：启动、加账号、升级
+# 高级 Docker 源码构建记录
 
-## 新机器首次启动
+**这不是当前候选的新安装入口。**首次部署统一走 [Agent 引导](AGENT_DEPLOYMENT.md)，工具准备配套 Provider 与扫码通路。以下记录保留给旧源码安装的维护者，日期、提交和命令不代表新候选的推荐基线，不得与现有引导目录混用。
+
+## 旧版源码构建流程
 
 正式版本镜像路径见 [版本部署入口](./VERSIONED_RELEASES.md)：使用
 `sh deploy.sh init --kb YOUR_NUMERIC_KB_ID` 与 `sh deploy.sh up`，不需要宿主机
