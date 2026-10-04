@@ -58,3 +58,21 @@ the initial automatic code rollback, and explicit unverified items.
 Public Provider PR #9 is reviewed, CI-passing and merged without a Release or
 runtime deployment. Private website PR/merge confirmation remains outstanding;
 do not claim private main, 4317 or the public preview page has this UI yet.
+
+## Approved Air promotion (2026-10-04)
+
+The user now authorizes private PR review/merge and updating Air 4317 to the
+accepted frontend. Private PR #3 includes the focused public-module allowlist
+fix 44979f8; all 73 tests pass in the working copy and an independently installed
+immutable release. GitHub application and Docker synthetic CI passed.
+
+Vercel initially blocked the preview because the local commit author's email
+was not linked to GitHub. Configure only this repository's future commits with
+the authenticated owner's GitHub noreply identity; do not amend or force-push
+published commits. Recheck the resulting preview before the production merge.
+
+Air 4317 must retain its existing 3117 upstream, private cookie/API configuration
+and persistent directory. Its previous code anchor is dc2245fe. The public Air
+gateway needs the accepted static module allowlist too. Stop the old website
+writer before starting the replacement, and never overwrite newer conversations
+with the private backup. 4318, Docker services, Provider A and Bot are excluded.
