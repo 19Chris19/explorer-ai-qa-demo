@@ -32,6 +32,8 @@ match the dated reference. 390x844 has no horizontal document overflow and a
 360x56px composer. All shell assets are explicitly allowed through BFF, Nginx,
 preview gateway and Vercel; unknown assets remain blocked. No IMA request made.
 The current public mobile shell is not reproduced literally (see asset notes).
+The upstream OFL notice had CRLF and trailing whitespace; normalize formatting
+only, retaining the notice text, and re-run the staged release scan.
 
 ## Rollback
 
