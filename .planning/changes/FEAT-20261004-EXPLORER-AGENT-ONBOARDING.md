@@ -13,3 +13,9 @@
 - Delegate login-gated target resolution and optional credential-free manifests to Provider too, rather than requiring anonymous metadata in the website adapter.
 - Match the actual Compose service name (`provider-a`) for protected helper checks. Image/port checks precede any human login request.
 - Fixed code does not change the webpage or existing runtime. Verify the final candidate separately; earlier Docker evidence remains tied to its own source SHA.
+
+## Final local evidence
+
+- Verified-SHA: 2ae76caff3f89c2ce658654065a4345beb763890; this final record update changes documentation only.
+- 87 tests/build passed; clean-directory ARM64 Compose install, resume, reinitialization protection, enrollment preflight and blocked management paths passed with Provider 76cd647.
+- Rehearsal services stopped and helper uninstalled, no live Air service replacement. Fresh-account QA, native Windows and real Linux maintenance remain NOT RUN.
