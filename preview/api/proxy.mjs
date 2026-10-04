@@ -8,6 +8,8 @@ const assets = new Set(['', 'styles.css', 'chat.css', 'icons.svg', 'brand-orbit.
   'composer-shape.mjs', 'composer-controls.mjs',
   'answer-copy.mjs',
   'selection-copy.mjs',
+  'main-shell.css', 'site/logo.png', 'site/dm-sans-latin.woff2',
+  ...['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line'].map(icon => `site/${icon}.svg`),
   'vendor/marked.umd.js', 'vendor/purify.min.js']);
 
 function allowed(path, method) {
