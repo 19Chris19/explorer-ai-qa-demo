@@ -35,6 +35,9 @@ const staticFiles = new Map([
   ['/admin', ['public/admin.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['public/styles.css', 'text/css; charset=utf-8']],
   ['/chat.css', ['public/chat.css', 'text/css; charset=utf-8']],
+  ['/main-shell.css', ['public/main-shell.css', 'text/css; charset=utf-8']],
+  ['/site/logo.png', ['public/site/logo.png', 'image/png']],
+  ['/site/dm-sans-latin.woff2', ['public/site/dm-sans-latin.woff2', 'font/woff2']],
   ['/icons.svg', ['public/icons.svg', 'image/svg+xml']],
   ['/brand-orbit.png', ['public/brand-orbit.png', 'image/png']],
   ['/questions.json', ['public/questions.json', 'application/json; charset=utf-8']],
@@ -56,6 +59,10 @@ const staticFiles = new Map([
   ['/vendor/purify.min.js', ['public/vendor/purify.min.js', 'text/javascript; charset=utf-8']],
   ['/admin.js', ['public/admin.js', 'text/javascript; charset=utf-8']],
 ]);
+
+for (const icon of ['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line']) {
+  staticFiles.set(`/site/${icon}.svg`, [`public/site/${icon}.svg`, 'image/svg+xml']);
+}
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
 if (!['127.0.0.1', '0.0.0.0'].includes(listenHost)) throw new Error('Invalid DEMO_LISTEN_HOST');

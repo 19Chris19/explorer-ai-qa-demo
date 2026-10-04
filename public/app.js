@@ -71,6 +71,7 @@ const ui = {
 };
 const labels = {
   zh: {
+    myNav: '我的创作', uploadNav: '上传作品', contestNav: '创作大赛', videoNav: '视频渲染', award: '奖', mainSiteLogin: '登录',
     qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们', adminNav: '问答管理',
     newChat: '新建对话', recentChats: '最近对话', moreOptions: '更多选项', historyClose: '关闭最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
     titleLead: '你的 3DGS 疑问，', titleSubject: '随时来聊。', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验强势驱动。', placeholder: '输入你的 3DGS 问题…',
@@ -84,6 +85,7 @@ const labels = {
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
   },
   en: {
+    myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
     qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About', adminNav: 'Q&A Admin',
     newChat: 'New conversation', recentChats: 'Recent conversations', moreOptions: 'More options', historyClose: 'Close recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
     titleLead: 'Have a 3DGS question?', titleSubject: "Let's talk.", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience.', placeholder: 'Ask a 3DGS question…',

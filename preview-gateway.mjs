@@ -12,6 +12,8 @@ const assets = new Set([
   '/answer-copy.mjs',
   '/selection-copy.mjs',
   '/host-bridge.mjs',
+  '/main-shell.css', '/site/logo.png', '/site/dm-sans-latin.woff2',
+  ...['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line'].map(icon => `/site/${icon}.svg`),
   '/app.js', '/answer-markdown.js', '/vendor/marked.umd.js', '/vendor/purify.min.js',
 ]);
 

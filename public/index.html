@@ -9,6 +9,7 @@
   <title>AI 问答 · 知天下</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/chat.css">
+  <link rel="stylesheet" href="/main-shell.css">
   <script src="/vendor/marked.umd.js" defer></script>
   <script src="/vendor/purify.min.js" defer></script>
   <script src="/answer-markdown.js" defer></script>
@@ -18,8 +19,8 @@
   <a class="skip-link" href="#main">跳转到问答</a>
   <div class="shell">
     <header class="site-header">
-      <a class="brand" href="https://3d.explorerglobal.cn/" aria-label="知天下主页">
-        <span class="brand-cn">知天下</span><span class="brand-en">EXPLORER AI</span>
+      <a class="mobile-brand" href="https://3d.explorerglobal.cn/" aria-label="知天下主页">
+        <img src="/site/logo.png" alt="知天下 EXPLORER AI" width="120" height="67">
       </a>
       <nav class="top-nav" aria-label="当前板块">
         <a href="/" class="active" aria-current="page" data-i18n="qaNav">AI 问答</a>
@@ -60,13 +61,21 @@
     </header>
 
     <aside class="site-sidebar" aria-label="主站导航">
+      <a class="brand" href="https://3d.explorerglobal.cn/" aria-label="知天下主页">
+        <img src="/site/logo.png" alt="知天下 EXPLORER AI" width="120" height="67">
+      </a>
       <nav class="site-nav">
-        <a href="https://3d.explorerglobal.cn/"><span class="nav-icon" aria-hidden="true">◈</span><span data-i18n="worldNav">3DGS世界</span></a>
-        <a href="/" class="active" aria-current="page"><span class="nav-icon" aria-hidden="true">○</span><span data-i18n="qaNav">AI 问答</span></a>
-        <a href="https://3d.explorerglobal.cn/compute"><span class="nav-icon" aria-hidden="true">▣</span><span data-i18n="computeNav">免费计算</span></a>
-        <a href="https://3d.explorerglobal.cn/guide"><span class="nav-icon" aria-hidden="true">▤</span><span data-i18n="guideNav">创作指南</span></a>
-        <a href="https://3d.explorerglobal.cn/about"><span class="nav-icon" aria-hidden="true">ⓘ</span><span data-i18n="aboutNav">关于我们</span></a>
+        <a href="https://3d.explorerglobal.cn/"><span class="nav-icon compass" aria-hidden="true"></span><span data-i18n="worldNav">3DGS世界</span></a>
+        <a href="/" class="active" aria-current="page"><span class="nav-icon chat" aria-hidden="true"></span><span data-i18n="qaNav">AI 问答</span></a>
+        <a href="https://3d.explorerglobal.cn/my" class="main-site-auth"><span class="nav-icon shapes" aria-hidden="true"></span><span data-i18n="myNav">我的创作</span></a>
+        <a href="https://3d.explorerglobal.cn/compute" class="main-site-auth"><span class="nav-icon cpu" aria-hidden="true"></span><span data-i18n="computeNav">免费计算</span></a>
+        <a href="https://3d.explorerglobal.cn/upload" class="main-site-auth"><span class="nav-icon cloud" aria-hidden="true"></span><span data-i18n="uploadNav">上传作品</span></a>
+        <a href="https://tryout.explorerglobal.cn/" target="_blank" rel="noopener noreferrer"><span class="nav-icon trophy" aria-hidden="true"></span><span class="nav-label"><span data-i18n="contestNav">创作大赛</span><span class="nav-badge" data-i18n="award">奖</span></span></a>
+        <a href="https://3d.explorerglobal.cn/gsxplore"><span class="nav-icon clapperboard" aria-hidden="true"></span><span data-i18n="videoNav">视频渲染</span></a>
+        <a href="https://3d.explorerglobal.cn/guide"><span class="nav-icon graduation" aria-hidden="true"></span><span data-i18n="guideNav">创作指南</span></a>
+        <a href="https://3d.explorerglobal.cn/about"><span class="nav-icon information" aria-hidden="true"></span><span data-i18n="aboutNav">关于我们</span></a>
       </nav>
+      <div class="site-user"><a href="https://3d.explorerglobal.cn/" data-i18n="mainSiteLogin">登录</a></div>
       <a class="admin-link" href="/admin" hidden><span data-i18n="adminNav">问答管理</span><span aria-hidden="true">↗</span></a>
     </aside>
 
