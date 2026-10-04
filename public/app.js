@@ -146,14 +146,19 @@ function closeMore({ restore = false } = {}) {
   const ownedFocus = moreMenu.contains(document.activeElement);
   moreMenu.hidden = true;
   moreToggle.setAttribute('aria-expanded', 'false');
-  if (restore && ownedFocus) moreToggle.focus();
+  if (restore && ownedFocus) restoreHeaderFocus();
 }
 
 function closeHistory({ restore = false } = {}) {
   const ownedFocus = history.contains(document.activeElement);
   history.hidden = true;
   document.querySelector('#showHistory').setAttribute('aria-expanded', 'false');
-  if (restore && ownedFocus) moreToggle.focus();
+  if (restore && ownedFocus) restoreHeaderFocus();
+}
+
+function restoreHeaderFocus() {
+  if (document.body.classList.contains('qa-embedded')) hostBridge?.returnFocus();
+  else moreToggle.focus();
 }
 
 document.querySelector('#newChat').addEventListener('click', async () => {

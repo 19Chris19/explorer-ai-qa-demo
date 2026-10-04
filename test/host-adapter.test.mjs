@@ -61,6 +61,8 @@ test('bridge requires the real same-origin parent, validates preferences and ann
   assert.deepEqual(preferences, [{ locale: 'en', dark: true, color: 'teal' }]);
   emit({ type: 'explorer-qa:hello', version: 1 });
   assert.equal(sent.length, 2);
+  bridge.returnFocus();
+  assert.deepEqual(sent[2], { data: { type: 'explorer-qa:focus-return', control: 'more', version: 1 }, target: origin });
   bridge.dispose();
   assert.equal(listener, null);
 });
