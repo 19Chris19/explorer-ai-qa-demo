@@ -8,6 +8,8 @@ test('every application module is accessible through both public allowlists, rea
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const modules = [...app.matchAll(/from\s+['"]\.\/([^'"]+)['"]/gu)].map((match) => match[1]);
   assert.ok(modules.length >= 9, 'exercise the real entry point dependencies');
+  const shellCss = readFileSync(new URL('../public/main-shell.css', import.meta.url), 'utf8');
+  modules.push('main-shell.css', 'site/logo.png', ...[...shellCss.matchAll(/url\("\.\/([^"\s]+)"\)/gu)].map(match => match[1]));
   const previousKey = process.env.PREVIEW_ORIGIN_KEY;
   const previousUrl = process.env.PREVIEW_ORIGIN_URL;
   const previousFetch = globalThis.fetch;
@@ -24,7 +26,7 @@ test('every application module is accessible through both public allowlists, rea
       assert.equal(allowedPreviewRoute(`/${module}`, 'POST'), false);
       assert.equal((await handler.fetch(new Request(`https://synthetic.vercel.app/api/proxy?path=${module}`, { method: 'POST' }))).status, 404);
     }
-    for (const path of ['internal/provider-a/capacity', 'admin.js', 'not-a-module.mjs']) {
+    for (const path of ['internal/provider-a/capacity', 'admin.js', 'not-a-module.mjs', 'site/unknown.svg', 'site/runtime.json']) {
       assert.equal((await handler.fetch(new Request(`https://synthetic.vercel.app/api/proxy?path=${path}`))).status, 404);
     }
   } finally {

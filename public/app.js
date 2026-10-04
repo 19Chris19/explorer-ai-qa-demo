@@ -9,9 +9,12 @@ import { resizeComposer, observeComposerWidth } from './composer-shape.mjs';
 import { composerControlState, providerAccessState } from './composer-controls.mjs';
 import { createAnswerCopy } from './answer-copy.mjs';
 import { createSelectionCopy } from './selection-copy.mjs';
+import { createHostBridge } from './host-bridge.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
+const storageKey = key => `${document.querySelector('meta[name="qa-storage-namespace"]')?.content || ''}${key}`;
+let hostBridge = null;
 const answerCopies = new WeakMap();
 
 const log = document.querySelector('#chatLog');
@@ -48,20 +51,8 @@ const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
 const adminLink = document.querySelector('.admin-link');
 if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
-if (document.body.classList.contains('qa-embedded')) {
-  window.addEventListener('message', event => {
-    if (event.origin !== window.location.origin) return;
-    const commands = {
-      'explorer-qa:new': '#newChat',
-      'explorer-qa:history': '#showHistory',
-      'explorer-qa:more': '#moreToggle',
-    };
-    const selector = commands[event.data?.type];
-    if (selector) document.querySelector(selector)?.click();
-  });
-}
 const state = {
-  conversationId: sessionStorage.getItem('qa-native-conversation-id') || '',
+  conversationId: sessionStorage.getItem(storageKey('qa-native-conversation-id')) || '',
   legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false, access: 'checking',
   activeWebRequest: false, webRequestState: 'idle',
   queuedJobs: [], queueSubmitting: false, preparing: false, activeQueuedId: '',
@@ -74,12 +65,13 @@ let composerImpact = null;
 let exitingWelcome = null;
 let webStateTimer = 0;
 const ui = {
-  locale: localStorage.getItem('qa-ui-locale') === 'en' ? 'en' : 'zh',
-  color: ['blue', 'teal', 'graphite'].includes(localStorage.getItem('qa-ui-color')) ? localStorage.getItem('qa-ui-color') : 'blue',
-  dark: localStorage.getItem('qa-ui-dark') === 'true',
+  locale: localStorage.getItem(storageKey('qa-ui-locale')) === 'en' ? 'en' : 'zh',
+  color: ['blue', 'teal', 'graphite'].includes(localStorage.getItem(storageKey('qa-ui-color'))) ? localStorage.getItem(storageKey('qa-ui-color')) : 'blue',
+  dark: localStorage.getItem(storageKey('qa-ui-dark')) === 'true',
 };
 const labels = {
   zh: {
+    myNav: '我的创作', uploadNav: '上传作品', contestNav: '创作大赛', videoNav: '视频渲染', award: '奖', mainSiteLogin: '登录',
     qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们', adminNav: '问答管理',
     newChat: '新建对话', recentChats: '最近对话', moreOptions: '更多选项', historyClose: '关闭最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
     titleLead: '你的 3DGS 疑问，', titleSubject: '随时来聊。', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验强势驱动。', placeholder: '输入你的 3DGS 问题…',
@@ -93,6 +85,7 @@ const labels = {
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
   },
   en: {
+    myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
     qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About', adminNav: 'Q&A Admin',
     newChat: 'New conversation', recentChats: 'Recent conversations', moreOptions: 'More options', historyClose: 'Close recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
     titleLead: 'Have a 3DGS question?', titleSubject: "Let's talk.", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience.', placeholder: 'Ask a 3DGS question…',
@@ -142,6 +135,7 @@ function applyPreferences() {
   updateVoicePreviewControl();
   renderSuggestions();
   updateFloatingControls();
+  hostBridge?.preferences({ locale: ui.locale, dark: ui.dark, color: ui.color });
 }
 
 function updateQuestionPlaceholder() {
@@ -152,14 +146,19 @@ function closeMore({ restore = false } = {}) {
   const ownedFocus = moreMenu.contains(document.activeElement);
   moreMenu.hidden = true;
   moreToggle.setAttribute('aria-expanded', 'false');
-  if (restore && ownedFocus) moreToggle.focus();
+  if (restore && ownedFocus) restoreHeaderFocus();
 }
 
 function closeHistory({ restore = false } = {}) {
   const ownedFocus = history.contains(document.activeElement);
   history.hidden = true;
   document.querySelector('#showHistory').setAttribute('aria-expanded', 'false');
-  if (restore && ownedFocus) moreToggle.focus();
+  if (restore && ownedFocus) restoreHeaderFocus();
+}
+
+function restoreHeaderFocus() {
+  if (document.body.classList.contains('qa-embedded')) hostBridge?.returnFocus();
+  else moreToggle.focus();
 }
 
 document.querySelector('#newChat').addEventListener('click', async () => {
@@ -194,7 +193,7 @@ document.querySelector('#historyClose').addEventListener('click', () => closeHis
 historySearch.addEventListener('input', renderConversationList);
 document.querySelector('#languageButton').addEventListener('click', () => {
   ui.locale = ui.locale === 'zh' ? 'en' : 'zh';
-  localStorage.setItem('qa-ui-locale', ui.locale);
+  localStorage.setItem(storageKey('qa-ui-locale'), ui.locale);
   applyPreferences();
   if (main.classList.contains('is-empty')) welcome();
   renderConversationList();
@@ -202,12 +201,12 @@ document.querySelector('#languageButton').addEventListener('click', () => {
 });
 document.querySelectorAll('[data-color-option]').forEach(button => button.addEventListener('click', () => {
   ui.color = button.dataset.colorOption;
-  localStorage.setItem('qa-ui-color', ui.color);
+  localStorage.setItem(storageKey('qa-ui-color'), ui.color);
   applyPreferences();
 }));
 document.querySelector('#darkModeButton').addEventListener('click', () => {
   ui.dark = !ui.dark;
-  localStorage.setItem('qa-ui-dark', String(ui.dark));
+  localStorage.setItem(storageKey('qa-ui-dark'), String(ui.dark));
   applyPreferences();
 });
 micButton.addEventListener('click', () => {
@@ -438,8 +437,8 @@ function setConversation(id) {
   voicePreview.stop();
   state.conversationId = id;
   state.legacyMode = false;
-  if (id) sessionStorage.setItem('qa-native-conversation-id', id);
-  else sessionStorage.removeItem('qa-native-conversation-id');
+  if (id) sessionStorage.setItem(storageKey('qa-native-conversation-id'), id);
+  else sessionStorage.removeItem(storageKey('qa-native-conversation-id'));
 }
 
 function status(message, showInThread = false) {
@@ -1255,4 +1254,18 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '', queuedCr
 function scrollBottom() {
   log.scrollTop = log.scrollHeight;
   lastScrollTop = log.scrollTop;
+}
+
+if (document.body.classList.contains('qa-embedded')) {
+  hostBridge = createHostBridge(window, {
+    onCommand: command => document.querySelector({ new: '#newChat', history: '#showHistory', more: '#moreToggle' }[command])?.click(),
+    onPreferences: preferences => {
+      Object.assign(ui, preferences);
+      applyPreferences();
+      if (main.classList.contains('is-empty')) welcome();
+      renderConversationList();
+    },
+  });
+  hostBridge.ready();
+  window.addEventListener('pagehide', () => hostBridge.dispose(), { once: true });
 }

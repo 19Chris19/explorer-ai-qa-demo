@@ -22,3 +22,12 @@ test('Docker operator wrapper does not depend on host Node and scopes upgrades',
   assert.match(wrapper, /release-config\.mjs idle/);
   assert.doesNotMatch(wrapper, /down -v|volume rm/);
 });
+
+test('default website image and lockfile follow the released package version', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  const wrapper = readFileSync(new URL('../deploy.sh', import.meta.url), 'utf8');
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[''].version, pkg.version);
+  assert.ok(wrapper.includes(`ghcr.io/19chris19/explorer-ai-qa-demo:v${pkg.version}`));
+});

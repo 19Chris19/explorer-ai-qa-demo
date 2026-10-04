@@ -51,6 +51,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     copyFileSync(join(root, 'public/composer-controls.mjs'), join(moduleDir, 'composer-controls.mjs'));
     copyFileSync(join(root, 'public/answer-copy.mjs'), join(moduleDir, 'answer-copy.mjs'));
     copyFileSync(join(root, 'public/selection-copy.mjs'), join(moduleDir, 'selection-copy.mjs'));
+    copyFileSync(join(root, 'public/host-bridge.mjs'), join(moduleDir, 'host-bridge.mjs'));
     Object.assign(globalThis, {
       window, document: window.document, localStorage: window.localStorage, sessionStorage: window.sessionStorage,
       ResizeObserver: class { observe() {} disconnect() {} },

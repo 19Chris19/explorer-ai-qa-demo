@@ -12,7 +12,7 @@ copyFileSync(join(root, 'node_modules/marked/lib/marked.umd.js'), join(output, '
 copyFileSync(join(root, 'node_modules/dompurify/dist/purify.min.js'), join(output, 'public/vendor/purify.min.js'));
 for (const file of [
   'server.mjs', 'provider-a-client.mjs', 'session-mode-store.mjs', 'request-ledger.mjs', 'conversation-turn-queue.mjs', 'preview-admission.mjs', 'preview-gateway.mjs',
-  'question-rotation.mjs', 'source-evidence.mjs', 'package.json', 'package-lock.json', '.env.example',
+  'question-rotation.mjs', 'source-evidence.mjs', 'deployment-paths.mjs', 'package.json', 'package-lock.json', '.env.example',
 ]) {
   copyFileSync(join(root, file), join(output, file));
 }
