@@ -7,7 +7,7 @@ const props = defineProps({
   dark: { type: Boolean, default: false },
   color: { type: String, default: 'blue' },
 });
-const emit = defineEmits(['ready', 'preferences']);
+const emit = defineEmits(['ready', 'preferences', 'requestFocus']);
 const ready = ref(false);
 const src = computed(() => {
   if (props.modulePath === '/') return '/?embed=1';
@@ -24,6 +24,8 @@ const receive = event => {
     ready.value = true;
     syncPreferences();
     emit('ready');
+  } else if (event.data.type === 'explorer-qa:focus-return' && event.data.control === 'more') {
+    emit('requestFocus', 'more');
   } else if (event.data.type === 'explorer-qa:preferences') {
     const { locale, dark, color } = event.data;
     if (['zh', 'en'].includes(locale) && typeof dark === 'boolean' && ['blue', 'teal', 'graphite'].includes(color)) {
@@ -61,7 +63,7 @@ defineExpose({
   width: 100%;
   min-width: 0;
   height: 100%;
-  min-height: 520px;
+  min-height: 0;
   border: 0;
   background: #fff;
 }

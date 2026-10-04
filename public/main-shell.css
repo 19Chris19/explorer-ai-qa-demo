@@ -147,6 +147,7 @@
 .app-page.qa-embedded .site-header,
 .app-page.qa-embedded .site-sidebar { display: none; }
 .app-page.qa-embedded .history-panel { top: 12px; }
+.app-page.qa-embedded .more-menu { top: 12px; right: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .app-page .site-nav a { transition: none; }
 }

@@ -9,6 +9,16 @@
 主站自己的页头、侧栏保持不变；该路由顶栏显示 AI 问答、交流群和一个更多入口。
 模块使用 `?embed=1` 隐藏内部导航，不嵌套第二套外壳。
 
+合成主站验收：先执行 `npm run build`，再运行
+`node scripts/preview-synthetic-host.mjs /qa-app`（根路径参数为 `/`）。
+打印的本机地址仅连接脚本内存中的假 Provider，无真实凭证或 IMA 访问；
+退出时停止所启动进程并删除其合成运行目录，不操作现有服务。
+
+`requestFocus` 在 Escape 关闭模块内浮层时传出 `more`，主站应将焦点返回
+自己的更多按钮。菜单位于被隐藏的内部页头之外，`openOptions()` 在嵌入模式
+仍可使用。路由内容区需要明确的可用高度；iframe 不强制 520px 最小高度，
+不得为了接入模块再加第二套导航或嵌套页面滚动。
+
 ```vue
 <ExplorerQaModule ref="qa" module-path="/qa-app/"
   :locale="locale" :dark="dark" :color="color"

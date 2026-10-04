@@ -11,6 +11,7 @@ test('shell uses the real main-site asset and complete navigation without a seco
   assert.equal(doc.querySelector('.site-nav [aria-current="page"]').textContent.trim(), 'AI 问答');
   for (const text of ['我的创作', '上传作品', '视频渲染', '创作大赛']) assert.ok(doc.querySelector('.site-nav').textContent.includes(text));
   assert.equal(doc.querySelectorAll('#askForm').length, 1);
+  assert.equal(doc.querySelector('#moreMenu').closest('.site-header, .site-sidebar'), null);
   const css = readFileSync(new URL('../public/main-shell.css', import.meta.url), 'utf8');
   assert.match(css, /grid-template-columns:\s*256px/u);
   assert.match(css, /grid-template-rows:\s*82px/u);

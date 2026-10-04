@@ -5,7 +5,7 @@ export function embedUrl(path) {
 }
 
 export function createHostBridge(window, { onCommand, onPreferences }) {
-  if (window.parent === window) return { ready() {}, preferences() {}, dispose() {} };
+  if (window.parent === window) return { ready() {}, preferences() {}, returnFocus() {}, dispose() {} };
   const origin = window.location.origin;
   const send = data => window.parent.postMessage({ ...data, version: 1 }, origin);
   const ready = () => send({ type: 'explorer-qa:ready' });
@@ -25,5 +25,6 @@ export function createHostBridge(window, { onCommand, onPreferences }) {
   };
   window.addEventListener('message', receive);
   return { ready, preferences: values => send({ type: 'explorer-qa:preferences', ...values }),
+    returnFocus: () => send({ type: 'explorer-qa:focus-return', control: 'more' }),
     dispose: () => window.removeEventListener('message', receive) };
 }
