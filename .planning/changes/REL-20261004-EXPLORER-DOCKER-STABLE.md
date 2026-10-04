@@ -44,3 +44,17 @@ real cloud Linux long-term operation require separate acceptance.
 Previous website image digest, Compose configuration and private volume backups
 are captured outside Git. Rollback replaces code and gateway only against the
 current persistent volumes; never roll back Provider account state.
+
+## Acceptance checkpoint (2026-10-04)
+
+Code candidate af5ce7f is active on Docker 4417 with the existing one-account
+Provider container unchanged. Latest fixed-source test suite: 72/72, build and
+audit pass. Fresh installation, synthetic SSE/queue/history/cancel/disconnect,
+fresh-volume restore, ARM64 and AMD64 startup checks passed. Real first table
+question and follow-up passed with one success terminal each and exact history
+body equality. See docs/DOCKER_ACCEPTANCE_20261004.md for redacted evidence,
+the initial automatic code rollback, and explicit unverified items.
+
+Public Provider PR #9 is reviewed, CI-passing and merged without a Release or
+runtime deployment. Private website PR/merge confirmation remains outstanding;
+do not claim private main, 4317 or the public preview page has this UI yet.

@@ -6,6 +6,12 @@
 Provider A 使用已审查的公开版本或补丁；网站固定使用本仓库的已验收提交。
 不从 Air 复制账号库、Cookie、refresh token、加密密钥或会话数据。
 
+2026-10-04 已审查的 Provider A 主线提交为
+`ce08c55f6d9b1d801ca0040398471bd2e40af632`（公开 PR #9）。它包含 Docker
+初始化与可选扫码助手补丁，保持 v0.4.0 问答合同；旧 v0.4.0 tag 不包含这组
+新补丁，本次没有发布新 Release。首次部署可在 Provider clone 中先 checkout
+该固定提交，再执行下面的网站启动命令，不跟随漂移的标签升级已有服务。
+
 ```sh
 git clone https://github.com/19Chris19/ima-qa-web-agent.git
 git clone https://github.com/19Chris19/explorer-ai-qa-demo.git
