@@ -6,13 +6,15 @@ const synthetic = process.argv.includes('--synthetic');
 const restore = process.argv.includes('--restore');
 const live = process.argv.includes('--live');
 assert.ok(!(synthetic && live), 'Choose synthetic or live, not both');
-const base = `http://127.0.0.1:${synthetic ? 4418 : 4417}`;
+const syntheticProject = process.env.SYNTHETIC_PROJECT || 'air-qa-synthetic';
+assert.match(syntheticProject, /^[a-z0-9][a-z0-9_-]{0,48}$/u);
+const base = `http://127.0.0.1:${synthetic ? (process.env.SYNTHETIC_WEB_PORT || 4418) : 4417}`;
 const upstream = `http://127.0.0.1:${synthetic ? 3318 : 3317}`;
 const env = Object.fromEntries(readFileSync('.docker-lab/provider.env', 'utf8').trim().split('\n').map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)]; }));
 const get = async (url, options = {}) => {
   if (synthetic && url.startsWith(upstream)) {
     // The fixture has no egress or published port. Credentials travel on stdin, never argv.
-    const result = JSON.parse(execFileSync('docker', ['exec', '-i', 'air-qa-synthetic-provider-a-1', 'node', '-e',
+    const result = JSON.parse(execFileSync('docker', ['exec', '-i', `${syntheticProject}-provider-a-1`, 'node', '-e',
       "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',async()=>{const q=JSON.parse(s);const r=await fetch('http://127.0.0.1:3000'+q.path,{headers:q.headers});console.log(JSON.stringify({status:r.status,body:await r.text()}))})"],
     { input: JSON.stringify({ path: url.slice(upstream.length), headers: options.headers }), encoding: 'utf8', timeout: 30000 }));
     return new Response(result.body, { status: result.status });

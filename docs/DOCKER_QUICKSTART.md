@@ -2,6 +2,11 @@
 
 ## 新机器首次启动
 
+正式版本镜像路径见 [版本部署入口](./VERSIONED_RELEASES.md)：使用
+`sh deploy.sh init --kb YOUR_NUMERIC_KB_ID` 与 `sh deploy.sh up`，不需要宿主机
+Node 或 Provider 源码。以下保留从固定源码构建的高级路径，不能与版本入口的
+同一安装目录混用。镜像公开／私有可见性以 Release 的验收记录为准。
+
 需要 Docker（Linux 容器）、Compose 2.24.4+、Node 22 和两个独立仓库。
 Provider A 使用已审查的公开版本或补丁；网站固定使用本仓库的已验收提交。
 不从 Air 复制账号库、Cookie、refresh token、加密密钥或会话数据。

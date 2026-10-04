@@ -4,7 +4,7 @@
 
 The main site owns navigation, login and its AI QA route. This repository owns
 the QA experience and same-origin BFF. Provider A remains a separate service,
-pinned for this handoff to [v0.4.0](https://github.com/19Chris19/ima-qa-web-agent/releases/tag/v0.4.0)
+pinned for this handoff to [v0.4.1](https://github.com/19Chris19/ima-qa-web-agent/releases/tag/v0.4.1)
 or a later release declaring `knowledge_agent_keyed_sse_v1` in the protected
 capacity contract. A process that responds to `/healthz` but lacks that
 contract is not ready for this website.
@@ -22,13 +22,14 @@ the website's 961-line UI controller has been rewritten in native Vue.
 
 ## Linux server
 
-Fresh installations start with [the one-command Docker path](./DOCKER_QUICKSTART.md).
+Fresh installations prefer [versioned images with no host Node](./VERSIONED_RELEASES.md).
+The [source-build Docker path](./DOCKER_QUICKSTART.md) remains available.
 This builds the checked-out frontend rather than a stale demo image. The script
 records image digests, refuses existing deployments and keeps configuration
 private. Account authorization remains a deliberate human action on a maintenance
 computer; a Linux server does not gain a desktop browser from containerization.
 
-1. Prepare the Provider A v0.4.0 (or verified compatible patch) image separately.
+1. Prepare the Provider A v0.4.1 (or verified compatible patch) image separately.
    The joint Compose recipe starts it; do not also start a second service on
    the same host port or point two containers at the same runtime.
    Its account library, encrypted key and conversations must live in its own

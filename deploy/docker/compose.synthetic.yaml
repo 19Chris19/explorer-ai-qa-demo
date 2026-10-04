@@ -14,7 +14,7 @@ services:
   gateway:
     networks: [backend, browser-access]
     ports: !override
-      - "127.0.0.1:4418:8080"
+      - "127.0.0.1:${SYNTHETIC_WEB_PORT:-4418}:8080"
 networks:
   browser-access:
   backend:
