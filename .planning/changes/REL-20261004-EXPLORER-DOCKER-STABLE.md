@@ -1,0 +1,46 @@
+# REL-20261004-EXPLORER-DOCKER-STABLE
+
+## User goal
+
+Freeze the accepted website features, publish them to the private website
+repository, and provide a reproducible Docker deployment with straightforward
+Provider A account onboarding. Do not publish the root multi-application repo.
+
+## Baselines and boundaries
+
+Website source: root application snapshot 793caf4a; UX feature branches remain
+there as independently revertible development history. Private website Docker
+candidate: b556807, based on private main 6a84ca7a. Preserve its container-address,
+non-root volume and admin-hiding fixes while importing the accepted UI snapshot.
+
+Only the Docker website and its Nginx gateway may be recreated after idle proof
+and private backups. Keep the existing Docker Provider image/accounts, 3117,
+4317, 4318, Bot and unrelated containers intact. Never regenerate existing
+credentials, copy an account database, clear a queue, or restore stale runtime
+over newer sessions. Publishing a private PR requires target confirmation;
+merging it requires reviewed CI and approval for the Vercel Git deployment.
+
+## Work units
+
+1. Import accepted UX modules/tests and freeze source provenance.
+2. Complete static allowlists, versioned Docker build/start path and deployment
+   checks. Keep new initialization separate from upgrades; reject overwrites.
+3. Run synthetic Nginx/BFF SSE, auth, queue, history and recovery checks. Use
+   one explicit non-private real first question and follow-up only when allowed;
+   keep answer text, sources and IDs out of Git and reports.
+4. Recreate only idle website/gateway with a pinned image and current volumes.
+   Verify version, layout, data continuity and rollback on synthetic resources.
+5. Private PR/CI and reviewed main merge, with deployment/account onboarding
+   limitations stated rather than claiming a production Linux server was tested.
+
+## Acceptance and rollback
+
+Full website tests/build/audit, ARM64 image, synthetic network isolation,
+version labels, explicit asset/security routes, desktop/mobile copy/rendering,
+backup/restore and code-only rollback. AMD64 startup is compatibility evidence,
+not a performance or long-term availability claim. Native mobile keyboard and
+real cloud Linux long-term operation require separate acceptance.
+
+Previous website image digest, Compose configuration and private volume backups
+are captured outside Git. Rollback replaces code and gateway only against the
+current persistent volumes; never roll back Provider account state.

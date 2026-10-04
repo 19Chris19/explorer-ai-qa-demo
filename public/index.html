@@ -33,7 +33,7 @@
         <button id="newChat" class="menu-item" type="button">
           <svg class="icon" aria-hidden="true"><use href="/icons.svg#plus"></use></svg><span data-i18n="newChat">新建对话</span>
         </button>
-        <button id="showHistory" class="menu-item" type="button">
+        <button id="showHistory" class="menu-item" type="button" aria-controls="historySidebar" aria-expanded="false">
           <svg class="icon" aria-hidden="true"><use href="/icons.svg#history"></use></svg><span data-i18n="recentChats">最近对话</span>
         </button>
         <div class="menu-divider"></div>
@@ -99,6 +99,7 @@
           </div>
           <div id="requestStatus" class="request-status" role="status"></div>
           <form id="askForm" class="composer">
+            <canvas id="composerSparks" class="composer-sparks" aria-hidden="true"></canvas>
             <label class="sr-only" for="question">输入知识库问题</label>
             <textarea id="question" rows="1" maxlength="2000" placeholder="输入你的 3DGS 问题…"></textarea>
             <div class="composer-foot">
@@ -109,15 +110,19 @@
                 <span id="webIntentLabel" class="web-intent-label" hidden data-i18n="webRequested">请求联网</span>
               </div>
               <div class="composer-actions">
-                <button id="micButton" class="icon-button tool-button unavailable" type="button" aria-label="语音输入暂不可用" title="语音输入尚未开放" disabled>
+                <button id="micButton" class="icon-button tool-button voice-preview" type="button" aria-label="预览语音动画（不录音）" aria-pressed="false" title="预览语音动画（不录音）">
                   <svg class="icon" aria-hidden="true"><use href="/icons.svg#mic"></use></svg>
+                  <span class="voice-equalizer" aria-hidden="true"><i></i><i></i><i></i></span>
                 </button>
                 <button id="sendButton" class="icon-button send-button" type="submit" aria-label="发送问题" title="发送问题">
-                  <svg class="icon" aria-hidden="true"><use href="/icons.svg#arrow-up"></use></svg>
+                  <svg class="icon send-glyph send-glyph-arrow" aria-hidden="true"><use href="/icons.svg#arrow-up"></use></svg>
+                  <svg class="icon send-glyph send-glyph-stop" aria-hidden="true"><use href="/icons.svg#square"></use></svg>
                 </button>
               </div>
             </div>
           </form>
+          <span id="voicePreviewHint" class="voice-preview-hint" role="status" hidden></span>
+          <p id="composerAccessNote" class="composer-access-note" role="status" hidden></p>
           <div class="composer-meta">
             <div id="connection" class="connection" role="status">正在检查连接</div>
             <p class="disclaimer" data-i18n="disclaimer">回答可能不完整，请自行核对重要信息。</p>

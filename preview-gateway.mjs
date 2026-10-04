@@ -7,6 +7,10 @@ import { pathToFileURL } from 'node:url';
 const assets = new Set([
   '/', '/styles.css', '/chat.css', '/icons.svg', '/brand-orbit.png',
   '/questions.json', '/question-rotation.mjs', '/source-evidence.mjs',
+  '/turn-lifecycle.mjs', '/prompt-sparks.mjs', '/answer-process.mjs',
+  '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs', '/composer-controls.mjs',
+  '/answer-copy.mjs',
+  '/selection-copy.mjs',
   '/app.js', '/answer-markdown.js', '/vendor/marked.umd.js', '/vendor/purify.min.js',
 ]);
 
