@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "docker:start": "node scripts/docker-start.mjs",
+    "docker:resume": "node scripts/docker-resume.mjs",
+    "check:release": "node scripts/check-release.mjs",
     "configure:local": "node scripts/configure-local-provider.mjs",
     "check:integration": "node scripts/check-integration.mjs",
     "verify:real": "node scripts/verify-native-demo.mjs",

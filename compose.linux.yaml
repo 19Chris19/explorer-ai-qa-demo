@@ -17,7 +17,10 @@ services:
       retries: 5
   explorer-qa:
     image: ${EXPLORER_IMAGE:-air-explorer:lab}
-    build: .
+    build:
+      context: .
+      args:
+        SOURCE_REVISION: ${EXPLORER_REVISION:-local-dev}
     restart: unless-stopped
     env_file: .docker-lab/explorer.env
     environment:

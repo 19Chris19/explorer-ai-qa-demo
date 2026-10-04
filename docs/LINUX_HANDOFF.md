@@ -22,6 +22,12 @@ the website's 961-line UI controller has been rewritten in native Vue.
 
 ## Linux server
 
+Fresh installations start with [the one-command Docker path](./DOCKER_QUICKSTART.md).
+This builds the checked-out frontend rather than a stale demo image. The script
+records image digests, refuses existing deployments and keeps configuration
+private. Account authorization remains a deliberate human action on a maintenance
+computer; a Linux server does not gain a desktop browser from containerization.
+
 1. Prepare the Provider A v0.4.0 (or verified compatible patch) image separately.
    The joint Compose recipe starts it; do not also start a second service on
    the same host port or point two containers at the same runtime.

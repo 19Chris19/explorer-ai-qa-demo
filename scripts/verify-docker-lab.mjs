@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 const synthetic = process.argv.includes('--synthetic');
 const restore = process.argv.includes('--restore');
+const live = process.argv.includes('--live');
+assert.ok(!(synthetic && live), 'Choose synthetic or live, not both');
 const base = `http://127.0.0.1:${synthetic ? 4418 : 4417}`;
 const upstream = `http://127.0.0.1:${synthetic ? 3318 : 3317}`;
 const env = Object.fromEntries(readFileSync('.docker-lab/provider.env', 'utf8').trim().split('\n').map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)]; }));
@@ -23,15 +25,17 @@ for (let i = 0; ; i++) {
   catch { if (i >= 60) throw Error('Lab startup timeout'); await new Promise(resolve => setTimeout(resolve, 1000)); }
 }
 const health = await (await get(`${base}/api/qa/health`)).json();
-assert.equal(health.contractSupported, true); assert.equal(health.ready, synthetic); assert.equal(health.capacity, synthetic ? 1 : 0);
+assert.equal(health.contractSupported, true);
+if (live) { assert.ok(health.capacity > 0); assert.equal(health.ready, true); }
+else { assert.equal(health.ready, synthetic); assert.equal(health.capacity, synthetic ? 1 : 0); }
 await expectStatus(`${upstream}/api/conversations`, 401);
 await expectStatus(`${upstream}/internal/provider-a/capacity`, 401);
 await expectStatus(`${upstream}/internal/provider-a/capacity`, 401, { headers: { Authorization: `Bearer ${env.IMA_QA_API_TOKEN}` } });
 await expectStatus(`${upstream}/api/conversations`, 401, { headers: { Authorization: `Bearer ${env.IMA_QA_ADMIN_TOKEN}` } });
 await expectStatus(`${base}/`, 200);
 for (const path of ['/admin', '/admin.js', '/admin.html', '/internal/provider-a/capacity', '/.env.local', '/server.mjs', '/unknown']) await expectStatus(`${base}${path}`, 404);
-for (const path of ['/app.js', '/chat.css', '/icons.svg', '/brand-orbit.png', '/questions.json', '/question-rotation.mjs', '/source-evidence.mjs', '/vendor/marked.umd.js', '/vendor/purify.min.js']) await expectStatus(`${base}${path}`, 200);
-const checkpoint = `.docker-lab/${synthetic ? 'synthetic' : 'empty'}-checkpoint.json`;
+for (const path of ['/app.js', '/chat.css', '/icons.svg', '/brand-orbit.png', '/questions.json', '/question-rotation.mjs', '/source-evidence.mjs', '/turn-lifecycle.mjs', '/answer-process.mjs', '/prompt-sparks.mjs', '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs', '/composer-controls.mjs', '/answer-copy.mjs', '/selection-copy.mjs', '/vendor/marked.umd.js', '/vendor/purify.min.js']) await expectStatus(`${base}${path}`, 200);
+const checkpoint = `.docker-lab/${synthetic ? 'synthetic' : live ? 'live' : 'empty'}-checkpoint.json`;
 let session;
 if (restore) session = JSON.parse(readFileSync(checkpoint, 'utf8'));
 else {
@@ -44,7 +48,7 @@ const history = async () => (await expectStatus(`${base}/api/qa/conversations/${
 await history();
 if (restore) { console.log(JSON.stringify({ restored: true, synthetic, messages: (await history()).messages?.length || 0 })); process.exit(0); }
 if (!synthetic) {
-  console.log(JSON.stringify({ emptyPool: 'PASS', configured: health.configured, authenticated: health.authenticated, contract: health.contractSupported, ready: health.ready, capacity: health.capacity, pathsAndAuth: 'PASS' }));
+  console.log(JSON.stringify({ [live ? 'liveReadiness' : 'emptyPool']: 'PASS', configured: health.configured, authenticated: health.authenticated, contract: health.contractSupported, ready: health.ready, capacity: health.capacity, pathsAndAuth: 'PASS', realAnswer:'not tested by this check' }));
   process.exit(0);
 }
 const ask = (question, requestId = randomUUID(), signal) => get(`${base}/api/qa/ask`, { method: 'POST', headers, body: JSON.stringify({ question, conversationId: session.id, requestId }), signal });

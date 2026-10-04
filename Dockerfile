@@ -9,7 +9,10 @@ COPY .env.example ./
 RUN npm run build
 
 FROM node:22-bookworm-slim
-ENV NODE_ENV=production PORT=4317 DEMO_DISABLE_ADMIN=1 DEMO_RUNTIME_DIR=/var/lib/explorer-qa
+ARG SOURCE_REVISION=local-dev
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+LABEL org.opencontainers.image.source="https://github.com/19Chris19/explorer-ai-qa-demo"
+ENV NODE_ENV=production PORT=4317 DEMO_DISABLE_ADMIN=1 DEMO_RUNTIME_DIR=/var/lib/explorer-qa DEMO_RELEASE_REVISION=$SOURCE_REVISION
 WORKDIR /app
 COPY --from=build --chown=node:node /app/dist ./
 RUN npm ci --omit=dev

@@ -1,6 +1,10 @@
 import { mkdirSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { randomBytes, createHash } from 'node:crypto';
 import { resolve } from 'node:path';
+import { parseArgs } from 'node:util';
+
+const { values } = parseArgs({ options: { kb: { type: 'string', default: '999000111' } } });
+if (!/^[1-9][0-9]{0,31}$/u.test(values.kb)) throw new Error('Invalid knowledge scope');
 
 // New credentials only. Never read live Air configuration or account stores.
 const dir = resolve('.docker-lab');
@@ -10,7 +14,7 @@ for (const name of ['provider.env', 'explorer.env']) {
 }
 const secret = () => randomBytes(32).toString('base64url');
 const api = secret(), internal = secret(), admin = secret(), cookie = secret();
-const scope = '999000111';
+const scope = values.kb;
 const provider = [
   'IMA_QA_PROVIDER=ima-web-agent', 'PORT=3000',
   `IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_ID=${scope}`,
