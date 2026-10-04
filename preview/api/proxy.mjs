@@ -4,6 +4,7 @@ export const maxDuration = 300;
 
 const assets = new Set(['', 'styles.css', 'chat.css', 'icons.svg', 'brand-orbit.png', 'questions.json',
   'question-rotation.mjs', 'source-evidence.mjs', 'app.js', 'answer-markdown.js', 'message-shape.mjs',
+  'turn-lifecycle.mjs', 'prompt-sparks.mjs', 'answer-process.mjs', 'voice-preview.mjs',
   'composer-shape.mjs', 'composer-controls.mjs',
   'answer-copy.mjs',
   'selection-copy.mjs',
