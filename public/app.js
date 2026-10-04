@@ -46,7 +46,8 @@ const composerWrap = document.querySelector('#composerWrap');
 const composerFloatActions = document.querySelector('#composerFloatActions');
 const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
-if (['localhost', '127.0.0.1'].includes(window.location?.hostname)) document.querySelector('.admin-link').hidden = false;
+const adminLink = document.querySelector('.admin-link');
+if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
 if (document.body.classList.contains('qa-embedded')) {
   window.addEventListener('message', event => {
     if (event.origin !== window.location.origin) return;
