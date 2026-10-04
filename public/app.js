@@ -9,9 +9,12 @@ import { resizeComposer, observeComposerWidth } from './composer-shape.mjs';
 import { composerControlState, providerAccessState } from './composer-controls.mjs';
 import { createAnswerCopy } from './answer-copy.mjs';
 import { createSelectionCopy } from './selection-copy.mjs';
+import { createHostBridge } from './host-bridge.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
+const storageKey = key => `${document.querySelector('meta[name="qa-storage-namespace"]')?.content || ''}${key}`;
+let hostBridge = null;
 const answerCopies = new WeakMap();
 
 const log = document.querySelector('#chatLog');
@@ -48,20 +51,8 @@ const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
 const adminLink = document.querySelector('.admin-link');
 if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
-if (document.body.classList.contains('qa-embedded')) {
-  window.addEventListener('message', event => {
-    if (event.origin !== window.location.origin) return;
-    const commands = {
-      'explorer-qa:new': '#newChat',
-      'explorer-qa:history': '#showHistory',
-      'explorer-qa:more': '#moreToggle',
-    };
-    const selector = commands[event.data?.type];
-    if (selector) document.querySelector(selector)?.click();
-  });
-}
 const state = {
-  conversationId: sessionStorage.getItem('qa-native-conversation-id') || '',
+  conversationId: sessionStorage.getItem(storageKey('qa-native-conversation-id')) || '',
   legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false, access: 'checking',
   activeWebRequest: false, webRequestState: 'idle',
   queuedJobs: [], queueSubmitting: false, preparing: false, activeQueuedId: '',
@@ -74,9 +65,9 @@ let composerImpact = null;
 let exitingWelcome = null;
 let webStateTimer = 0;
 const ui = {
-  locale: localStorage.getItem('qa-ui-locale') === 'en' ? 'en' : 'zh',
-  color: ['blue', 'teal', 'graphite'].includes(localStorage.getItem('qa-ui-color')) ? localStorage.getItem('qa-ui-color') : 'blue',
-  dark: localStorage.getItem('qa-ui-dark') === 'true',
+  locale: localStorage.getItem(storageKey('qa-ui-locale')) === 'en' ? 'en' : 'zh',
+  color: ['blue', 'teal', 'graphite'].includes(localStorage.getItem(storageKey('qa-ui-color'))) ? localStorage.getItem(storageKey('qa-ui-color')) : 'blue',
+  dark: localStorage.getItem(storageKey('qa-ui-dark')) === 'true',
 };
 const labels = {
   zh: {
@@ -142,6 +133,7 @@ function applyPreferences() {
   updateVoicePreviewControl();
   renderSuggestions();
   updateFloatingControls();
+  hostBridge?.preferences({ locale: ui.locale, dark: ui.dark, color: ui.color });
 }
 
 function updateQuestionPlaceholder() {
@@ -194,7 +186,7 @@ document.querySelector('#historyClose').addEventListener('click', () => closeHis
 historySearch.addEventListener('input', renderConversationList);
 document.querySelector('#languageButton').addEventListener('click', () => {
   ui.locale = ui.locale === 'zh' ? 'en' : 'zh';
-  localStorage.setItem('qa-ui-locale', ui.locale);
+  localStorage.setItem(storageKey('qa-ui-locale'), ui.locale);
   applyPreferences();
   if (main.classList.contains('is-empty')) welcome();
   renderConversationList();
@@ -202,12 +194,12 @@ document.querySelector('#languageButton').addEventListener('click', () => {
 });
 document.querySelectorAll('[data-color-option]').forEach(button => button.addEventListener('click', () => {
   ui.color = button.dataset.colorOption;
-  localStorage.setItem('qa-ui-color', ui.color);
+  localStorage.setItem(storageKey('qa-ui-color'), ui.color);
   applyPreferences();
 }));
 document.querySelector('#darkModeButton').addEventListener('click', () => {
   ui.dark = !ui.dark;
-  localStorage.setItem('qa-ui-dark', String(ui.dark));
+  localStorage.setItem(storageKey('qa-ui-dark'), String(ui.dark));
   applyPreferences();
 });
 micButton.addEventListener('click', () => {
@@ -438,8 +430,8 @@ function setConversation(id) {
   voicePreview.stop();
   state.conversationId = id;
   state.legacyMode = false;
-  if (id) sessionStorage.setItem('qa-native-conversation-id', id);
-  else sessionStorage.removeItem('qa-native-conversation-id');
+  if (id) sessionStorage.setItem(storageKey('qa-native-conversation-id'), id);
+  else sessionStorage.removeItem(storageKey('qa-native-conversation-id'));
 }
 
 function status(message, showInThread = false) {
@@ -1255,4 +1247,18 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '', queuedCr
 function scrollBottom() {
   log.scrollTop = log.scrollHeight;
   lastScrollTop = log.scrollTop;
+}
+
+if (document.body.classList.contains('qa-embedded')) {
+  hostBridge = createHostBridge(window, {
+    onCommand: command => document.querySelector({ new: '#newChat', history: '#showHistory', more: '#moreToggle' }[command])?.click(),
+    onPreferences: preferences => {
+      Object.assign(ui, preferences);
+      applyPreferences();
+      if (main.classList.contains('is-empty')) welcome();
+      renderConversationList();
+    },
+  });
+  hostBridge.ready();
+  window.addEventListener('pagehide', () => hostBridge.dispose(), { once: true });
 }

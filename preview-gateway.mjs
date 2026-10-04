@@ -11,6 +11,7 @@ const assets = new Set([
   '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs', '/composer-controls.mjs',
   '/answer-copy.mjs',
   '/selection-copy.mjs',
+  '/host-bridge.mjs',
   '/app.js', '/answer-markdown.js', '/vendor/marked.umd.js', '/vendor/purify.min.js',
 ]);
 

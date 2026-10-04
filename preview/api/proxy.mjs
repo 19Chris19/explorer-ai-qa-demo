@@ -8,6 +8,7 @@ const assets = new Set(['', 'styles.css', 'chat.css', 'icons.svg', 'brand-orbit.
   'composer-shape.mjs', 'composer-controls.mjs',
   'answer-copy.mjs',
   'selection-copy.mjs',
+  'host-bridge.mjs',
   'vendor/marked.umd.js', 'vendor/purify.min.js']);
 
 function allowed(path, method) {
