@@ -38,19 +38,23 @@ Each turn requires `question` (1-2000 characters), `answer` (1-200000 characters
 and `createdAt` (same timestamp format). Optional metadata:
 
 - `sources`: defaults to `[]`, up to 100 nonempty objects. Only `index` (integer
-  1-100), `title` (up to 2000 characters), `snippet` (up to 8000), `url` and `type`
-  (up to 2000 each) are accepted. Empty title/snippet is allowed. Optional URLs
+  1-100), `title` (up to 2000 characters), `snippet` (up to 8000), `url` (up to
+  2000), `type` (safe integer or nonempty string up to 2000), and `sourceType`
+  (integer enum 0/1/2, preserved without renaming to type) are accepted.
+  Empty title/snippet is allowed. Optional URLs
   must be HTTP(S), without userinfo; the exporter must redact sensitive URL
   parameters or omit unsafe URLs. URLs are not fetched by the archive loader.
 - `searchSummary`: defaults to `null`; null or a string up to 16000 characters.
 - `evidence`: defaults to `null`; null or an object with only `source_intent`,
-  `answer_basis`, `source_count`, `knowledge_source_count`, `web_source_count`,
+  `sourceIntent`, `answer_basis`, `source_count`, `knowledge_source_count`, `web_source_count`,
   `complete`, `interrupted`, `timing`, `process`. All evidence keys are optional.
   Counts are integers 0-100. Intent is empty or `web_requested`; basis is empty,
   `knowledge`, `web`, `mixed`, `agent_general`, or `provider_fallback`.
   Completion flags are booleans. Timing accepts only `elapsed_ms` and
   `queue_wait_ms`, finite numbers 0-86400000. Process accepts up to 100 objects
   with only required nonempty `kind` (40 characters) and `text` (4000).
+  The exporter alias `sourceIntent` has the same enum and is normalized to
+  `source_intent`; when both exist they must agree. Unknown values still fail.
 
 Limits: 16 MiB file, 10000 conversations, 1000 turns per conversation, 50000 total
 turns. File reads are bounded; malformed JSON/UTF-8, inaccessible files, invalid
@@ -99,6 +103,41 @@ not modify Compose, networking or the running Air Provider. Keep internal/admin
 routes private; only the two archive GET routes were added to preview allowlists.
 
 ## Agent Verification and Handoff
+
+### Actual Exporter Interoperability
+
+Run the opt-in cross-repository test against the reviewed migration source:
+
+```sh
+PROVIDER_A_TRANSFER_TEST_MODULE=/absolute/reviewed/provider/src/account-transfer.js \
+  node --test test/archive-export-interop.test.mjs
+```
+
+This imports only its `exportHistory` function, passes in-memory synthetic
+conversations through it, serializes/parses JSON as the real file writer does,
+then calls `parseHistoryArchive`. It never calls transfer preparation or reads
+runtime stores. Without the explicit test setting the interop test is skipped;
+normal website operation never loads the Provider checkout.
+
+The reviewed current exporter maps sourceType 0 to `type: "web"`, 1/2 to
+`type: "knowledge"` when type is absent, and preserves an existing type. It maps
+the valid sourceIntent alias only when source_intent is absent. The website also
+accepts the earlier raw sourceType/alias form with strict validation. The current
+exporter drops invalid alias values and prefers canonical intent on conflict;
+successful parsing therefore does not prove discarded source metadata was valid.
+Parent preflight must reject/quarantine those ambiguities before export. The
+website rejects them whenever present in the supplied archive.
+
+The exporter may emit valid but empty Provider conversations (`turns: []`), blank
+answers, or timestamps it has not validated. These remain website acceptance
+blockers, not records silently omitted by the reader. Before actual export, the
+parent must explicitly inventory and exclude legitimate empty conversation
+shells from the archive input, recording the excluded count outside public
+responses. Blank/incomplete turns, missing owners and malformed timestamps must
+be quarantined for review, not assigned an invented answer, owner or date.
+An archive with zero conversations is valid. Numeric epoch milliseconds and
+canonical UTC ISO timestamps are accepted; numeric strings, nonfinite numbers,
+missing dates, impossible dates and reversed chronology are rejected.
 
 ### Operational Gates: Archive Before Upstream Cutover
 

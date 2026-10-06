@@ -23,11 +23,12 @@ function date(value) {
 const timestamp = value => typeof value === 'number' ? value : Date.parse(value);
 function evidence(value) {
   if (value === null) return;
-  keys(value, ['source_count', 'knowledge_source_count', 'web_source_count', 'answer_basis', 'source_intent', 'complete', 'interrupted', 'timing', 'process']);
+  keys(value, ['source_count', 'knowledge_source_count', 'web_source_count', 'answer_basis', 'source_intent', 'sourceIntent', 'complete', 'interrupted', 'timing', 'process']);
+  if (Object.hasOwn(value, 'sourceIntent') && Object.hasOwn(value, 'source_intent') && value.sourceIntent !== value.source_intent) fail();
   for (const [key, item] of Object.entries(value)) {
     if (key.endsWith('_count')) { if (!Number.isInteger(item) || item < 0 || item > 100) fail(); }
     else if (key === 'answer_basis') { if (!['', 'knowledge', 'web', 'mixed', 'agent_general', 'provider_fallback'].includes(item)) fail(); }
-    else if (key === 'source_intent') { if (!['', 'web_requested'].includes(item)) fail(); }
+    else if (key === 'source_intent' || key === 'sourceIntent') { if (!['', 'web_requested'].includes(item)) fail(); }
     else if (['complete', 'interrupted'].includes(key)) { if (typeof item !== 'boolean') fail(); }
     else if (key === 'timing') {
       keys(item, ['elapsed_ms', 'queue_wait_ms']);
@@ -68,10 +69,12 @@ export function parseHistoryArchive(input) {
       previous = at;
       if (turn.sources !== undefined && (!Array.isArray(turn.sources) || turn.sources.length > 100)) fail();
       for (const source of turn.sources || []) {
-        keys(source, ['index', 'title', 'url', 'snippet', 'type']);
+        keys(source, ['index', 'title', 'url', 'snippet', 'type', 'sourceType']);
         if (!Object.keys(source).length) fail();
         for (const [key, value] of Object.entries(source)) {
           if (key === 'index') { if (!Number.isInteger(value) || value < 1 || value > 100) fail(); }
+          else if (key === 'sourceType') { if (![0, 1, 2].includes(value)) fail(); }
+          else if (key === 'type' && typeof value === 'number') { if (!Number.isSafeInteger(value)) fail(); }
           else {
             string(value, key === 'snippet' ? 8000 : 2000, ['title', 'snippet'].includes(key));
             if (key === 'url') {
@@ -85,7 +88,14 @@ export function parseHistoryArchive(input) {
       if (turn.searchSummary !== undefined && turn.searchSummary !== null) string(turn.searchSummary, 16000, true);
       if (turn.evidence !== undefined) evidence(turn.evidence);
     }
-    records.set(`archive:${row.id}`, structuredClone(row));
+    const record = structuredClone(row);
+    for (const turn of record.turns) {
+      if (turn.evidence && Object.hasOwn(turn.evidence, 'sourceIntent')) {
+        turn.evidence.source_intent = turn.evidence.sourceIntent;
+        delete turn.evidence.sourceIntent;
+      }
+    }
+    records.set(`archive:${row.id}`, record);
   }
   return records;
 }

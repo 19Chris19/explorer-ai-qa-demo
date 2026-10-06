@@ -74,3 +74,25 @@ test('Provider numeric timestamps and absent optional metadata are accepted with
     assert.throws(() => parseHistoryArchive({ schemaVersion: 1, conversations: [{ ...row, createdAt: value }] }));
   }
 });
+
+test('legacy sourceType and intent alias stay bounded and normalize without mutating input', () => {
+  const row = syntheticConversation();
+  row.turns[0].sources[0].type = 1;
+  for (const sourceType of [0, 1, 2]) {
+    row.turns[0].sources[0].sourceType = sourceType;
+    row.turns[0].evidence = { sourceIntent: 'web_requested' };
+    const record = parseHistoryArchive({ schemaVersion: 1, conversations: [row] }).get(`archive:${row.id}`);
+    assert.equal(record.turns[0].sources[0].sourceType, sourceType);
+    assert.deepEqual(record.turns[0].evidence, { source_intent: 'web_requested' });
+    assert.deepEqual(row.turns[0].evidence, { sourceIntent: 'web_requested' });
+  }
+  for (const sourceType of [-1, 3, '1', null, {}, 0.5]) {
+    row.turns[0].sources[0].sourceType = sourceType;
+    assert.throws(() => parseHistoryArchive({ schemaVersion: 1, conversations: [row] }));
+  }
+  row.turns[0].sources[0].sourceType = 1;
+  for (const evidence of [{ sourceIntent: 'web' }, { sourceIntent: null }, { sourceIntent: 'web_requested', source_intent: '' }, { sourceIntent: '', unexpected: true }]) {
+    row.turns[0].evidence = evidence;
+    assert.throws(() => parseHistoryArchive({ schemaVersion: 1, conversations: [row] }));
+  }
+});
