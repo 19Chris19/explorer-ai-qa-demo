@@ -24,6 +24,12 @@ Provider A 是通用知识库问答服务；知天下是调用它的网站产品
 
 新安装解析这对固定版本镜像，生成 `.docker-lab/deployment.json` 与 `release.env`，保存实际镜像摘要（无注册表摘要的本地候选保存 image ID）、代码 revision 和配套版本。后续 resume 使用这些已固定值，不重新追随版本 tag。这些安装记录不含凭证值，但仍保留于私有目录。
 
+2026-10-06 候选修正：`deploy/onboard.mjs` 与 `deploy.sh` 的每次 Compose 调用都从 `release.env` 显式绑定项目，清除继承的 `COMPOSE_*`、镜像、revision、端口和 `DEMO_ASSET_PREFIX` 插值变量，但保留 Docker 连接与授权设置。初始化时的镜像环境变量只用于选择待检查的镜像；不能覆盖后续安装锁。锁文件只接受生成的六个字段及不可变 digest/image ID，缺失、重复、浮动 tag 或非法值都会停止，不执行锁文件内容。网站升级和回退逐次读取更新后的锁文件，不重新采用 shell 中的旧镜像变量。高级自定义 Compose 配置需另有明确维护流程，不能靠环境变量暗中覆盖此入口。
+
+发布检查与网站服务一致：只有显式设置 `PROVIDER_A_ALLOW_HOST_GATEWAY=true` 才允许已有文档规定的 `http://host.docker.internal:3117`；未授权及其他地址仍拒绝，默认独立 Provider 拓扑不变。合成 CI 显式提供 `PROVIDER_IMAGE=node:22-bookworm-slim`，用于基础 Compose 插值，不代表生产 Provider 镜像。
+
+本次证据仅为临时合成配置、假 Docker 命令及本地 Node 测试/源码构建；没有调用 Docker daemon、访问既有配置或验证 Windows/远程 Linux 的实际运行。此前候选运行证据仍按原日期和范围解释。
+
 正式镜像流水线在两架构启动验收后生成 `release-manifest.json`，记录网站和 Provider 的摘要、提交、合同与合成验收边界。不能用本地 image ID 冒充 GHCR 发布摘要。tag 必须保持不变；升级网站不会自动升级 Provider。
 
 ## 当前候选顺序（2026-10-05）

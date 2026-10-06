@@ -5,10 +5,30 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
 . "$ROOT/deploy/bundle.sh"
 
-compose() {
+compose() (
   test -f .docker-lab/release.env || { echo 'Initialize a new installation first; existing legacy installations use their recorded procedure.' >&2; exit 1; }
-  docker compose --env-file .docker-lab/release.env -f compose.linux.yaml "$@"
-}
+  # Validate data without sourcing it. This path deliberately needs no host Node.
+  project=$(awk -F= '
+    function hex(value, size) { return length(value) == size && value ~ /^[a-f0-9]+$/ }
+    function image(value) {
+      sub(/^ghcr[.]io\/19chris19\/[a-z0-9-]+@/, "", value)
+      return substr(value, 1, 7) == "sha256:" && hex(substr(value, 8), 64)
+    }
+    NF != 2 || seen[$1]++ { bad=1 }
+    $1 == "COMPOSE_PROJECT_NAME" { project=$2; if ($2 !~ /^[a-z0-9][a-z0-9_-]*$/ || length($2)>49) bad=1; next }
+    $1 == "PROVIDER_IMAGE" || $1 == "EXPLORER_IMAGE" { if (!image($2)) bad=1; next }
+    $1 == "EXPLORER_REVISION" { if (!hex($2, 40)) bad=1; next }
+    $1 == "WEB_HOST_PORT" || $1 == "PROVIDER_HOST_PORT" { ports[$1]=$2; if ($2 !~ /^[1-9][0-9]*$/ || $2>65535) bad=1; next }
+    { bad=1 }
+    END {
+      if (bad || NR!=6 || !seen["COMPOSE_PROJECT_NAME"] || !seen["PROVIDER_IMAGE"] || !seen["EXPLORER_IMAGE"] || !seen["EXPLORER_REVISION"] || !seen["WEB_HOST_PORT"] || !seen["PROVIDER_HOST_PORT"] || ports["WEB_HOST_PORT"]==ports["PROVIDER_HOST_PORT"]) exit 1
+      print project
+    }' .docker-lab/release.env) || { echo 'invalid_release_lock' >&2; exit 1; }
+  # Retain Docker transport/auth settings, but never ambient Compose overrides.
+  for key in $(env | sed -n 's/^\(COMPOSE_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$key"; done
+  unset PROVIDER_IMAGE EXPLORER_IMAGE EXPLORER_REVISION WEB_HOST_PORT PROVIDER_HOST_PORT DEMO_ASSET_PREFIX
+  docker compose -p "$project" --env-file .docker-lab/release.env -f compose.linux.yaml "$@"
+)
 
 command=${1:-help}
 if [ "$#" -gt 0 ]; then shift; fi

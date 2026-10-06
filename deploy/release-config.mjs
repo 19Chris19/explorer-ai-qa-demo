@@ -49,10 +49,15 @@ export function initialize(dir, options, images) {
   return metadata;
 }
 
+export function releaseClient(env = process.env) {
+  return createProviderAClient({ baseUrl: env.PROVIDER_A_BASE_URL,
+    apiToken: env.PROVIDER_A_API_TOKEN, serviceToken: env.PROVIDER_A_INTERNAL_SERVICE_TOKEN,
+    knowledgeScopeRef: env.PROVIDER_A_KNOWLEDGE_SCOPE_REF,
+    allowHostGateway: env.PROVIDER_A_ALLOW_HOST_GATEWAY === 'true' });
+}
+
 async function check(idle) {
-  const client = createProviderAClient({ baseUrl: process.env.PROVIDER_A_BASE_URL,
-    apiToken: process.env.PROVIDER_A_API_TOKEN, serviceToken: process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN,
-    knowledgeScopeRef: process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF });
+  const client = releaseClient();
   const state = await client.readiness();
   if (!state.authenticated || !state.contractSupported) throw Error('Provider authentication or protocol check failed');
   const queueFile = resolve(process.env.DEMO_RUNTIME_DIR, 'queued-turns.json');

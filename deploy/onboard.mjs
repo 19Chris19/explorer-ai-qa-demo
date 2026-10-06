@@ -39,9 +39,34 @@ function verifyInstallation(state, source, bundle) {
     || state.bundle?.websiteVersion !== bundle.WEBSITE_VERSION
     || state.bundle?.topology !== 'dedicated-provider') throw Error('existing_installation_requires_reviewed_upgrade');
 }
-async function docker(root, args, capture = false) {
+export function lockedCompose(root, args, environment = process.env) {
+  const path = join(root, '.docker-lab/release.env');
+  const rules = {
+    COMPOSE_PROJECT_NAME: /^[a-z0-9][a-z0-9_-]{0,48}$/,
+    PROVIDER_IMAGE: /^(?:ghcr\.io\/19chris19\/[a-z0-9-]+@)?sha256:[a-f0-9]{64}$/,
+    EXPLORER_IMAGE: /^(?:ghcr\.io\/19chris19\/[a-z0-9-]+@)?sha256:[a-f0-9]{64}$/,
+    EXPLORER_REVISION: /^[a-f0-9]{40}$/,
+    WEB_HOST_PORT: /^[1-9][0-9]{0,4}$/,
+    PROVIDER_HOST_PORT: /^[1-9][0-9]{0,4}$/,
+  };
+  const values = {};
+  for (const line of readFileSync(path, 'utf8').trimEnd().split('\n')) {
+    const at = line.indexOf('='), key = line.slice(0, at), value = line.slice(at + 1);
+    if (!Object.hasOwn(rules, key) || Object.hasOwn(values, key) || !rules[key].test(value)) throw Error('invalid_release_lock');
+    values[key] = value;
+  }
+  if (Object.keys(values).length !== 6 || Number(values.WEB_HOST_PORT) > 65535
+    || Number(values.PROVIDER_HOST_PORT) > 65535 || values.WEB_HOST_PORT === values.PROVIDER_HOST_PORT) throw Error('invalid_release_lock');
+  const env = Object.fromEntries(Object.entries(environment).filter(([key]) => {
+    const normalized = key.toUpperCase();
+    return !normalized.startsWith('COMPOSE_') && !Object.hasOwn(rules, normalized) && normalized !== 'DEMO_ASSET_PREFIX';
+  }));
+  return { args: ['compose', '-p', values.COMPOSE_PROJECT_NAME, '--env-file', path,
+    '-f', join(root, 'compose.linux.yaml'), ...args], env };
+}
+async function docker(root, args, capture = false, env = process.env) {
   return new Promise((resolveResult, reject) => {
-    const child = spawn('docker', args, { cwd: root, stdio: ['ignore', capture ? 'pipe' : 'ignore', 'ignore'], windowsHide: true });
+    const child = spawn('docker', args, { cwd: root, env, stdio: ['ignore', capture ? 'pipe' : 'ignore', 'ignore'], windowsHide: true });
     let output = ''; const timer = setTimeout(() => { child.kill(); reject(Error('docker_operation_timeout')); }, 300000);
     if (capture) child.stdout.on('data', chunk => { output += chunk; if (output.length > 1048576) child.kill(); });
     child.once('error', () => { clearTimeout(timer); reject(Error('docker_unavailable')); });
@@ -71,11 +96,16 @@ export async function onboard(root, command, args, dependencies = {}) {
   const bundle = readBundle();
   const source = resolve(process.env.PROVIDER_SOURCE_DIR || join(root, `.maintenance/provider-${bundle.PROVIDER_TAG}`));
   const tools = dependencies.tools || providerTools(source, bundle.PROVIDER_TAG);
-  const execute = dependencies.docker || ((args, capture) => docker(root, args, capture));
+  const execute = (args, capture) => {
+    const invocation = args[0] === 'compose' ? lockedCompose(root, args.slice(1), dependencies.env || process.env)
+      : { args, env: dependencies.env || process.env };
+    return dependencies.docker ? dependencies.docker(invocation.args, capture, invocation.env)
+      : docker(root, invocation.args, capture, invocation.env);
+  };
   const emit = dependencies.emit || (value => console.log(JSON.stringify(value)));
   const dir = join(root, '.docker-lab');
   const helperDir = join(dir, 'maintenance');
-  const compose = ['compose', '--env-file', join(dir, 'release.env'), '-f', join(root, 'compose.linux.yaml')];
+  const compose = ['compose'];
   if (command === 'doctor') {
     await tools.guided(source, 'doctor', {}, emit);
     emit({ stage: 'website_preflight', existingInstallation: existsSync(join(dir, 'deployment.json')),

@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      PROVIDER_IMAGE: node:22-bookworm-slim
       EXPLORER_IMAGE: explorer-ci:${{ github.sha }}
       EXPLORER_REVISION: ${{ github.sha }}
     steps:

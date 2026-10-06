@@ -29,7 +29,12 @@ test('synthetic double-service setup prepares the desktop helper before starting
     tools: { playwrightVersion: 'synthetic', guided: async (_, command) => calls.push(command),
       resolveGuidedTarget: async () => ({ shareUrl: 'https://ima.qq.com/wiki/?shareId=' + 'a'.repeat(64), knowledgeBaseId: '999000111' }),
       parseShareUrl: url => ({ url }) },
-    docker: async args => { calls.push(args.join(' ')); return args[0] === 'ps' ? '' : args[0] === 'image' ? JSON.stringify(images)
+    docker: async (args, _, env) => {
+      if (args[0] === 'compose') {
+        assert.equal(args[args.indexOf('-p') + 1], 'zhitianxia-qa');
+        assert.equal(env.PROVIDER_IMAGE, undefined); assert.equal(env.EXPLORER_IMAGE, undefined);
+      }
+      calls.push(args.join(' ')); return args[0] === 'ps' ? '' : args[0] === 'image' ? JSON.stringify(images)
       : args.includes('provider-a') && args.includes('exec') ? JSON.stringify({ protocol: 'shared_library_membership_v1', browserReady: true }) : ''; },
     freePort: async () => {}, emit: e => events.push(e),
   };
@@ -46,8 +51,8 @@ test('synthetic double-service setup prepares the desktop helper before starting
     await onboard(root, 'resume', [], deps); assert.equal(readFileSync(file, 'utf8'), before);
     await onboard(root, 'check', [], deps);
     const original = deps.docker;
-    deps.docker = async args => args.includes('provider-a') && args.includes('exec')
-      ? JSON.stringify({ protocol: 'shared_library_membership_v1', browserReady: false }) : original(args);
+    deps.docker = async (args, capture, env) => args.includes('provider-a') && args.includes('exec')
+      ? JSON.stringify({ protocol: 'shared_library_membership_v1', browserReady: false }) : original(args, capture, env);
     await assert.rejects(onboard(root, 'check', [], deps), /enrollment_path_not_ready/);
     assert.equal(readFileSync(file, 'utf8'), before);
     await assert.rejects(onboard(root, 'init', [], deps), /existing_installation_protected/);
