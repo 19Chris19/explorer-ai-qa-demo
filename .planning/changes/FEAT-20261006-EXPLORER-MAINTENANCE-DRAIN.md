@@ -60,3 +60,7 @@ the gateway are insufficient proof of drain. MAINTENANCE_DRAIN now documents a
 separately authorized first-install interruption boundary; no deployment executed.
 Follow-up gate checks apply only after installation. Existing pending messages and
 history must be preserved; interrupted answers are not automatically replayed.
+
+README now distinguishes legacy one-hour TTL from maintenance-mode retained
+paused work and links the first-install boundary. This corrects the installation
+summary without changing code or implying that running services have this gate.
