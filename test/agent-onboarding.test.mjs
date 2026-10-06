@@ -57,6 +57,12 @@ test('synthetic double-service setup prepares the desktop helper before starting
     assert.equal(readFileSync(file, 'utf8'), before);
     await assert.rejects(onboard(root, 'init', [], deps), /existing_installation_protected/);
     const stateFile = join(root, '.docker-lab/deployment.json');
+    writeFileSync(stateFile, JSON.stringify({ ...metadata, project: 'other-project' }));
+    for (const command of ['resume', 'repair', 'check']) {
+      const count = calls.length;
+      await assert.rejects(onboard(root, command, [], deps), /existing_installation_requires_reviewed_upgrade/);
+      assert.equal(calls.length, count);
+    }
     for (const bundle of [undefined, { ...metadata.bundle, providerTag: 'v0.4.1' },
       { ...metadata.bundle, websiteVersion: '0.2.0' }, { ...metadata.bundle, topology: 'shared-provider' }]) {
       writeFileSync(stateFile, JSON.stringify({ ...metadata, bundle }));
@@ -77,7 +83,7 @@ test('wrong candidate image version stops before target resolution or configurat
   const deps = {
     env: { PROVIDER_IMAGE: 'synthetic/provider:reviewed', EXPLORER_IMAGE: 'synthetic/website:reviewed' },
     tools: { guided: async () => {}, resolveGuidedTarget: async () => assert.fail('must not resolve target') },
-    docker: async args => args[0] === 'ps' ? '' : JSON.stringify(images),
+    docker: async args => ['ps', 'volume', 'network'].includes(args[0]) ? '' : JSON.stringify(images),
     freePort: async () => {}, emit: () => {},
   };
   try {
@@ -89,7 +95,7 @@ test('a helper setup failure creates no website credentials and can be retried',
   const root = mkdtempSync(join(tmpdir(), 'website-helper-failure-'));
   const deps = { env: { PROVIDER_IMAGE: 'synthetic/provider:reviewed', EXPLORER_IMAGE: 'synthetic/website:reviewed' }, tools: { playwrightVersion: 'synthetic', guided: async (_, command) => { if (command === 'browser-install') throw Error('synthetic_helper_offline'); },
     resolveGuidedTarget: async () => ({ shareUrl: DEFAULT_SHARE_URL, knowledgeBaseId: '999000111' }), parseShareUrl: url => ({ url }) },
-    docker: async args => args[0] === 'ps' ? '' : JSON.stringify(syntheticImages()), freePort: async () => {}, emit: () => {} };
+    docker: async args => ['ps', 'volume', 'network'].includes(args[0]) ? '' : JSON.stringify(syntheticImages()), freePort: async () => {}, emit: () => {} };
   try {
     await assert.rejects(onboard(root, 'init', ['--mode', 'desktop'], deps), /synthetic_helper_offline/);
     assert.equal(existsSync(join(root, '.docker-lab/provider.env')), false);

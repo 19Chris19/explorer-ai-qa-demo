@@ -47,11 +47,20 @@ case "$command" in
       if [ "$argument" = --project ]; then next_project=1; fi
       case "$argument" in --project=*) project=${argument#--project=} ;; esac
     done
-    test -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" || {
-      echo 'Compose project already exists; initialize a different project or use its reviewed upgrade procedure.' >&2; exit 1;
-    }
+    printf '%s\n' "$project" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9_-]{0,48}$' || { echo 'invalid_compose_project' >&2; exit 1; }
     for file in provider.env explorer.env deployment.json release.env; do
       test ! -e ".docker-lab/$file" || { echo 'Existing installation protected; initialization refused.' >&2; exit 1; }
+    done
+    resources=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || exit 1
+    test -z "$resources" || { echo 'existing_compose_project_protected' >&2; exit 1; }
+    for kind in volume network; do
+      resources=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$project") || exit 1
+      test -z "$resources" || { echo 'existing_compose_project_protected' >&2; exit 1; }
+      resources=$(docker "$kind" ls --format '{{.Name}}') || exit 1
+      collision=$(printf '%s\n' "$resources" | awk -v project="$project" -v kind="$kind" '
+        kind == "volume" && ($0 == project "_provider-state" || $0 == project "_explorer-state") { print "collision" }
+        kind == "network" && $0 == project "_backend" { print "collision" }')
+      test -z "$collision" || { echo 'existing_compose_project_protected' >&2; exit 1; }
     done
     mkdir -p .docker-lab
     docker image inspect "$provider" >/dev/null 2>&1 || docker pull "$provider"

@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { initialize, parseOptions } from './release-config.mjs';
 import { readBundle, selectBundleImages, verifyBundleImages } from './bundle.mjs';
+import { assertFreshProject } from './project-resources.mjs';
 
 export const DEFAULT_SHARE_URL = 'https://ima.qq.com/wiki/?shareId=e528d98d028732fcd9b6adcc879db1463a8b3e4c8f8beb82a7519c4b4fdf8e64';
 export function parseOnboardingOptions(args) {
@@ -33,8 +34,8 @@ export function providerTools(directory, tag = readBundle().PROVIDER_TAG) {
     return { ...tools, ...target, playwrightVersion: require('playwright-core/package.json').version };
   } catch { throw Error('provider_tooling_required'); }
 }
-function verifyInstallation(state, source, bundle) {
-  if (state.onboarding?.version !== 1 || state.onboarding.providerSource !== source
+function verifyInstallation(state, source, bundle, project) {
+  if (state.project !== project || state.onboarding?.version !== 1 || state.onboarding.providerSource !== source
     || state.bundle?.providerTag !== bundle.PROVIDER_TAG
     || state.bundle?.websiteVersion !== bundle.WEBSITE_VERSION
     || state.bundle?.topology !== 'dedicated-provider') throw Error('existing_installation_requires_reviewed_upgrade');
@@ -61,7 +62,7 @@ export function lockedCompose(root, args, environment = process.env) {
     const normalized = key.toUpperCase();
     return !normalized.startsWith('COMPOSE_') && !Object.hasOwn(rules, normalized) && normalized !== 'DEMO_ASSET_PREFIX';
   }));
-  return { args: ['compose', '-p', values.COMPOSE_PROJECT_NAME, '--env-file', path,
+  return { project: values.COMPOSE_PROJECT_NAME, args: ['compose', '-p', values.COMPOSE_PROJECT_NAME, '--env-file', path,
     '-f', join(root, 'compose.linux.yaml'), ...args], env };
 }
 async function docker(root, args, capture = false, env = process.env) {
@@ -117,7 +118,7 @@ export async function onboard(root, command, args, dependencies = {}) {
     if (['provider.env', 'explorer.env', 'deployment.json', 'release.env'].some(name => existsSync(join(dir, name)))) throw Error('existing_installation_protected');
     const images = selectBundleImages(bundle, dependencies.env || process.env);
     await tools.guided(source, 'doctor', {}, emit);
-    if (await execute(['ps', '-aq', '--filter', `label=com.docker.compose.project=${options.project}`], true)) throw Error('existing_compose_project_protected');
+    await assertFreshProject(options.project, execute);
     await (dependencies.freePort || freePort)(options.webPort); await (dependencies.freePort || freePort)(options.providerPort);
     for (const image of images) {
       if (!/^[a-z0-9][a-z0-9./:_@-]+$/.test(image)) throw Error('invalid_image');
@@ -139,7 +140,7 @@ export async function onboard(root, command, args, dependencies = {}) {
   }
   if (['resume', 'repair'].includes(command)) {
     const state = JSON.parse(readFileSync(join(dir, 'deployment.json'), 'utf8'));
-    verifyInstallation(state, source, bundle);
+    verifyInstallation(state, source, bundle, lockedCompose(root, []).project);
     if (!/^IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_SHARE_URL=https:\/\/ima\.qq\.com\/wiki\/\?shareId=[a-f0-9]{64}$/mi.test(readFileSync(join(dir, 'provider.env'), 'utf8'))) throw Error('incomplete_configuration_requires_review');
     if (state.onboarding.mode === 'desktop') await tools.guided(source, 'repair', {
       project: state.project, directory: helperDir, env: join(dir, 'provider.env') }, emit);
@@ -155,7 +156,7 @@ export async function onboard(root, command, args, dependencies = {}) {
   }
   if (command === 'check') {
     const state = JSON.parse(readFileSync(join(dir, 'deployment.json'), 'utf8'));
-    verifyInstallation(state, source, bundle);
+    verifyInstallation(state, source, bundle, lockedCompose(root, []).project);
     await execute([...compose, 'exec', '-T', 'explorer-qa', 'node', 'deploy/release-config.mjs', 'check']);
     await checkEnrollment(execute, compose, state.onboarding.mode);
     emit({ stage: 'protocol_checked', realQaVerified: false }); return;

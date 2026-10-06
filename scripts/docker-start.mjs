@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { assertFreshProject } from '../deploy/project-resources.mjs';
 
 export function parseStartOptions(args) {
   const { values }=parseArgs({args,options:{
@@ -34,8 +35,8 @@ async function start(args) {
   const providerImage=`zhitianxia-provider:${providerRevision}`,explorerImage=`zhitianxia-explorer:${explorerRevision}`;
   if(options.plan){console.log(JSON.stringify({firstDeployment:true,project:options.project,explorerRevision,providerRevision,webPort:options.webPort,providerPort:options.providerPort,privateConfig:'values withheld'}));return;}
   run('docker',['info','--format','{{.OSType}}']);
-  if(run('docker',['ps','-aq','--filter',`label=com.docker.compose.project=${options.project}`]).trim())throw new Error('Project already exists; use the reviewed upgrade procedure, not first deployment');
-  if(['provider.env','explorer.env','deployment.json'].some(name=>existsSync(resolve(root,'.docker-lab',name))))throw new Error('Private deployment config already exists; refusing to replace it');
+  await assertFreshProject(options.project,args=>run('docker',args));
+  if(['provider.env','explorer.env','deployment.json','release.env'].some(name=>existsSync(resolve(root,'.docker-lab',name))))throw new Error('Private deployment config already exists; refusing to replace it');
   run(process.execPath,['scripts/prepare-docker-lab.mjs','--kb',options.kb]);
   console.log('Building Provider and website sequentially; configuration values withheld.');
   run('docker',['build','--label',`org.opencontainers.image.revision=${providerRevision}`,'-t',providerImage,options.providerDir]);
