@@ -16,10 +16,10 @@ leave website parser, fixtures and assertions unchanged.
 
 ## Result and exact pair
 
-Provider fix: c04e13372388281bf30546348645bc9936f0279d on
+Provider fix SHA: c04e13372388281bf30546348645bc9936f0279d on
 codex/FIX-20261006-PUBLIC-ARCHIVE-CONTRACT, based on 32be509.
 Explorer verification base: f4992da; this branch only adds documentation.
-Provider production export/preflight files match reviewed monorepo 92c01bd7
+Provider export/preflight implementation files match reviewed monorepo 92c01bd7
 byte-for-byte. No Air CLI or live-state behavior was ported.
 
 - Original unchanged Explorer interop: 7/7 including parent test.
