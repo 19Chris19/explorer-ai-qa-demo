@@ -16,6 +16,19 @@ test('preview route allowlist excludes admin and internal APIs', () => {
   }
 });
 
+test('maintenance rejection preserves Retry-After without adding a public maintenance route', async () => {
+  const key = 'synthetic-preview-key-12345678901234567890';
+  const gateway = createPreviewGateway({ key, bffUrl: 'http://127.0.0.1:4317', fetchImpl: async () =>
+    new Response('{"error":"maintenance"}', { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } }) });
+  gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
+  try {
+    const response = await fetch(`http://127.0.0.1:${gateway.address().port}/api/qa/ask`, { method: 'POST', body: '{}',
+      headers: { 'X-Preview-Key': key, 'X-Preview-Visitor': 'a'.repeat(64), 'X-Preview-Origin': 'https://synthetic.example', Origin: 'https://synthetic.example' } });
+    assert.equal(response.status, 503); assert.equal(response.headers.get('retry-after'), '30');
+    assert.equal(allowedPreviewRoute('/api/qa/maintenance', 'POST'), false);
+  } finally { gateway.closeAllConnections(); gateway.close(); }
+});
+
 test('gateway rejects bad keys and preserves synthetic SSE chunks and cookies', async () => {
   const seen = [];
   const bff = createServer((req, res) => {

@@ -67,7 +67,7 @@ export async function proxy(request) {
       cache: 'no-store',
     });
     const responseHeaders = new Headers({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' });
-    for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering']) {
+    for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }

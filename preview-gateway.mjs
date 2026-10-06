@@ -82,7 +82,7 @@ export function createPreviewGateway({ key, bffUrl, fetchImpl = fetch }) {
         redirect: 'manual',
       });
       if (upstream.status >= 300 && upstream.status < 400) throw new Error('redirect_not_allowed');
-      for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering']) {
+      for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
         const value = upstream.headers.get(name);
         if (value) res.setHeader(name, value);
       }
