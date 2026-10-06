@@ -36,3 +36,13 @@ clarification is a separate commit under this same change record.
 
 Rollout remains candidate-only. Rollback by reverting this task's commits,
 without changing private configuration or volumes.
+
+## Documentation handoff
+
+Code and failure tests committed as cef3952. Agent deployment now names the
+fixed public v0.4.2 source and matching image defaults, registry permission
+preconditions, candidate exceptions and recorded-installation protection.
+Advanced Node, Linux handoff and historical Docker/versioned guides explicitly
+separate current candidate instructions from prior v0.2.0 evidence. They do not
+claim Windows, remote Linux or registry acceptance. The coordinator's
+REL-20261006-EXPLORER-V021-ALIGNED.md remains untouched and unstaged.

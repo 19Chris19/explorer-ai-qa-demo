@@ -28,6 +28,10 @@
 
 Agent 先取得本私有仓库权限与私有 GHCR 镜像拉取权限。认证通过 GitHub/Docker 的安全流程完成，不把访问令牌交给聊天记录。Git、Docker/Compose 和系统授权须先就绪。
 
+公开 Provider 源码不等于网站镜像公开；私有仓库可读也不保证私有 GHCR 包可拉取。
+先由维护者确认部署身份对配套镜像的读取授权，再运行初始化；遇到 401/403 停止，
+不能改用未知镜像或复制 Air 配置绕过。安装器不会替用户授予注册表权限。
+
 发布后的 Mac/Linux 命令：
 
 ```sh
@@ -46,9 +50,21 @@ Windows:
 
 Shell/PowerShell 包装自动取得固定 Provider tag 的源码，引导器下载用户级 Node 和版本匹配的专用 Chromium。不会改日常浏览器、全局 Node 或已有 Docker 服务；不绕过 Windows 执行策略。Linux server 模式不安装桌面浏览器。
 
+发布模式从公开仓库 `https://github.com/19Chris19/ima-qa-web-agent.git` 的
+`v0.4.2` tag 取得工具，默认镜像为
+`ghcr.io/19chris19/ima-qa-web-agent:v0.4.2` 与
+`ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.1`；不跟随 main/latest。
+执行缓存工具前核对 origin、tag 对应提交与干净工作树；不匹配时停止，不能删除
+旧安装数据来修复缓存。显式镜像覆盖也必须通过配套版本标签校验，随后记录摘要。
+版本标签是配套检查，不是签名或来源认证，候选源码与镜像仍须人工审查。
+
 安装从官方分享元数据解析并核对数字 ID；无需手工找 ID。可显式使用 `--share-url '官方分享链接'` 覆盖预设。错误链接或不能确认权限时停止，不猜测。
 
 候选开发演练必须显式设置 `PROVIDER_SOURCE_DIR`、`PROVIDER_IMAGE`、`EXPLORER_IMAGE` 为已审查的本地候选源码与固定镜像，不能把不存在的 v0.4.2/v0.2.1 tag 当成功。旧 `deploy.sh init --kb` 是高级兼容入口，**不包含新扫码准备**；新安装走 onboard。
+
+当前 `STATUS=candidate` 保持不变：上述发布模式是发布后的预期路径，不是本轮
+已经公开下载、拉取或跨平台运行成功的声明。候选不强制存在尚未发布的 Git tag，
+但两边镜像的版本标签必须分别为 `v0.4.2` 和 `v0.2.1`。
 
 ## 扫码、人机交接
 
@@ -80,6 +96,10 @@ sh onboard.sh enroll --env .onboarding/remote-admin.env --server-url http://127.
 ## 中断、修复、升级、回退
 
 `sh onboard.sh resume` 继续本工具已初始化的安装，不重新生成凭证。`repair` 只修助手或补未配置的连接，不自动重启既有 Provider。识别到旧安装或别的目录时停止，由 Agent 提出经审查的迁移，不能删配置后重来。私有源码助手目录保持固定，不在运行中移动/升级依赖。
+
+恢复、检查与修复同时核对记录中的网站版本、Provider tag 和独立部署拓扑；缺失或
+不匹配会要求经审查的升级，不能编辑安装记录冒充新版本。candidate 转 released
+本身不会升级已经固定的镜像，也不构成该安装已完成发布验收的证据。
 
 网站启动后继续使用既有 `sh deploy.sh check|backup|upgrade REVIEWED_WEBSITE_DIGEST|rollback|stop`。Windows 可由 Agent 运行等价 Compose 操作；Shell 备份/升级入口在 Windows 原生尚未验收，不能宣称已经全平台通过。网站代码回退保留当前数据；Provider 和账号卷升级走独立窗口，不顺带重启。
 

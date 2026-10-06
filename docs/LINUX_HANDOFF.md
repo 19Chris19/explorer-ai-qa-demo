@@ -1,5 +1,23 @@
 # Main-site and Linux handoff
 
+## Current installation interpretation (2026-10-06)
+
+Explorer v0.2.1 is still a candidate paired exclusively with Provider v0.4.2.
+New installations use [the single Agent entry](./AGENT_DEPLOYMENT.md), including
+registry authorization preflight, independently generated configuration and a
+dedicated Provider. After release, tools come from the fixed public Provider
+v0.4.2 tag and images from the matching bundle, not main/latest or an Air service.
+Until release, reviewed candidate source and both images must be explicit.
+Do not change candidate status to bypass that gate.
+
+The v0.4.1, manual configuration and no-host-Node instructions below are retained
+as historical v0.2.0/main-site integration context, not the v0.2.1 installation
+recipe. The new wrapper prepares a user-level Node runtime for maintenance;
+the services themselves run in containers. Do not mix the old initialization
+steps with an existing onboard installation. Native Windows, remote Linux SSH,
+authorized registry pulls and real new-account onboarding have not been verified
+by this audit; historical local acceptance does not establish those results.
+
 ## Repository boundary
 
 The main site owns navigation, login and its AI QA route. This repository owns
