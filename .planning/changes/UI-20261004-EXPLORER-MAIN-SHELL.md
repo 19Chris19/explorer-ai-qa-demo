@@ -26,6 +26,14 @@ Test/production acceptance and native phone keyboard remain separate gates.
 
 ## Verification
 
+Implementation-SHA: 1952486f86129d2913bcb79c207a27ba87994430
+Notice-Normalization-SHA: 222c892c4f1a6dd326420e39ef6c9d75d9b15486
+Production-Deployment: Not deployed by this change.
+
+These are source commits, not deployment evidence. The implementation commit's
+Rollout limits integration to preview review; no production deployment SHA is
+asserted. The notice commit changes license whitespace only.
+
 79 application tests pass; focused shell and proxy tests also pass. At 1366x768,
 measured logo (68,16), sidebar 256px, header 82px and first nav item 224x48px
 match the dated reference. 390x844 has no horizontal document overflow and a
