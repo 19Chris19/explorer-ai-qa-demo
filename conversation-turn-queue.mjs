@@ -13,10 +13,11 @@ const snapshot = job => ({ id: job.id, question: job.question, conversationId: j
 const statusEvent = (status, job) => `event: queue.status\ndata: ${JSON.stringify({ status, ...(status === 'running' ? { question: job.question } : {}) })}\n\n`;
 
 export class ConversationTurnQueue {
-  constructor(file, dispatch, now = () => Date.now()) {
+  constructor(file, dispatch, now = () => Date.now(), { preserveExpiredPending = false } = {}) {
     this.file = file;
     this.dispatch = dispatch;
     this.now = now;
+    this.preserveExpiredPending = preserveExpiredPending;
     this.jobs = new Map();
     this.active = new Set();
     let saved;
@@ -29,7 +30,7 @@ export class ConversationTurnQueue {
     for (const row of saved) {
       if (!row || typeof row.id !== 'string' || typeof row.owner !== 'string' || typeof row.conversationId !== 'string'
           || typeof row.question !== 'string' || typeof row.requestId !== 'string' || !Number.isFinite(row.createdAt)) continue;
-      if (this.now() - row.createdAt >= pendingTtlMs) continue;
+      if (!this.preserveExpiredPending && this.now() - row.createdAt >= pendingTtlMs) continue;
       this.jobs.set(row.id, { ...row, status: 'paused', events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0 });
     }
     if (saved.length) this.save();
@@ -68,6 +69,17 @@ export class ConversationTurnQueue {
 
   previewPendingCount() {
     return [...this.jobs.values()].filter(job => job.preview && ['queued', 'paused'].includes(job.status)).length;
+  }
+
+  maintenanceSnapshot() {
+    let running = 0, queued = 0, paused = 0, expiredPending = 0;
+    for (const job of this.jobs.values()) {
+      if (job.status === 'running') running++;
+      if (job.status === 'queued') queued++;
+      if (job.status === 'paused') paused++;
+      if (['queued', 'paused'].includes(job.status) && this.now() - job.createdAt >= pendingTtlMs) expiredPending++;
+    }
+    return { activeDirect: this.active.size - running, running, queued, paused, pending: queued + paused, expiredPending };
   }
 
   enqueue({ clientId, conversationId, requestId, question, sourceIntent = '', preview = false }) {
@@ -137,6 +149,7 @@ export class ConversationTurnQueue {
   startNext(lane) {
     this.prune();
     if (this.active.has(lane)) return;
+    if (this.laneJobs(lane).some(job => job.status === 'paused')) return;
     const job = this.laneJobs(lane).find(item => item.status === 'queued');
     if (!job) return;
     this.active.add(lane);
@@ -202,6 +215,15 @@ export class ConversationTurnQueue {
       const age = this.now() - (job.finishedAt || job.createdAt);
       const limit = job.finishedAt ? completedTtlMs : pendingTtlMs;
       if (age < limit) continue;
+      if (this.preserveExpiredPending && ['queued', 'paused'].includes(job.status)) {
+        if (job.status === 'queued') {
+          job.status = 'paused';
+          this.broadcast(job, statusEvent('paused'));
+          this.endSubscribers(job);
+          changed = true;
+        }
+        continue;
+      }
       this.broadcast(job, statusEvent('expired'));
       this.endSubscribers(job);
       this.jobs.delete(id);

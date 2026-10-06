@@ -10,6 +10,7 @@ import { ConversationTurnQueue } from './conversation-turn-queue.mjs';
 import { PreviewAdmission } from './preview-admission.mjs';
 import { deploymentPaths, routePath, storageNamespace } from './deployment-paths.mjs';
 import { loadHistoryArchive } from './history-archive.mjs';
+import { MaintenanceGate } from './maintenance-gate.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const env = readPrivateEnv(join(root, '.env.local'));
@@ -30,8 +31,16 @@ const historyArchive = loadHistoryArchive(process.env.PROVIDER_A_HISTORY_ARCHIVE
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');
 const nativeSessions = new SessionModeStore(join(runtimeDir, 'native-sessions.json'));
 const requestLedger = new RequestLedger(join(runtimeDir, 'request-ledger.json'));
-const turnQueue = new ConversationTurnQueue(join(runtimeDir, 'queued-turns.json'), dispatchQueuedTurn);
+const maintenance = new MaintenanceGate(process.env.DEMO_MAINTENANCE_STATE_PATH ?? env.DEMO_MAINTENANCE_STATE_PATH ?? '');
+const turnQueue = new ConversationTurnQueue(join(runtimeDir, 'queued-turns.json'), dispatchQueuedTurn, () => Date.now(),
+  { preserveExpiredPending: maintenance.enabled });
 const previewAdmission = new PreviewAdmission();
+maintenance.start(() => ({ ...turnQueue.maintenanceSnapshot(), ...previewAdmission.maintenanceSnapshot() }));
+process.once('exit', () => maintenance.stop());
+if (maintenance.enabled) {
+  process.once('SIGTERM', () => process.exit(0));
+  process.once('SIGINT', () => process.exit(0));
+}
 let lastRealSuccessAt = '';
 const staticFiles = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
@@ -71,11 +80,20 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invali
 if (!['127.0.0.1', '0.0.0.0'].includes(listenHost)) throw new Error('Invalid DEMO_LISTEN_HOST');
 
 const server = createServer(async (req, res) => {
+  let releaseAdmission;
   try {
     const url = new URL(req.url || '/', 'http://localhost');
     const pathname = routePath(url.pathname, assetPrefix);
     const embedded = pathname === '/' && url.searchParams.get('embed') === '1';
     setSecurityHeaders(res, embedded);
+    if (req.method === 'POST' && ['/api/qa/ask', '/api/qa/queue', '/api/qa/conversations'].includes(pathname)) {
+      releaseAdmission = maintenance.admit();
+      if (!releaseAdmission) {
+        res.setHeader('Retry-After', '30');
+        sendJson(res, 503, { error: '问答服务维护中，请稍后重试。' });
+        return;
+      }
+    }
     if (disableAdmin && ['/admin', '/admin.js'].includes(pathname)) { sendJson(res, 404, { error: 'Not found' }); return; }
     if (req.method === 'GET' && staticFiles.has(pathname)) {
       const [file, type] = staticFiles.get(pathname);
@@ -123,6 +141,8 @@ const server = createServer(async (req, res) => {
     if (!res.headersSent) sendJson(res, 502, { error: 'Provider A is unavailable' });
     else res.end();
     console.error('Request failed: internal_error');
+  } finally {
+    releaseAdmission?.();
   }
 });
 
@@ -422,6 +442,7 @@ async function proxy(req, res, route) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 190000);
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+  if (res.destroyed) controller.abort();
   try {
     const upstream = await provider.request({ route, method: req.method, clientId, body, requestId, sourceIntent, signal: controller.signal });
     const contentType = upstream.headers.get('content-type') || '';
@@ -436,7 +457,12 @@ async function proxy(req, res, route) {
         for await (const chunk of upstream.body) {
           if (res.destroyed) break;
           observer.append(chunk);
-          if (!res.write(chunk)) await new Promise(resolve => res.once('drain', resolve));
+          if (!res.write(chunk)) await new Promise(resolve => {
+            const settled = () => { res.off('drain', settled); res.off('close', settled); resolve(); };
+            res.once('drain', settled);
+            res.once('close', settled);
+            if (res.destroyed) settled();
+          });
         }
       } catch {
         if (!res.destroyed) res.write('event: error\ndata: {"error":"上游流式回答中断或格式异常"}\n\n');
