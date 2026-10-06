@@ -9,6 +9,7 @@ import { RequestLedger } from './request-ledger.mjs';
 import { ConversationTurnQueue } from './conversation-turn-queue.mjs';
 import { PreviewAdmission } from './preview-admission.mjs';
 import { deploymentPaths, routePath, storageNamespace } from './deployment-paths.mjs';
+import { loadHistoryArchive } from './history-archive.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const env = readPrivateEnv(join(root, '.env.local'));
@@ -23,7 +24,9 @@ const releaseRevision = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_RE
 const disableAdmin = (process.env.DEMO_DISABLE_ADMIN || env.DEMO_DISABLE_ADMIN) === '1';
 const paths = deploymentPaths({ ...env, ...process.env });
 const assetPrefix = paths.prefix;
-const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef });
+const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef,
+  allowHostGateway: (process.env.PROVIDER_A_ALLOW_HOST_GATEWAY ?? env.PROVIDER_A_ALLOW_HOST_GATEWAY) === 'true' });
+const historyArchive = loadHistoryArchive(process.env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? '');
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');
 const nativeSessions = new SessionModeStore(join(runtimeDir, 'native-sessions.json'));
 const requestLedger = new RequestLedger(join(runtimeDir, 'request-ledger.json'));
@@ -90,6 +93,17 @@ const server = createServer(async (req, res) => {
     if (pathname === '/api/qa/health' && req.method === 'GET') {
       await health(res);
       return;
+    }
+    if (pathname === '/api/qa/archive/conversations' || pathname.startsWith('/api/qa/archive/conversations/')) {
+      if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); sendJson(res, 405, { error: 'Read-only archive' }); return; }
+      const clientId = getClientId(req, res);
+      if (pathname === '/api/qa/archive/conversations') {
+        sendJson(res, 200, { enabled: historyArchive.enabled, conversations: historyArchive.list(clientId) }); return;
+      }
+      let id;
+      try { id = decodeURIComponent(pathname.slice('/api/qa/archive/conversations/'.length)); } catch {}
+      const data = typeof id === 'string' && /^archive:[a-zA-Z0-9-]{1,100}$/u.test(id) ? historyArchive.detail(id, clientId) : null;
+      sendJson(res, data ? 200 : 404, data || { error: 'Not found' }); return;
     }
     if (pathname === '/api/qa/queue' || /^\/api\/qa\/queue\/[a-f0-9-]{36}(?:\/events)?$/iu.test(pathname)) {
       if (!provider.configured) { sendJson(res, 503, { error: 'Provider A 问答接入尚未完成配置' }); return; }
@@ -340,6 +354,7 @@ async function proxy(req, res, route) {
       if (input.sourceIntent !== undefined && input.sourceIntent !== 'web') throw new Error('sourceIntent 只能是 web');
       sourceIntent = input.sourceIntent || '';
       requestId = input.requestId;
+      if (input.conversationId !== undefined && input.conversationId !== '' && !validConversationId(input.conversationId)) throw new Error('Invalid conversationId');
       requestedConversationId = typeof input.conversationId === 'string' && /^[a-zA-Z0-9-]+$/u.test(input.conversationId) ? input.conversationId : '';
       body = JSON.stringify({ question: input.question.trim(), ...(requestedConversationId ? { conversationId: requestedConversationId } : {}) });
     } else if (req.method === 'POST') {

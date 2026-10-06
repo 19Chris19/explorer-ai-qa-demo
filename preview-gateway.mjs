@@ -20,6 +20,7 @@ const assets = new Set([
 export function allowedPreviewRoute(path, method) {
   if (assets.has(path)) return method === 'GET' || method === 'HEAD';
   if (path === '/api/qa/health') return method === 'GET';
+  if (path === '/api/qa/archive/conversations' || /^\/api\/qa\/archive\/conversations\/archive(?::|%3A)[a-zA-Z0-9-]{1,100}$/iu.test(path)) return method === 'GET';
   if (path === '/api/qa/conversations') return ['GET', 'POST'].includes(method);
   if (/^\/api\/qa\/conversations\/[a-zA-Z0-9-]+$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === '/api/qa/ask') return method === 'POST';

@@ -20,13 +20,24 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
   const requests = [];
   const questions = Array.from({ length: 50 }, (_, index) => ({ id: `q${index}`, zh: `合成问题 ${index}`, en: `Synthetic question ${index}` }));
   const json = data => ({ ok: true, json: async () => data });
-  const fetchMock = async url => {
+  const submissions = [];
+  let archiveUnavailable = false;
+  const fetchMock = async (url, options = {}) => {
     requests.push(url);
+    if (options.method === 'POST') submissions.push({ url, body: options.body });
     if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(questions);
+    if (url === '/api/qa/archive/conversations') {
+      if (archiveUnavailable) throw new Error('Synthetic archive unavailable');
+      return json({ conversations: [{ conversationId: 'archive:synthetic-filled', title: '合成迁移历史', updatedAt: '2026-01-01T00:00:00Z' }] });
+    }
+    if (url === '/api/qa/archive/conversations/archive%3Asynthetic-filled') return json({ conversation: { conversationId: 'archive:synthetic-filled' }, readOnly: true, messages: [
+      { role: 'user', content: '合成归档问题' }, { role: 'assistant', content: '合成归档回答' },
+    ] });
+    if (url === '/api/qa/conversations' && options.method === 'POST') return json({ conversation: { conversationId: 'synthetic-fresh' } });
     if (url === '/api/qa/conversations') return json({ conversations: [
       { conversationId: 'synthetic-empty', title: '空会话' },
-      { conversationId: 'synthetic-filled', title: '有消息的会话' },
+      { conversationId: 'synthetic-filled', title: '有消息的会话', updatedAt: 1767312000000 },
     ] });
     if (url === '/api/qa/conversations/synthetic-empty') return json({ conversation: { conversationId: 'synthetic-empty' }, messages: [] });
     if (url === '/api/qa/conversations/synthetic-filled') return json({ conversation: { conversationId: 'synthetic-filled' }, messages: [
@@ -128,6 +139,32 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     await until(() => window.document.querySelector('.message-error'));
     assert.equal(draft.value, '连接失败也保留这条合成草稿');
     assert.equal(requests.filter(url => url === '/api/qa/ask').length, 1);
+
+    const archived = [...window.document.querySelectorAll('.conversation-open')].find(button => button.textContent.includes('合成迁移历史'));
+    assert.equal(window.document.querySelector('.conversation-open').textContent, '有消息的会话');
+    assert.match(archived.textContent, /迁移前记录，只读/);
+    assert.equal(archived.parentElement.querySelector('.conversation-delete'), null);
+    archived.click();
+    await until(() => window.document.querySelector('.message.assistant .message-content')?.textContent === '合成归档回答');
+    assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), null);
+    assert.equal(window.document.querySelector('.answer-tools').hidden, false);
+    let copied;
+    Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async text => { copied = text; } } });
+    window.document.querySelector('.answer-copy').click();
+    await until(() => copied === '合成归档回答');
+    assert.equal(requests.some(url => url.includes('/queue?conversationId=archive')), false);
+    assert.equal(requests.some(url => url.includes('/conversations/archive') && !url.includes('/archive/conversations/')), false);
+    draft.value = '合成归档后的新问题'; draft.dispatchEvent(new window.Event('input', { bubbles: true }));
+    window.document.querySelector('#askForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await until(() => submissions.filter(item => item.url === '/api/qa/ask').length === 2);
+    assert.equal(JSON.parse(submissions.at(-1).body).conversationId, 'synthetic-fresh');
+    assert.equal(submissions.at(-2).url, '/api/qa/conversations');
+    assert.equal(submissions.some(item => item.body?.includes('archive:')), false);
+    assert.equal(window.document.querySelector('.chat-thread').textContent.includes('合成归档回答'), false);
+    await until(() => window.document.querySelector('.message-error'));
+    archiveUnavailable = true;
+    [...window.document.querySelectorAll('.conversation-open')].find(button => button.textContent === '空会话').click();
+    await until(() => window.document.querySelector('#conversationList').textContent.includes('部分历史记录加载失败'));
   } finally {
     for (const [key, descriptor] of saved) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
