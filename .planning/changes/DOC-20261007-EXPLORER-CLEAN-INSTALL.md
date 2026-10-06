@@ -14,3 +14,6 @@ Documentation only. Final registry/tag installation remains a release gate. Reve
 
 ## Release notes
 Added v0.2.1 preparation notes describing fixed Provider v0.4.2 delegation, private image access, Node/Docker upgrade and code-only rollback. Formal publication and final artifact verification remain separate gates; no additional platform or real-account success is claimed.
+
+## Fixed released dependency
+Provider v0.4.2 is now published at dc966550, with accepted ARM64/AMD64 image digest e8c8bdea801f862d12ffee4015b4ae2f39e26ea34e6fd87db39db082003da8b8. Anonymous pull, clean tag server install and isolated authentication checks passed. Enable released bundle mode to verify fixed Provider source origin/tag, while keeping website publication and real-account acceptance explicitly separate.
