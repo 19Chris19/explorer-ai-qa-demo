@@ -1,5 +1,15 @@
 # v0.2.1 onboarding candidate
 
+## Current clean-install evidence: 2026-10-07
+
+- Extracted website source from `173c35a` into a new directory and built its Linux ARM64 image. Provider runtime image used `2ecd5df`; guided tooling used `38cf9e1`. These are reviewed local candidates, not published tag or registry verification.
+- Ran `onboard.sh init --mode server` with explicit candidate image/source overrides and a clearly synthetic target file. The installer generated independent configuration and started Provider, website BFF and Nginx in project `release-check-20261007` on unused loopback ports. No existing accounts or configuration were used.
+- `deploy.sh check` passed: protocol supported, capacity 0, ready false, active/queued/website-pending all 0; website revision matched `173c35a`. Website and health endpoints returned 200; `/admin`, `/admin.html` and `/internal/web/capacity` returned 404 through Nginx.
+- A repeated initialization was rejected; hashes of all generated env/JSON configuration remained unchanged. No credential values were recorded.
+- This run verified server-mode installation, not desktop Chromium installation, QR login, real IMA answers, or final published image pulls. Synthetic streaming acceptance is recorded separately in PR CI. Existing Air services were not restarted.
+
+The dated sections below are historical evidence for their named commits, not substitutes for current candidate verification.
+
 Date: 2026-10-04. Baseline e99aff24 (v0.2.0). Depends on Provider v0.4.2, not yet released.
 
 - New adapter uses Provider-owned shared metadata / guided helper modules, not a copied QR implementation.
