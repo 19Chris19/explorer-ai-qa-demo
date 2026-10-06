@@ -7,6 +7,30 @@ import { createProviderAClient } from '../provider-a-client.mjs';
 import { SessionModeStore } from '../session-mode-store.mjs';
 import { RequestLedger } from '../request-ledger.mjs';
 
+test('host gateway requires boolean opt-in and only the exact fixed origin is allowed', () => {
+  const baseUrl = 'http://host.docker.internal:3117';
+  for (const allowHostGateway of [undefined, false, 'true', 1]) assert.throws(() => createProviderAClient({ baseUrl, allowHostGateway }));
+  assert.doesNotThrow(() => createProviderAClient({ baseUrl, allowHostGateway: true }));
+  for (const url of ['http://127.0.0.1:3117', 'http://provider-a:3000']) assert.doesNotThrow(() => createProviderAClient({ baseUrl: url }));
+  for (const url of ['https://host.docker.internal:3117', `${baseUrl}/`, `${baseUrl}?x=1`, `${baseUrl}#x`, `${baseUrl}/internal`,
+    'http://user:pass@host.docker.internal:3117', 'http://host.docker.internal:3118', 'http://HOST.docker.internal:3117',
+    'http://host.docker.internal.evil:3117', 'http://example.com:3117', 'http://127.0.0.1:3117?x=1', 'http://provider-a:3000/']) {
+    assert.throws(() => createProviderAClient({ baseUrl: url, allowHostGateway: true }), url);
+  }
+});
+
+test('all provider reads and writes prohibit redirects including readiness credentials', async () => {
+  const calls = [];
+  const client = createProviderAClient({ baseUrl: 'http://host.docker.internal:3117', allowHostGateway: true,
+    apiToken: '<synthetic-api>', serviceToken: '<synthetic-service>', knowledgeScopeRef: 'a'.repeat(64),
+    fetchImpl: async (url, options) => { calls.push(options); return new Response('{}'); },
+  });
+  await client.readiness();
+  await client.request({ route: '/api/conversations', method: 'POST', clientId: 'synthetic', body: '{}' });
+  assert.equal(calls.length, 4);
+  assert.ok(calls.every(options => options.redirect === 'error'));
+});
+
 test('native capacity zero stays unready even when both credentials work', async () => {
   const calls = [];
   const client = createProviderAClient({

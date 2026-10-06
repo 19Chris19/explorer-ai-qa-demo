@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { readBundle } from '../deploy/bundle.mjs';
 test('private version images are gated and never drift a latest tag', () => {
   const workflow = readFileSync(new URL('../.github/workflows/images.yml', import.meta.url), 'utf8');
   assert.match(workflow, /IS_PRIVATE/);
@@ -29,5 +30,6 @@ test('default website image and lockfile follow the released package version', (
   const wrapper = readFileSync(new URL('../deploy.sh', import.meta.url), 'utf8');
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
-  assert.ok(wrapper.includes(`ghcr.io/19chris19/explorer-ai-qa-demo:v${pkg.version}`));
+  assert.equal(readBundle().WEBSITE_VERSION, pkg.version);
+  assert.ok(wrapper.includes('ghcr.io/19chris19/explorer-ai-qa-demo:v$WEBSITE_VERSION'));
 });

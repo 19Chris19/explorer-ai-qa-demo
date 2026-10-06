@@ -22,6 +22,10 @@ export class PreviewAdmission {
     return true;
   }
 
+  maintenanceSnapshot() {
+    return { previewActive: Number(this.active), previewWaiters: this.waiters.length };
+  }
+
   hasRoom(pendingJobs = 0) {
     return this.waiters.length + pendingJobs < MAX_PENDING;
   }

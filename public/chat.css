@@ -253,6 +253,8 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .conversation-item { border-radius: 6px; }
 .app-page .conversation-item.active { background: var(--accent-soft); }
 .app-page .conversation-open { color: var(--text); font-size: 13px; }
+.app-page .archive-open { white-space: normal; overflow-wrap: anywhere; }
+.app-page .archive-label { color: var(--muted); font-size: 11px; }
 .app-page .conversation-delete { color: var(--muted); }
 .app-page .conversation-delete:hover { color: #ba5262; background: var(--hover); }
 .app-page .history-empty { padding: 24px 10px; text-align: center; color: var(--muted); font-size: 13px; }

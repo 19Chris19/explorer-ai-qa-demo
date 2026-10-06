@@ -60,6 +60,8 @@ const state = {
   followLatest: true,
 };
 let conversationItems = [];
+let archiveConversationId = '';
+let historyLoadError = false;
 let suggestionFlight = null;
 let composerImpact = null;
 let exitingWelcome = null;
@@ -380,28 +382,44 @@ async function api(url, options = {}) {
 }
 
 async function loadConversations() {
-  try {
-    const data = await api(sitePath('/api/qa/conversations'));
-    conversationItems = data.conversations || [];
-    renderConversationList();
-  } catch { conversationItems = []; renderConversationList(); }
+  const results = await Promise.allSettled([
+    api(sitePath('/api/qa/conversations')),
+    api(sitePath('/api/qa/archive/conversations')),
+  ]);
+  historyLoadError = results.some(result => result.status === 'rejected');
+  conversationItems = results.flatMap((result, index) => result.status === 'fulfilled'
+    ? (result.value.conversations || []).map(item => ({ ...item, archived: index === 1 })) : [])
+    .sort((a, b) => (new Date(b.updatedAt || 0).getTime() || 0) - (new Date(a.updatedAt || 0).getTime() || 0));
+  renderConversationList();
 }
 
 function renderConversationList() {
     list.replaceChildren();
+    if (historyLoadError) {
+      const error = document.createElement('p'); error.className = 'history-empty';
+      error.textContent = ui.locale === 'en' ? 'Some history could not be loaded.' : '部分历史记录加载失败。';
+      list.append(error);
+    }
     const search = historySearch.value.trim().toLocaleLowerCase();
     const filtered = conversationItems.filter(item => (item.title || '').toLocaleLowerCase().includes(search));
-    if (!filtered.length) {
+    if (!filtered.length && !historyLoadError) {
       const empty = document.createElement('p');
       empty.className = 'history-empty';
       empty.textContent = search ? t('noMatches') : t('noHistory');
       list.append(empty);
     }
     for (const item of filtered) {
-      const row = document.createElement('div'); row.className = `conversation-item ${item.conversationId === state.conversationId ? 'active' : ''}`;
+      const row = document.createElement('div'); row.className = `conversation-item ${item.conversationId === (archiveConversationId || state.conversationId) ? 'active' : ''}`;
       const open = document.createElement('button'); open.type = 'button'; open.className = 'conversation-open';
       open.textContent = item.title || t('newConversation'); open.title = item.title || t('newConversation');
-      open.addEventListener('click', () => { if (!state.busy && !state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId); });
+      if (item.archived) {
+        open.classList.add('archive-open');
+        const label = document.createElement('small'); label.className = 'archive-label';
+        label.textContent = ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读';
+        open.append(document.createElement('br'), label);
+      }
+      open.addEventListener('click', () => { if (!state.busy && !state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived); });
+      if (item.archived) { row.append(open); list.append(row); continue; }
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'conversation-delete';
       remove.textContent = '×'; remove.setAttribute('aria-label', `${t('deleteConfirm')} ${item.title || t('newConversation')}`);
       remove.addEventListener('click', async () => {
@@ -416,25 +434,30 @@ function renderConversationList() {
     }
 }
 
-async function loadConversation(id) {
+async function loadConversation(id, archived = false) {
   try {
-    const data = await api(sitePath(`/api/qa/conversations/${encodeURIComponent(id)}`));
-    setConversation(data.conversation.conversationId);
-    state.legacyMode = data.legacyMode === true;
+    const data = await api(sitePath(`/api/qa/${archived ? 'archive/' : ''}conversations/${encodeURIComponent(id)}`));
+    setConversation(archived ? '' : data.conversation.conversationId);
+    archiveConversationId = archived ? id : '';
+    if (archived) { state.queuedJobs = []; renderQueue(); }
+    state.legacyMode = !archived && data.legacyMode === true;
     const messages = Array.isArray(data.messages) ? data.messages : [];
     if (messages.length) renderThread(messages);
     else welcome();
     if (state.legacyMode) status('这段历史可查看。继续提问请新建会话，使用原生知识库 Agent。', true);
+    if (archived) status(ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读', true);
     closeHistory({ restore: true });
     await loadConversations();
     await syncQueue();
-  } catch {
+  } catch (error) {
     if (id === state.conversationId) { setConversation(''); welcome(); }
+    status(error.message, true);
   }
 }
 
 function setConversation(id) {
   voicePreview.stop();
+  archiveConversationId = '';
   state.conversationId = id;
   state.legacyMode = false;
   if (id) sessionStorage.setItem(storageKey('qa-native-conversation-id'), id);
@@ -1040,6 +1063,7 @@ async function ask(raw) {
   if (!text || state.busy || state.preparing) return;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
   if (!state.conversationId) {
+    if (archiveConversationId) { archiveConversationId = ''; welcome(); }
     state.preparing = true;
     updateSendButton();
     try {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -31,11 +31,15 @@ export function initialize(dir, options, images) {
     throw Error('Existing installation protected; do not initialize during upgrade');
   }
   if (!Array.isArray(images) || images.length !== 2) throw Error('Both inspected images required');
+  if (options.shareUrl && !/^https:\/\/ima\.qq\.com\/wiki\/\?shareId=[a-f0-9]{64}$/i.test(options.shareUrl)) throw Error('Official canonical share URL required');
   const provider = imageMetadata(images[0]), website = imageMetadata(images[1]);
   const metadata = { schemaVersion: 1, project: options.project, providerImage: provider.image,
     providerRevision: provider.revision, explorerImage: website.image, explorerRevision: website.revision,
     webPort: options.webPort, providerPort: options.providerPort };
+  if (options.onboarding) metadata.onboarding = options.onboarding;
+  if (options.bundle) metadata.bundle = options.bundle;
   prepareConfiguration(dir, options.kb);
+  if (options.shareUrl) appendFileSync(resolve(dir, 'provider.env'), `IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_SHARE_URL=${options.shareUrl}\n`);
   writeFileSync(resolve(dir, 'deployment.json'), JSON.stringify(metadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   writeFileSync(resolve(dir, 'release.env'), [
     `COMPOSE_PROJECT_NAME=${metadata.project}`, `PROVIDER_IMAGE=${metadata.providerImage}`,
@@ -45,10 +49,15 @@ export function initialize(dir, options, images) {
   return metadata;
 }
 
+export function releaseClient(env = process.env) {
+  return createProviderAClient({ baseUrl: env.PROVIDER_A_BASE_URL,
+    apiToken: env.PROVIDER_A_API_TOKEN, serviceToken: env.PROVIDER_A_INTERNAL_SERVICE_TOKEN,
+    knowledgeScopeRef: env.PROVIDER_A_KNOWLEDGE_SCOPE_REF,
+    allowHostGateway: env.PROVIDER_A_ALLOW_HOST_GATEWAY === 'true' });
+}
+
 async function check(idle) {
-  const client = createProviderAClient({ baseUrl: process.env.PROVIDER_A_BASE_URL,
-    apiToken: process.env.PROVIDER_A_API_TOKEN, serviceToken: process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN,
-    knowledgeScopeRef: process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF });
+  const client = releaseClient();
   const state = await client.readiness();
   if (!state.authenticated || !state.contractSupported) throw Error('Provider authentication or protocol check failed');
   const queueFile = resolve(process.env.DEMO_RUNTIME_DIR, 'queued-turns.json');

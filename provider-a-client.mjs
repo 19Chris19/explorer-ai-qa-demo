@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 
-export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowledgeScopeRef, fetchImpl = fetch }) {
+export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowledgeScopeRef, allowHostGateway = false, fetchImpl = fetch }) {
   const localPort = /^http:\/\/127\.0\.0\.1:(\d+)$/u.exec(baseUrl)?.[1];
-  if (!(localPort && Number(localPort) > 0 && Number(localPort) <= 65535) && baseUrl !== 'http://provider-a:3000') {
+  if (!(localPort && Number(localPort) > 0 && Number(localPort) <= 65535) && baseUrl !== 'http://provider-a:3000'
+      && !(allowHostGateway === true && baseUrl === 'http://host.docker.internal:3117')) {
     throw new Error('Provider A must use a localhost address or the private Compose service http://provider-a:3000');
   }
   const configured = Boolean(apiToken && serviceToken && /^[a-f0-9]{64}$/u.test(knowledgeScopeRef));
 
   async function readiness() {
-    const health = await fetchImpl(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(3500) });
+    const health = await fetchImpl(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(3500), redirect: 'error' });
     if (!health.ok) throw new Error('provider_unreachable');
     const service = await health.json();
     if (!configured) return { connected: true, configured: false, authenticated: false, contractSupported: false, ready: false, capacity: 0, queued: service.queue?.queuedRequests ?? 0, webIntentSupported: false };
@@ -16,10 +17,12 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
       fetchImpl(`${baseUrl}/api/conversations?limit=1`, {
         headers: { Authorization: `Bearer ${apiToken}`, 'X-IMA-Client-Id': 'demo:readiness' },
         signal: AbortSignal.timeout(3500),
+        redirect: 'error',
       }),
       fetchImpl(`${baseUrl}/internal/provider-a/capacity`, {
         headers: { Authorization: `Bearer ${serviceToken}` },
         signal: AbortSignal.timeout(3500),
+        redirect: 'error',
       }),
     ]);
     const authenticated = ordinary.ok && capacityResponse.ok;
@@ -63,7 +66,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
       headers,
       body,
       signal,
-      redirect: 'manual',
+      redirect: 'error',
     });
   }
 

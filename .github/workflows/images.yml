@@ -52,6 +52,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run check:release
+      - name: Reject unpublished deployment bundle
+        run: |
+          node --input-type=module -e 'import {readBundle} from "./deploy/bundle.mjs"; if(readBundle().STATUS!=="released") throw Error("Candidate not approved for image publication")'
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -124,7 +127,15 @@ jobs:
           test "$(gh api "users/$GITHUB_REPOSITORY_OWNER/packages/container/${GITHUB_REPOSITORY#*/}" --jq .visibility)" = private
           export IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           export REVISION="$(git rev-parse HEAD)"
-          node -e 'require("fs").writeFileSync("release-manifest.json", JSON.stringify({schemaVersion:1,version:process.env.VERSION,revision:process.env.REVISION,image:process.env.IMAGE,digest:process.env.DIGEST,platforms:["linux/amd64","linux/arm64"],providerBaseline:"v0.4.1",providerContract:"knowledge_agent_keyed_sse_v1",acceptance:"synthetic startup; no real IMA question",visibility:"private; authorized registry login required"},null,2)+"\n")'
+          PROVIDER_TAG=$(node --input-type=module -e 'import {readBundle} from "./deploy/bundle.mjs"; console.log(readBundle().PROVIDER_TAG)')
+          PROVIDER_IMAGE="ghcr.io/19chris19/ima-qa-web-agent:$PROVIDER_TAG"
+          docker pull "$PROVIDER_IMAGE"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$PROVIDER_IMAGE")" = "$PROVIDER_TAG"
+          PROVIDER_REF=$(docker image inspect --format '{{index .RepoDigests 0}}' "$PROVIDER_IMAGE")
+          test "${PROVIDER_REF%@*}" = ghcr.io/19chris19/ima-qa-web-agent
+          export PROVIDER_DIGEST="${PROVIDER_REF##*@}"
+          export PROVIDER_REVISION=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$PROVIDER_IMAGE")
+          node scripts/write-release-manifest.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-manifest

@@ -17,6 +17,7 @@ function allowed(path, method) {
   if (assets.has(path)) return ['GET', 'HEAD'].includes(method);
   if (path === 'api/qa/health') return method === 'GET';
   if (path === 'api/qa/conversations') return ['GET', 'POST'].includes(method);
+  if (path === 'api/qa/archive/conversations' || /^api\/qa\/archive\/conversations\/archive(?::|%3A)[a-zA-Z0-9-]{1,100}$/iu.test(path)) return method === 'GET';
   if (/^api\/qa\/conversations\/[a-zA-Z0-9-]+$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === 'api/qa/ask') return method === 'POST';
   if (path === 'api/qa/queue') return ['GET', 'POST'].includes(method);
@@ -66,7 +67,7 @@ export async function proxy(request) {
       cache: 'no-store',
     });
     const responseHeaders = new Headers({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' });
-    for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering']) {
+    for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }

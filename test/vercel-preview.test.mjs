@@ -29,6 +29,16 @@ test('every application module is accessible through both public allowlists, rea
     for (const path of ['internal/provider-a/capacity', 'admin.js', 'not-a-module.mjs', 'site/unknown.svg', 'site/runtime.json']) {
       assert.equal((await handler.fetch(new Request(`https://synthetic.vercel.app/api/proxy?path=${path}`))).status, 404);
     }
+    for (const path of ['api/qa/archive/conversations', 'api/qa/archive/conversations/archive:synthetic', 'api/qa/archive/conversations/archive%3Asynthetic']) {
+      for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
+        assert.equal(allowedPreviewRoute(`/${path}`, method), method === 'GET');
+        assert.equal((await handler.fetch(new Request(`https://synthetic.vercel.app/api/proxy?path=${encodeURIComponent(path)}`, { method }))).status, method === 'GET' ? 200 : 404);
+      }
+    }
+    for (const path of ['api/qa/archive/admin', 'api/qa/archive/conversations/native-id', 'api/qa/archive/conversations/archive:synthetic/extra']) {
+      assert.equal(allowedPreviewRoute(`/${path}`, 'GET'), false);
+      assert.equal((await handler.fetch(new Request(`https://synthetic.vercel.app/api/proxy?path=${encodeURIComponent(path)}`))).status, 404);
+    }
   } finally {
     if (previousKey === undefined) delete process.env.PREVIEW_ORIGIN_KEY; else process.env.PREVIEW_ORIGIN_KEY = previousKey;
     if (previousUrl === undefined) delete process.env.PREVIEW_ORIGIN_URL; else process.env.PREVIEW_ORIGIN_URL = previousUrl;
@@ -61,6 +71,27 @@ test('Vercel preview function forwards only to configured HTTPS gateway and stre
     assert.equal((await handler.fetch(new Request('https://synthetic.vercel.app/api/proxy?path=admin'))).status, 404);
     assert.equal((await handler.fetch(new Request('https://synthetic.vercel.app/api/proxy?path=../admin'))).status, 404);
     assert.equal((await handler.fetch(new Request('https://synthetic.vercel.app/api/proxy?path=api/qa/ask', { method: 'POST', body: '{}' }))).status, 403);
+  } finally {
+    if (previousKey === undefined) delete process.env.PREVIEW_ORIGIN_KEY; else process.env.PREVIEW_ORIGIN_KEY = previousKey;
+    if (previousUrl === undefined) delete process.env.PREVIEW_ORIGIN_URL; else process.env.PREVIEW_ORIGIN_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('Vercel passes maintenance Retry-After without forwarding private metadata', async () => {
+  const previousKey = process.env.PREVIEW_ORIGIN_KEY;
+  const previousUrl = process.env.PREVIEW_ORIGIN_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PREVIEW_ORIGIN_KEY = 'synthetic-preview-key-12345678901234567890';
+  process.env.PREVIEW_ORIGIN_URL = 'https://synthetic.example/';
+  globalThis.fetch = async () => new Response('{"error":"maintenance"}', { status: 503,
+    headers: { 'Retry-After': '30', 'X-Private-Count': '123' } });
+  try {
+    const response = await handler.fetch(new Request('https://synthetic.vercel.app/api/proxy?path=api/qa/ask', {
+      method: 'POST', headers: { Origin: 'https://synthetic.vercel.app' }, body: '{}',
+    }));
+    assert.equal(response.status, 503); assert.equal(response.headers.get('retry-after'), '30');
+    assert.equal(response.headers.get('x-private-count'), null);
   } finally {
     if (previousKey === undefined) delete process.env.PREVIEW_ORIGIN_KEY; else process.env.PREVIEW_ORIGIN_KEY = previousKey;
     if (previousUrl === undefined) delete process.env.PREVIEW_ORIGIN_URL; else process.env.PREVIEW_ORIGIN_URL = previousUrl;

@@ -1,19 +1,45 @@
 #!/bin/sh
 set -eu
 umask 077
-cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$ROOT"
+. "$ROOT/deploy/bundle.sh"
 
-compose() {
+compose() (
   test -f .docker-lab/release.env || { echo 'Initialize a new installation first; existing legacy installations use their recorded procedure.' >&2; exit 1; }
-  docker compose --env-file .docker-lab/release.env -f compose.linux.yaml "$@"
-}
+  # Validate data without sourcing it. This path deliberately needs no host Node.
+  project=$(awk -F= '
+    function hex(value, size) { return length(value) == size && value ~ /^[a-f0-9]+$/ }
+    function image(value) {
+      sub(/^ghcr[.]io\/19chris19\/[a-z0-9-]+@/, "", value)
+      return substr(value, 1, 7) == "sha256:" && hex(substr(value, 8), 64)
+    }
+    NF != 2 || seen[$1]++ { bad=1 }
+    $1 == "COMPOSE_PROJECT_NAME" { project=$2; if ($2 !~ /^[a-z0-9][a-z0-9_-]*$/ || length($2)>49) bad=1; next }
+    $1 == "PROVIDER_IMAGE" || $1 == "EXPLORER_IMAGE" { if (!image($2)) bad=1; next }
+    $1 == "EXPLORER_REVISION" { if (!hex($2, 40)) bad=1; next }
+    $1 == "WEB_HOST_PORT" || $1 == "PROVIDER_HOST_PORT" { ports[$1]=$2; if ($2 !~ /^[1-9][0-9]*$/ || $2>65535) bad=1; next }
+    { bad=1 }
+    END {
+      if (bad || NR!=6 || !seen["COMPOSE_PROJECT_NAME"] || !seen["PROVIDER_IMAGE"] || !seen["EXPLORER_IMAGE"] || !seen["EXPLORER_REVISION"] || !seen["WEB_HOST_PORT"] || !seen["PROVIDER_HOST_PORT"] || ports["WEB_HOST_PORT"]==ports["PROVIDER_HOST_PORT"]) exit 1
+      print project
+    }' .docker-lab/release.env) || { echo 'invalid_release_lock' >&2; exit 1; }
+  # Retain Docker transport/auth settings, but never ambient Compose overrides.
+  for key in $(env | sed -n 's/^\(COMPOSE_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$key"; done
+  unset PROVIDER_IMAGE EXPLORER_IMAGE EXPLORER_REVISION WEB_HOST_PORT PROVIDER_HOST_PORT DEMO_ASSET_PREFIX
+  docker compose -p "$project" --env-file .docker-lab/release.env -f compose.linux.yaml "$@"
+)
 
 command=${1:-help}
 if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
   init)
-    provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:v0.4.1}
-    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.0}
+    if [ "$BUNDLE_STATUS" = candidate ] && { [ -z "${PROVIDER_IMAGE:-}" ] || [ -z "${EXPLORER_IMAGE:-}" ]; }; then
+      echo 'Unpublished candidate: explicit reviewed image pair required.' >&2; exit 1
+    fi
+    provider=${PROVIDER_IMAGE:-ghcr.io/19chris19/ima-qa-web-agent:$PROVIDER_TAG}
+    website=${EXPLORER_IMAGE:-ghcr.io/19chris19/explorer-ai-qa-demo:v$WEBSITE_VERSION}
+    echo 'Advanced numeric-ID initialization does not prepare QR tooling. New installations should use onboard.sh/onboard.ps1.' >&2
     project=zhitianxia-qa
     next_project=0
     for argument in "$@"; do
@@ -21,11 +47,20 @@ case "$command" in
       if [ "$argument" = --project ]; then next_project=1; fi
       case "$argument" in --project=*) project=${argument#--project=} ;; esac
     done
-    test -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" || {
-      echo 'Compose project already exists; initialize a different project or use its reviewed upgrade procedure.' >&2; exit 1;
-    }
+    printf '%s\n' "$project" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9_-]{0,48}$' || { echo 'invalid_compose_project' >&2; exit 1; }
     for file in provider.env explorer.env deployment.json release.env; do
       test ! -e ".docker-lab/$file" || { echo 'Existing installation protected; initialization refused.' >&2; exit 1; }
+    done
+    resources=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || exit 1
+    test -z "$resources" || { echo 'existing_compose_project_protected' >&2; exit 1; }
+    for kind in volume network; do
+      resources=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$project") || exit 1
+      test -z "$resources" || { echo 'existing_compose_project_protected' >&2; exit 1; }
+      resources=$(docker "$kind" ls --format '{{.Name}}') || exit 1
+      collision=$(printf '%s\n' "$resources" | awk -v project="$project" -v kind="$kind" '
+        kind == "volume" && ($0 == project "_provider-state" || $0 == project "_explorer-state") { print "collision" }
+        kind == "network" && $0 == project "_backend" { print "collision" }')
+      test -z "$collision" || { echo 'existing_compose_project_protected' >&2; exit 1; }
     done
     mkdir -p .docker-lab
     docker image inspect "$provider" >/dev/null 2>&1 || docker pull "$provider"
