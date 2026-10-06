@@ -33,6 +33,12 @@ export function providerTools(directory, tag = readBundle().PROVIDER_TAG) {
     return { ...tools, ...target, playwrightVersion: require('playwright-core/package.json').version };
   } catch { throw Error('provider_tooling_required'); }
 }
+function verifyInstallation(state, source, bundle) {
+  if (state.onboarding?.version !== 1 || state.onboarding.providerSource !== source
+    || state.bundle?.providerTag !== bundle.PROVIDER_TAG
+    || state.bundle?.websiteVersion !== bundle.WEBSITE_VERSION
+    || state.bundle?.topology !== 'dedicated-provider') throw Error('existing_installation_requires_reviewed_upgrade');
+}
 async function docker(root, args, capture = false) {
   return new Promise((resolveResult, reject) => {
     const child = spawn('docker', args, { cwd: root, stdio: ['ignore', capture ? 'pipe' : 'ignore', 'ignore'], windowsHide: true });
@@ -103,7 +109,7 @@ export async function onboard(root, command, args, dependencies = {}) {
   }
   if (['resume', 'repair'].includes(command)) {
     const state = JSON.parse(readFileSync(join(dir, 'deployment.json'), 'utf8'));
-    if (state.onboarding?.version !== 1 || state.onboarding.providerSource !== source) throw Error('existing_installation_requires_reviewed_upgrade');
+    verifyInstallation(state, source, bundle);
     if (!/^IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_SHARE_URL=https:\/\/ima\.qq\.com\/wiki\/\?shareId=[a-f0-9]{64}$/mi.test(readFileSync(join(dir, 'provider.env'), 'utf8'))) throw Error('incomplete_configuration_requires_review');
     if (state.onboarding.mode === 'desktop') await tools.guided(source, 'repair', {
       project: state.project, directory: helperDir, env: join(dir, 'provider.env') }, emit);
@@ -119,7 +125,7 @@ export async function onboard(root, command, args, dependencies = {}) {
   }
   if (command === 'check') {
     const state = JSON.parse(readFileSync(join(dir, 'deployment.json'), 'utf8'));
-    if (state.onboarding?.version !== 1 || state.onboarding.providerSource !== source) throw Error('existing_installation_requires_reviewed_upgrade');
+    verifyInstallation(state, source, bundle);
     await execute([...compose, 'exec', '-T', 'explorer-qa', 'node', 'deploy/release-config.mjs', 'check']);
     await checkEnrollment(execute, compose, state.onboarding.mode);
     emit({ stage: 'protocol_checked', realQaVerified: false }); return;

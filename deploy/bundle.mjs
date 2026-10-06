@@ -25,7 +25,6 @@ export function selectBundleImages(bundle, env = process.env) {
 }
 
 export function verifyBundleImages(bundle, images) {
-  if (bundle.STATUS !== 'released') return;
   const expected = [bundle.PROVIDER_TAG, `v${bundle.WEBSITE_VERSION}`];
   if (!Array.isArray(images) || images.length !== 2 || images.some((image, index) =>
     image?.Config?.Labels?.['org.opencontainers.image.version'] !== expected[index])) throw Error('image_version_mismatch');

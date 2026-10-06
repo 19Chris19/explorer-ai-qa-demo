@@ -15,6 +15,17 @@ if [ ! -d "$SOURCE" ]; then
   mkdir -p "$ROOT/.maintenance"
   git clone --depth 1 --branch "$PROVIDER_TAG" https://github.com/19Chris19/ima-qa-web-agent.git "$SOURCE"
 fi
+if [ "$BUNDLE_STATUS" = released ]; then
+  origin=$(git -C "$SOURCE" remote get-url origin) &&
+  head=$(git -C "$SOURCE" rev-parse HEAD) &&
+  tag=$(git -C "$SOURCE" rev-parse "refs/tags/$PROVIDER_TAG^{commit}") &&
+  dirty=$(git -C "$SOURCE" status --porcelain) &&
+  test "$origin" = https://github.com/19Chris19/ima-qa-web-agent.git &&
+  test "$head" = "$tag" && test -z "$dirty" || {
+    echo 'Provider source must be a clean checkout of the fixed public tag; review the cache without deleting existing data.' >&2
+    exit 1
+  }
+fi
 test -f "$SOURCE/onboard.sh" || { echo 'Matching Provider tooling is required; do not fabricate configuration.' >&2; exit 1; }
 NODE=$(sh "$SOURCE/onboard.sh" runtime)
 PROVIDER_SOURCE_DIR=$SOURCE

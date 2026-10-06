@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -66,12 +66,45 @@ test('accepted release manifest binds both digests and refuses incomplete candid
   assert.equal(result.realQaVerified, false);
 });
 
-test('released install rejects swapped, unlabeled or wrong-version images before configuration', () => {
-  const bundle = { ...readBundle(), STATUS: 'released' };
+for (const status of ['candidate', 'released']) test(`${status} install rejects swapped, unlabeled or wrong-version images before configuration`, () => {
+  const bundle = { ...readBundle(), STATUS: status };
   const images = [bundle.PROVIDER_TAG, `v${bundle.WEBSITE_VERSION}`]
     .map(version => ({ Config: { Labels: { 'org.opencontainers.image.version': version } } }));
   assert.doesNotThrow(() => verifyBundleImages(bundle, images));
   for (const invalid of [[], [null, null], [...images].reverse(), [{}, images[1]], null]) {
     assert.throws(() => verifyBundleImages(bundle, invalid), /image_version_mismatch/);
   }
+});
+
+test('released shell rejects wrong-tag, dirty and wrong-origin cached tooling before execution', () => {
+  const root = mkdtempSync(join(tmpdir(), 'qa-wrapper-'));
+  const source = join(root, '.maintenance/provider-v0.4.2');
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', source, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  try {
+    mkdirSync(join(root, 'deploy'), { recursive: true });
+    mkdirSync(source, { recursive: true });
+    for (const file of ['onboard.sh', 'deploy/bundle.sh']) copyFileSync(new URL('../' + file, import.meta.url), join(root, file));
+    writeFileSync(join(root, 'deploy/bundle.env'), 'STATUS=released\nWEBSITE_VERSION=0.2.1\nPROVIDER_TAG=v0.4.2\n');
+    writeFileSync(join(source, 'onboard.sh'), '#!/bin/sh\necho TOOL_EXECUTED >&2\nexit 1\n');
+    git('init'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
+    git('add', 'onboard.sh'); git('-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', 'commit', '-m', 'synthetic');
+    git('remote', 'add', 'origin', 'https://github.com/19Chris19/ima-qa-web-agent.git');
+    const env = { ...process.env }; delete env.PROVIDER_SOURCE_DIR;
+    const run = blocked => {
+      const result = spawnSync('sh', ['onboard.sh', 'doctor'], { cwd: root, env, encoding: 'utf8' });
+      assert.notEqual(result.status, 0);
+      if (blocked) { assert.doesNotMatch(result.stderr, /TOOL_EXECUTED/); assert.match(result.stderr, /clean checkout/); }
+      else assert.match(result.stderr, /TOOL_EXECUTED/);
+    };
+    run(true); // Missing tag.
+    git('tag', 'v0.4.2'); run(false);
+    writeFileSync(join(source, 'unexpected'), 'synthetic'); run(true);
+    git('add', 'unexpected');
+    git('-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', 'commit', '-m', 'wrong revision'); run(true);
+    git('tag', '-f', 'v0.4.2');
+    git('remote', 'set-url', 'origin', 'https://example.invalid/other.git'); run(true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

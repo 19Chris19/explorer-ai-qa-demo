@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseOnboardingOptions, providerTools, DEFAULT_SHARE_URL, onboard } from '../deploy/onboard.mjs';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readBundle } from '../deploy/bundle.mjs';
@@ -51,7 +51,33 @@ test('synthetic double-service setup prepares the desktop helper before starting
     await assert.rejects(onboard(root, 'check', [], deps), /enrollment_path_not_ready/);
     assert.equal(readFileSync(file, 'utf8'), before);
     await assert.rejects(onboard(root, 'init', [], deps), /existing_installation_protected/);
+    const stateFile = join(root, '.docker-lab/deployment.json');
+    for (const bundle of [undefined, { ...metadata.bundle, providerTag: 'v0.4.1' },
+      { ...metadata.bundle, websiteVersion: '0.2.0' }, { ...metadata.bundle, topology: 'shared-provider' }]) {
+      writeFileSync(stateFile, JSON.stringify({ ...metadata, bundle }));
+      for (const command of ['resume', 'repair', 'check']) {
+        const count = calls.length;
+        await assert.rejects(onboard(root, command, [], deps), /existing_installation_requires_reviewed_upgrade/);
+        assert.equal(calls.length, count);
+        assert.equal(readFileSync(file, 'utf8'), before);
+      }
+    }
     assert.ok(!calls.some(c => c.includes('--force-recreate') || c.includes('down')));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('wrong candidate image version stops before target resolution or configuration', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'website-image-failure-'));
+  const images = syntheticImages(); images[0].Config.Labels['org.opencontainers.image.version'] = 'v0.4.1';
+  const deps = {
+    env: { PROVIDER_IMAGE: 'synthetic/provider:reviewed', EXPLORER_IMAGE: 'synthetic/website:reviewed' },
+    tools: { guided: async () => {}, resolveGuidedTarget: async () => assert.fail('must not resolve target') },
+    docker: async args => args[0] === 'ps' ? '' : JSON.stringify(images),
+    freePort: async () => {}, emit: () => {},
+  };
+  try {
+    await assert.rejects(onboard(root, 'init', [], deps), /image_version_mismatch/);
+    assert.equal(existsSync(join(root, '.docker-lab')), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 test('a helper setup failure creates no website credentials and can be retried', async () => {

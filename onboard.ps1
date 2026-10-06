@@ -16,6 +16,16 @@ if (-not (Test-Path $source)) {
   & git clone --depth 1 --branch $bundle.PROVIDER_TAG https://github.com/19Chris19/ima-qa-web-agent.git $source
   if ($LASTEXITCODE -ne 0) { throw 'Provider source unavailable; do not fabricate configuration' }
 }
+if ($bundle.STATUS -eq 'released') {
+  $origin = & git -C $source remote get-url origin
+  if ($LASTEXITCODE -ne 0 -or $origin -ne 'https://github.com/19Chris19/ima-qa-web-agent.git') { throw 'Provider source must use the fixed public origin' }
+  $head = & git -C $source rev-parse HEAD
+  if ($LASTEXITCODE -ne 0) { throw 'Provider source revision unavailable' }
+  $tag = & git -C $source rev-parse ("refs/tags/" + $bundle.PROVIDER_TAG + "^{commit}")
+  if ($LASTEXITCODE -ne 0 -or $head -ne $tag) { throw 'Provider source must match the fixed public tag' }
+  $dirty = & git -C $source status --porcelain
+  if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Provider source must be clean; review without deleting existing data' }
+}
 if (-not (Test-Path (Join-Path $source 'onboard.ps1'))) { throw 'Matching Provider tooling is required' }
 $node = (& (Join-Path $source 'onboard.ps1') runtime | Select-Object -Last 1)
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $node)) { throw 'Maintenance runtime unavailable' }
