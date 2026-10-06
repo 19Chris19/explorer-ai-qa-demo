@@ -51,3 +51,12 @@ current running services. No claim that 3117 has migrated.
 Candidate only; no live services, data, deployment or push. Each BFF requires its
 own external private directory. Close and prove drain before changing Provider.
 Before rollback reconcile retained pending jobs; older code prunes their TTL.
+
+## First-install review addendum
+
+2026-10-06: source review confirms legacy instances do not have lossless hot
+admission closure or complete inflight counters. Existing idle checks and stopping
+the gateway are insufficient proof of drain. MAINTENANCE_DRAIN now documents a
+separately authorized first-install interruption boundary; no deployment executed.
+Follow-up gate checks apply only after installation. Existing pending messages and
+history must be preserved; interrupted answers are not automatically replayed.
