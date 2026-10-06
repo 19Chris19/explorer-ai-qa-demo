@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const pendingTtlMs = 60 * 60 * 1000;
@@ -12,6 +12,38 @@ const laneOf = (owner, conversationId) => `${owner}:${conversationId}`;
 const snapshot = job => ({ id: job.id, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt });
 const statusEvent = (status, job) => `event: queue.status\ndata: ${JSON.stringify({ status, ...(status === 'running' ? { question: job.question } : {}) })}\n\n`;
 
+function validatePreservedRows(rows) {
+  const keys = ['id', 'owner', 'conversationId', 'requestId', 'question', 'sourceIntent', 'preview', 'createdAt', 'status'];
+  const ids = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+        || Object.keys(row).length !== keys.length || !keys.every(key => Object.hasOwn(row, key))
+        || typeof row.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(row.id)
+        || typeof row.owner !== 'string' || !/^[a-f0-9]{64}$/u.test(row.owner)
+        || typeof row.conversationId !== 'string' || !row.conversationId.trim()
+        || typeof row.requestId !== 'string' || !row.requestId.trim()
+        || typeof row.question !== 'string' || !row.question.trim() || row.question.length > 2000
+        || !['', 'web'].includes(row.sourceIntent) || typeof row.preview !== 'boolean'
+        || !['queued', 'paused', 'running'].includes(row.status)
+        || !Number.isSafeInteger(row.createdAt) || row.createdAt < 0 || row.createdAt > 8640000000000000
+        || ids.has(row.id)) throw new Error('Invalid queued-turn storage');
+    ids.add(row.id);
+  }
+}
+
+function readPreservedStorage(file) {
+  let stat;
+  try { stat = lstatSync(file); }
+  catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw new Error('Invalid queued-turn storage');
+  }
+  if (!stat.isFile()) throw new Error('Invalid queued-turn storage');
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(file)));
+  } catch { throw new Error('Invalid queued-turn storage'); }
+}
+
 export class ConversationTurnQueue {
   constructor(file, dispatch, now = () => Date.now(), { preserveExpiredPending = false } = {}) {
     this.file = file;
@@ -21,12 +53,17 @@ export class ConversationTurnQueue {
     this.jobs = new Map();
     this.active = new Set();
     let saved;
-    try { saved = JSON.parse(readFileSync(file, 'utf8')); }
-    catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      saved = [];
+    if (this.preserveExpiredPending) saved = readPreservedStorage(file);
+    else {
+      try { saved = JSON.parse(readFileSync(file, 'utf8')); }
+      catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        saved = [];
+      }
     }
     if (!Array.isArray(saved)) throw new Error('Invalid queued-turn storage');
+    // Validate the whole file before restoring or normalizing any pending row.
+    if (this.preserveExpiredPending) validatePreservedRows(saved);
     for (const row of saved) {
       if (!row || typeof row.id !== 'string' || typeof row.owner !== 'string' || typeof row.conversationId !== 'string'
           || typeof row.question !== 'string' || typeof row.requestId !== 'string' || !Number.isFinite(row.createdAt)) continue;

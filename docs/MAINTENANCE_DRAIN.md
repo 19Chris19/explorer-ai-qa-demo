@@ -76,6 +76,23 @@ Vercel 与 preview gateway 仅透传 Retry-After，白名单不开放维护文�
 
 ## Paused、过期与恢复
 
+维护 preserve 模式在恢复前校验整份队列文件。无效 UTF-8/JSON、非数组根、
+非普通文件（包括符号链接）、异常行、重复 id 均拒绝启动，不跳过、不合并、
+不回写原文件。异常信息不包含问题或所有者。只有初次检查文件不存在才允许
+视为空队列；已发现文件后读取失败不会退回空队列。JSON 解析失败和非数组根
+在原 legacy 模式也已拒绝，并非本次才修复的空队列 fallback。
+
+每行必须完整匹配当前 save 格式：id、owner、conversationId、requestId、question、
+sourceIntent、preview、createdAt、status。拒绝缺失/未知字段、无效类型、空身份字段、
+空或超长问题、非法时间、未知 intent/status；不猜测或补默认值修复历史格式。
+合法 queued/paused/running 仍统一恢复为 paused，保留过期待发内容。
+旧格式若不符合该合同，维护者必须先离线审查处理，不能删除文件伪造空队列。
+
+队列加载早于维护 writer 启动，因此异常存储不会生成新的 drain 快照/租约。
+遗留快照仍必须通过原有 freshness、代际和存活 writer 检查，不能只看旧文件。
+该校验只在配置维护时启用；未配置时原有跳过异常行、重复 id 覆盖和 TTL 行为
+保持兼容。此候选不自动转换或清理任何运行存储。
+
 启用维护配置后，待发 TTL 不再静默删除：过期项保留为 paused，并阻止同 lane
 后续项越过；重启载入的 pending 同样保留并 paused。open 不自动恢复 paused，
 没有新增 resume API。使用原所有者会话读取/取消/删除待发项，或等待另行授权的
@@ -91,7 +108,7 @@ Vercel 与 preview gateway 仅透传 Retry-After，白名单不开放维护文�
 
 ## 合成验证
 
-`node --test test/maintenance-gate.test.mjs test/maintenance-api.test.mjs`
+`node --test test/maintenance-gate.test.mjs test/maintenance-api.test.mjs test/maintenance-storage.test.mjs`
 覆盖权限/链接、非法配置、代际 CAS、写入者、新提交拒绝、既有 queued 排空、
 preview 等待者、SSE 断流清理、paused/过期保留及原所有者删除。
 另运行 gateway/Vercel 测试确认固定拒绝响应头可达公网；不发真实问题。
