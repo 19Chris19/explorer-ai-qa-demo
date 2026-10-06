@@ -11,3 +11,6 @@ Installer completed; protocol check passed with empty capacity; gateway blocked 
 
 ## Rollout and rollback
 Documentation only. Final registry/tag installation remains a release gate. Revert this documentation commit without modifying runtime volumes.
+
+## Release notes
+Added v0.2.1 preparation notes describing fixed Provider v0.4.2 delegation, private image access, Node/Docker upgrade and code-only rollback. Formal publication and final artifact verification remain separate gates; no additional platform or real-account success is claimed.
