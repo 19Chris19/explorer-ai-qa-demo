@@ -106,6 +106,16 @@ routes private; only the two archive GET routes were added to preview allowlists
 
 ### Actual Exporter Interoperability
 
+Public-candidate audit (2026-10-06): Provider `32be509` did not yet include
+`auditHistoryInput` or `exportHistoryWithReport`; enabling this test reproduced
+five failing child tests. The strict exporter described below originally came
+from the separately reviewed Air source, not every v0.4.2 candidate checkout.
+Use the isolated public `c04e13372388281bf30546348645bc9936f0279d` follow-up
+(`FIX-20261006-PUBLIC-ARCHIVE-CONTRACT`, pure adapter from monorepo `92c01bd7`)
+before claiming this public pair interoperates.
+This audit leaves the website parser and existing interop tests unchanged.
+It does not attest any published image, running service or real archive.
+
 Run the opt-in cross-repository test against the reviewed migration source:
 
 ```sh
