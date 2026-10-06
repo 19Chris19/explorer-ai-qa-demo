@@ -113,7 +113,8 @@ PROVIDER_A_TRANSFER_TEST_MODULE=/absolute/reviewed/provider/src/account-transfer
   node --test test/archive-export-interop.test.mjs
 ```
 
-This imports only its `exportHistory` function, passes in-memory synthetic
+This imports its pure `auditHistoryInput`, `exportHistory` and
+`exportHistoryWithReport` functions, passes in-memory synthetic
 conversations through it, serializes/parses JSON as the real file writer does,
 then calls `parseHistoryArchive`. It never calls transfer preparation or reads
 runtime stores. Without the explicit test setting the interop test is skipped;
@@ -123,21 +124,41 @@ The reviewed current exporter maps sourceType 0 to `type: "web"`, 1/2 to
 `type: "knowledge"` when type is absent, and preserves an existing type. It maps
 the valid sourceIntent alias only when source_intent is absent. The website also
 accepts the earlier raw sourceType/alias form with strict validation. The current
-exporter drops invalid alias values and prefers canonical intent on conflict;
-successful parsing therefore does not prove discarded source metadata was valid.
-Parent preflight must reject/quarantine those ambiguities before export. The
-website rejects them whenever present in the supplied archive.
+exporter audits before projection: invalid aliases and conflicting intent fields
+fail with `archive_preflight_failed`, not silent metadata loss. The error carries
+a count-only report; `auditHistoryInput` returns readiness and reason counts without
+producing an archive. The website continues to reject invalid/conflicting metadata
+in directly supplied archives; its parser contract is not relaxed.
 
-The exporter may emit valid but empty Provider conversations (`turns: []`), blank
-answers, or timestamps it has not validated. These remain website acceptance
-blockers, not records silently omitted by the reader. Before actual export, the
-parent must explicitly inventory and exclude legitimate empty conversation
-shells from the archive input, recording the excluded count outside public
-responses. Blank/incomplete turns, missing owners and malformed timestamps must
-be quarantined for review, not assigned an invented answer, owner or date.
+Default export now rejects empty Provider shells (`turns: []`), blank/incomplete
+turns, missing owners, invalid dates and reversed chronology before serialization.
+The parser still rejects empty rows if an archive is supplied directly.
+Only an explicit `exportHistoryWithReport(store, { excludeEmptyShells: true })`
+may exclude otherwise valid empty shells. Its `{ archive, report }` result records
+`emptyShells`, `excludedEmptyShells`, `validConversations` and `invalidConversations`.
+Exclusion is not permission to discard malformed rows or active conversations.
+
+By default, source URLs with userinfo, query strings, fragments or unsafe schemes
+fail audit. Explicit `omitSourceUrls: true` removes all source URLs and reports
+`removedSourceUrls`; it does not guess which parameters are sensitive. A URL-only
+source that would become empty still fails, as do malformed source fields.
+Both options may be combined, but neither repairs invalid identity or evidence.
+Keep audit counts in the private operator record, never use them to infer owners.
+
+Native flat `answerBasis`, `sourceCount`, `knowledgeSourceCount`, `webSourceCount`
+and `sourceIntent` map to canonical nested evidence without coercion or invented
+values. Conflicts with nested evidence fail audit. `mappedEvidenceFields` counts
+mapping, while `excludedUpstreamFields` and `excludedL0Fields` count validated
+private metadata exclusions. Completed question/answer text and supported sources
+remain intact. Active requests, interrupted/incomplete turns and invalid flat
+counts are rejected; operators must quarantine them, not fabricate replacement data.
 An archive with zero conversations is valid. Numeric epoch milliseconds and
 canonical UTC ISO timestamps are accepted; numeric strings, nonfinite numbers,
 missing dates, impossible dates and reversed chronology are rejected.
+
+These strict-export tests are separate evidence from the earlier fixed-image
+Docker acceptance, whose actual-export check was skipped. They do not retroactively
+validate that image against subsequent Provider preflight changes or any live data.
 
 ### Operational Gates: Archive Before Upstream Cutover
 
