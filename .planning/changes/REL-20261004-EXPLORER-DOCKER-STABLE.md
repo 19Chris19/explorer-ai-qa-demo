@@ -1,5 +1,23 @@
 # REL-20261004-EXPLORER-DOCKER-STABLE
 
+## Source and deployment evidence (retrospective)
+
+Implementation-SHA: 1d8e573a2b91ddc33cab441bea8951824e04f2aa
+Recorded-Docker-Source-SHA: af5ce7fc2696ae43049a2a79487d05f97106814b
+Docker-Evidence-SHA: c9978f01a531f2519fe78f4023610993fdba56c7
+Recorded-Air-Stable-Source-SHA: 05a1cce4a8f2304cd2e2e5631b77ad0c55509d51
+Air-Evidence-SHA: a553b78fa01fd6961f791030cc894335a9de927d
+
+Do not replace the historical rollout with a blanket Not deployed claim.
+The Docker acceptance report records the actual 4417 website/gateway switch;
+subsequent main-site acceptance records 4317/public preview at stable-05a1cce4.
+These are committed historical reports, not live observations by this audit.
+Current deployed source, exact platform deployment ID and private image/backup
+artifacts were not inspected and remain unknown here. New cutover or rollback
+is blocked until separately approved verification of current code and data;
+source traceability alone does not satisfy those operational gates.
+
+
 ## User goal
 
 Freeze the accepted website features, publish them to the private website
