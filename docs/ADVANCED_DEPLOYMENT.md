@@ -20,6 +20,10 @@ npm run configure:local -- --provider-env /absolute/private/provider.env
 npm start
 ```
 
+重复配置只替换 Provider 接入字段，保留已有 Cookie 密钥、端口和其他配置行。
+维护状态路径、只读归档路径及禁用管理入口等设置不会因更新凭证而丢失。
+此命令不启动或重启服务，也不迁移账号或会话数据。
+
 默认网页监听 `127.0.0.1:4317`，默认 Provider 地址 `127.0.0.1:3117`，可通过服务端私有配置调整。配置工具不打印密钥；网站问答只使用普通和服务凭证，管理员凭证不参与业务问答。远程 Provider 需私有网络或 SSH 隧道。完整接口说明见 [网站接入指南](PROVIDER_A_WEB_INTEGRATION.md)。
 
 共享 Provider 会共享账号容量、维护窗口与故障影响。网站不能读取或直接挂载 Provider 账号卷；Cookie 身份和网站队列仍独立。部署者应明确容量和维护责任，不能宣称网页流量不影响机器人。

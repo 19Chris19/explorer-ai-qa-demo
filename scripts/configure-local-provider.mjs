@@ -9,7 +9,11 @@ const index = process.argv.indexOf('--provider-env');
 if (index < 0 || !process.argv[index + 1]) throw new Error('Usage: npm run configure:local -- --provider-env /private/path/provider-a.env');
 
 const source = readEnv(process.argv[index + 1]);
-const existing = readEnv(join(root, '.env.local'), true);
+const target = join(root, '.env.local');
+let original = '';
+try { original = readFileSync(target, 'utf8'); }
+catch (error) { if (error.code !== 'ENOENT') throw error; }
+const existing = parseEnv(original);
 const apiToken = source.IMA_QA_API_TOKEN;
 const serviceToken = source.IMA_QA_INTERNAL_SERVICE_TOKEN;
 const knowledgeBaseId = source.IMA_WEB_AGENT_SHARED_KNOWLEDGE_BASE_ID || source.IMA_SHARED_KNOWLEDGE_BASE_ID;
@@ -27,20 +31,23 @@ const values = {
 };
 if (!/^http:\/\/127\.0\.0\.1:\d+$/u.test(values.PROVIDER_A_BASE_URL)) throw new Error('Provider A must use a localhost address or tunnel');
 for (const value of Object.values(values)) if (/[\r\n]/u.test(value)) throw new Error('Invalid multiline configuration value');
-const target = join(root, '.env.local');
 const temporary = `${target}.${randomUUID()}.tmp`;
-writeFileSync(temporary, `${Object.entries(values).map(([key, value]) => `${key}=${value}`).join('\n')}\n`, { mode: 0o600 });
+// Preserve non-adapter configuration verbatim, including privacy and maintenance.
+const retained = original.split(/(?<=\n)/u).filter(line => {
+  const key = line.match(/^([A-Z][A-Z0-9_]*)=/u)?.[1];
+  return !Object.hasOwn(values, key);
+}).join('');
+const prefix = retained && !retained.endsWith('\n') ? `${retained}\n` : retained;
+writeFileSync(temporary, `${prefix}${Object.entries(values).map(([key, value]) => `${key}=${value}`).join('\n')}\n`, { mode: 0o600 });
 renameSync(temporary, target);
 chmodSync(target, 0o600);
 console.log('Private website adapter configuration stored; no credentials were printed.');
 
-function readEnv(path, optional = false) {
-  let text;
-  try { text = readFileSync(path, 'utf8'); }
-  catch (error) {
-    if (optional && error.code === 'ENOENT') return {};
-    throw error;
-  }
+function readEnv(path) {
+  return parseEnv(readFileSync(path, 'utf8'));
+}
+
+function parseEnv(text) {
   return Object.fromEntries(text.split(/\r?\n/u).filter(line => /^[A-Z][A-Z0-9_]*=/u.test(line)).map(line => {
     const at = line.indexOf('=');
     const value = line.slice(at + 1).trim();
