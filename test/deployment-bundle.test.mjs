@@ -6,6 +6,24 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readBundle, selectBundleImages, verifyBundleImages, releaseManifest } from '../deploy/bundle.mjs';
 
+test('independent wrapper selects old or explicit-mode Provider runtime syntax without mixing versions', () => {
+  for (const modern of [false, true]) {
+    const root = mkdtempSync(join(tmpdir(), 'synthetic-runtime-contract-'));
+    const source = join(root, 'provider');
+    try {
+      mkdirSync(join(root, 'deploy')); mkdirSync(join(source, 'scripts'), { recursive: true });
+      copyFileSync(new URL('../onboard.sh', import.meta.url), join(root, 'onboard.sh'));
+      copyFileSync(new URL('../deploy/bundle.sh', import.meta.url), join(root, 'deploy/bundle.sh'));
+      writeFileSync(join(root, 'deploy/bundle.env'), 'STATUS=candidate\nWEBSITE_VERSION=0.2.1\nPROVIDER_TAG=v0.4.2\n');
+      if (modern) writeFileSync(join(source, 'scripts/deployment-choice.sh'), '# synthetic marker\n');
+      writeFileSync(join(source, 'onboard.sh'), '#!/bin/sh\nprintf "%s\\n" "$*" >&2\nexit 7\n');
+      const result = spawnSync('sh', ['onboard.sh', 'init'], { cwd: root, env: { ...process.env, PROVIDER_SOURCE_DIR: source }, encoding: 'utf8' });
+      assert.equal(result.status, 7);
+      assert.equal(result.stderr.trim(), modern ? 'runtime --deployment-mode independent --allow-bootstrap' : 'runtime');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
 test('website release selects one Provider version and never a floating latest pair', () => {
   const bundle = readBundle();
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));

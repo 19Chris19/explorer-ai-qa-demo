@@ -27,7 +27,11 @@ if ($bundle.STATUS -eq 'released') {
   if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Provider source must be clean; review without deleting existing data' }
 }
 if (-not (Test-Path (Join-Path $source 'onboard.ps1'))) { throw 'Matching Provider tooling is required' }
-$node = (& (Join-Path $source 'onboard.ps1') runtime | Select-Object -Last 1)
+if (Test-Path (Join-Path $source 'scripts/deployment-choice.ps1')) {
+  $node = (& (Join-Path $source 'onboard.ps1') runtime --deployment-mode independent --allow-bootstrap | Select-Object -Last 1)
+} else {
+  $node = (& (Join-Path $source 'onboard.ps1') runtime | Select-Object -Last 1)
+}
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $node)) { throw 'Maintenance runtime unavailable' }
 $env:PROVIDER_SOURCE_DIR = $source
 & $node (Join-Path $root 'deploy/onboard.mjs') @args

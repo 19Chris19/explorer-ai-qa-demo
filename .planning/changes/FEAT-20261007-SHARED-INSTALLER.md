@@ -55,3 +55,9 @@ Current release wording updated; dated historical acceptance records retained.
 ## Rollout / Rollback
 Integrate with parent's adapter and review before any deployment. No release here.
 Revert these commits for source rollback; retain private config and current data.
+# Integration follow-up
+
+The integrated adapter is included, not an external pending task. Independent
+bootstrap preserves v0.4.2 syntax and detects the new candidate selector before
+passing explicit independent/bootstrap flags. Synthetic wrapper tests verify both
+paths without running a runtime installer. Released bundle pins remain unchanged.

@@ -20,10 +20,10 @@ The private contract is `PROVIDER_A_MODE=shared`, `PROVIDER_A_GATEWAY_URL` and
 `PROVIDER_A_GATEWAY_TOKEN`. There are no raw Provider credentials/scope, admin
 configuration, QR helper or account volumes. A separate random 64-character
 `DEMO_COOKIE_SECRET` is generated; never derive it from a Provider token. The
-parent adapter requires at least 32 characters and rejects legacy signatures.
+BFF adapter requires at least 32 characters and rejects legacy signatures.
 
-v0.2.1 is the released source baseline, not a shared-capable image. Integrate the
-parent adapter before deployment. Docker defaults to building the current reviewed
+v0.2.1 is the released source baseline, not a shared-capable image. This candidate
+includes the adapter. Docker defaults to building the current reviewed
 checkout and locking its image ID. Never supply the old release digest as shared.
 An explicit immutable image must contain the reviewed integrated adapter.
 
