@@ -20,12 +20,20 @@ const providerBaseUrl = process.env.PROVIDER_A_BASE_URL || env.PROVIDER_A_BASE_U
 const providerApiToken = process.env.PROVIDER_A_API_TOKEN || env.PROVIDER_A_API_TOKEN || '';
 const providerServiceToken = process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || '';
 const knowledgeScopeRef = process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || '';
+const providerMode = process.env.PROVIDER_A_MODE ?? env.PROVIDER_A_MODE ?? 'independent';
+const maxQuestionChars = providerMode === 'shared' ? 1200 : 2000;
 const cookieSecret = process.env.DEMO_COOKIE_SECRET || env.DEMO_COOKIE_SECRET || providerApiToken;
+if (providerMode === 'shared' && (!cookieSecret || cookieSecret.length < 32 || cookieSecret === providerApiToken)) {
+  throw new Error('Shared mode requires its own DEMO_COOKIE_SECRET (at least 32 characters)');
+}
 const releaseRevision = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_REVISION || 'local-dev';
 const disableAdmin = (process.env.DEMO_DISABLE_ADMIN || env.DEMO_DISABLE_ADMIN) === '1';
 const paths = deploymentPaths({ ...env, ...process.env });
 const assetPrefix = paths.prefix;
 const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef,
+  mode: providerMode,
+  gatewayUrl: process.env.PROVIDER_A_GATEWAY_URL ?? env.PROVIDER_A_GATEWAY_URL,
+  'gatewayToken': process.env.PROVIDER_A_GATEWAY_TOKEN ?? env.PROVIDER_A_GATEWAY_TOKEN,
   allowHostGateway: (process.env.PROVIDER_A_ALLOW_HOST_GATEWAY ?? env.PROVIDER_A_ALLOW_HOST_GATEWAY) === 'true' });
 const historyArchive = loadHistoryArchive(process.env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? '');
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');
@@ -198,8 +206,8 @@ function isSameOrigin(req) {
 
 function getClientId(req, res) {
   const current = new RegExp(`(?:^|;\\s*)${paths.cookieName}=([a-f0-9-]{36})\\.([a-f0-9]{64})(?:;|$)`, 'iu').exec(req.headers.cookie || '');
-  if (current && (validSignature(current[1], current[2]) || (!storageNamespace(paths) && validSignature(current[1], current[2], providerApiToken)))) return `demo:${current[1]}`;
-  const match = !storageNamespace(paths) && /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
+  if (current && (validSignature(current[1], current[2]) || (providerMode !== 'shared' && !storageNamespace(paths) && validSignature(current[1], current[2], providerApiToken)))) return `demo:${current[1]}`;
+  const match = providerMode !== 'shared' && !storageNamespace(paths) && /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
   if (match && validSignature(match[1], match[2], providerApiToken)) return match[1];
   const id = randomUUID();
   res.setHeader('Set-Cookie', `${paths.cookieName}=${id}.${signClientId(id)}; HttpOnly; SameSite=Lax; Path=${paths.cookiePath}; Max-Age=2592000${paths.secure || isPreview(req) ? '; Secure' : ''}`);
@@ -320,9 +328,15 @@ async function queueRoute(req, res, pathname) {
 }
 
 function validateQueuedInput(input, requireIdentity) {
-  if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 2000) throw new Error('Question must be 1–2000 characters');
+  validateQuestion(input.question);
   if (input.sourceIntent !== undefined && input.sourceIntent !== 'web') throw new Error('sourceIntent 只能是 web');
   if (requireIdentity && (!validConversationId(input.conversationId) || !validRequestId(input.requestId))) throw new Error('会话或请求编号格式不正确');
+}
+
+function validateQuestion(question) {
+  if (typeof question !== 'string' || !question.trim() || question.length > maxQuestionChars) {
+    throw new Error(`Question must be 1–${maxQuestionChars} characters`);
+  }
 }
 
 async function supportsWebIntent() {
@@ -369,7 +383,7 @@ async function proxy(req, res, route) {
   try {
     if (req.method === 'POST' && route === '/api/ask') {
       const input = await readBody(req);
-      if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 2000) throw new Error('Question must be 1–2000 characters');
+      validateQuestion(input.question);
       if (typeof input.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(input.requestId)) throw new Error('requestId 格式不正确');
       if (input.sourceIntent !== undefined && input.sourceIntent !== 'web') throw new Error('sourceIntent 只能是 web');
       sourceIntent = input.sourceIntent || '';
@@ -440,7 +454,10 @@ async function proxy(req, res, route) {
     }
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 190000);
+  const timeout = setTimeout(() => {
+    controller.abort();
+    res.destroy();
+  }, 190000);
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
   if (res.destroyed) controller.abort();
   try {
@@ -457,11 +474,18 @@ async function proxy(req, res, route) {
         for await (const chunk of upstream.body) {
           if (res.destroyed) break;
           observer.append(chunk);
-          if (!res.write(chunk)) await new Promise(resolve => {
-            const settled = () => { res.off('drain', settled); res.off('close', settled); resolve(); };
+          if (!res.write(chunk)) await new Promise((resolve, reject) => {
+            const settled = () => {
+              res.off('drain', settled);
+              res.off('close', settled);
+              controller.signal.removeEventListener('abort', settled);
+              if (controller.signal.aborted) reject(controller.signal.reason);
+              else resolve();
+            };
             res.once('drain', settled);
             res.once('close', settled);
-            if (res.destroyed) settled();
+            controller.signal.addEventListener('abort', settled, { once: true });
+            if (res.destroyed || controller.signal.aborted) settled();
           });
         }
       } catch {

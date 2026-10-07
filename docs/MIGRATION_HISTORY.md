@@ -1,7 +1,8 @@
-# Read-only Migration History (Unpublished Candidate)
+# Read-only Migration History
 
-This website candidate adds a private historical view, not a Provider session
-import. No tag/image has been published by this change. It does not deploy,
+Website v0.2.1 includes a private historical view, not a Provider session
+import. The original feature work did not publish a tag/image; it was subsequently
+included in v0.2.1. This documentation does not deploy,
 restart, export live data, or alter existing cookies, signing or native runtime.
 The parent operator must audit the running Air port 3117 additional-Bot contracts
 before any separately approved cutover. Health alone is not that audit.

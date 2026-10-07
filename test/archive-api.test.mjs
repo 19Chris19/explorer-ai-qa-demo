@@ -42,6 +42,41 @@ async function ready(child) {
 }
 async function stop(child) { if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; } }
 
+test('shared mode requires independent signing secret and rejects legacy Provider-signed cookies', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'synthetic-shared-cookie-'));
+  const shared = { PROVIDER_A_MODE: 'shared', PROVIDER_A_GATEWAY_URL: 'https://air.example-tail.ts.net', PROVIDER_A_GATEWAY_TOKEN: 'synthetic-site-token', PROVIDER_A_API_TOKEN: '' };
+  const signingKey = 'synthetic-independent-signing-key-123456789';
+  try {
+    const invalid = start(await freePort(), dir, { ...shared, DEMO_COOKIE_SECRET: '' });
+    const [code] = await once(invalid, 'exit');
+    assert.notEqual(code, 0);
+    assert.match(invalid.logs, /requires its own DEMO_COOKIE_SECRET/u);
+    const file = join(dir, 'archive.json');
+    writeFileSync(file, JSON.stringify({ schemaVersion: 1, conversations: [syntheticConversation()] }));
+    const port = await freePort();
+    const child = start(port, dir, { ...shared, DEMO_COOKIE_SECRET: signingKey, PROVIDER_A_HISTORY_ARCHIVE_PATH: file });
+    try {
+      await ready(child);
+      const url = `http://127.0.0.1:${port}/api/qa/archive/conversations`;
+      const valid = await (await fetch(url, { headers: { Cookie: cookie(owner, 'qa_demo_client_v2', signingKey) } })).json();
+      assert.equal(valid.conversations.length, 1);
+      for (const name of ['qa_demo_client_v2', 'qa_demo_client']) {
+        const forged = await (await fetch(url, { headers: { Cookie: cookie(owner, name, '') } })).json();
+        assert.equal(forged.conversations.length, 0);
+      }
+      for (const route of ['ask', 'queue']) {
+        const response = await fetch(`http://127.0.0.1:${port}/api/qa/${route}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: 'x'.repeat(1201), requestId: randomUUID(), conversationId: 'synthetic-test' }),
+        });
+        assert.equal(response.status, 400);
+        assert.match((await response.json()).error, /1200/u);
+      }
+      assert.equal(readdirSync(dir).includes('runtime'), false, 'invalid question must not claim a request or queue slot');
+    } finally { await stop(child); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('archive API shares cookie policy, denies mixed owners/mutations and cannot dispatch colliding archive IDs', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'synthetic-archive-api-'));
   const requests = [];

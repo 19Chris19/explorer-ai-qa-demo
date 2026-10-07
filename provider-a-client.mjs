@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
-export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowledgeScopeRef, allowHostGateway = false, fetchImpl = fetch }) {
+export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowledgeScopeRef, allowHostGateway = false, mode = 'independent', gatewayUrl, gatewayToken, fetchImpl = fetch }) {
+  if (mode === 'shared') return createSharedProviderClient({ gatewayUrl, gatewayToken, fetchImpl });
+  if (mode !== 'independent') throw new Error('provider_mode_invalid');
   const localPort = /^http:\/\/127\.0\.0\.1:(\d+)$/u.exec(baseUrl)?.[1];
   if (!(localPort && Number(localPort) > 0 && Number(localPort) <= 65535) && baseUrl !== 'http://provider-a:3000'
       && !(allowHostGateway === true && baseUrl === 'http://host.docker.internal:3117')) {
@@ -46,7 +48,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const ask = route === '/api/ask';
     const internalRoute = ask ? '/internal/provider-a/deep-ask' : route;
     const headers = {
-      Authorization: `Bearer ${ask ? serviceToken : apiToken}`,
+      'Authorization': `Bearer ${ask ? serviceToken : apiToken}`,
       'X-IMA-Client-Id': clientId,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     };
@@ -73,6 +75,45 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
   return { configured, readiness, request };
 }
 
+function createSharedProviderClient({ gatewayUrl, gatewayToken, fetchImpl }) {
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Error('shared_tls_verification_required');
+  // Only a server-configured Tailscale Serve origin is accepted, never a browser URL.
+  if (typeof gatewayUrl !== 'string' || !/^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.ts\.net$/u.test(gatewayUrl)) {
+    throw new Error('shared_gateway_requires_tailscale_https_origin');
+  }
+  const configured = typeof gatewayToken === 'string' && gatewayToken.length > 0;
+  const headers = { Authorization: `Bearer ${gatewayToken || ''}` };
+  async function readiness() {
+    if (!configured) return { connected: false, configured: false, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false };
+    const response = await fetchImpl(`${gatewayUrl}/v1/capabilities`, { headers: { ...headers, 'X-IMA-Client-Id': 'demo:readiness' }, redirect: 'error', signal: AbortSignal.timeout(3500) });
+    if (!response.ok) return { connected: true, configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false };
+    const status = await response.json();
+    const contractSupported = status.schemaVersion === 1 && status.features?.knowledge_agent_keyed_sse_v1 === true;
+    const authenticated = status.authenticated === true;
+    const capacity = authenticated && Number.isInteger(status.capacity) && status.capacity >= 0 ? status.capacity : 0;
+    return { connected: status.connected === true, configured, authenticated, contractSupported,
+      ready: status.ready === true && authenticated && contractSupported && capacity > 0,
+      capacity, webIntentSupported: authenticated && contractSupported && status.webIntentSupported === true,
+      active: Number.isInteger(status.active) && status.active >= 0 ? status.active : 0,
+      queued: Number.isInteger(status.queued) && status.queued >= 0 ? status.queued : 0 };
+  }
+  function request({ route, method, clientId, body, requestId, sourceIntent, signal }) {
+    if (!configured) throw new Error('shared_gateway_not_configured');
+    const ask = route === '/api/ask' && method === 'POST';
+    const list = /^\/api\/conversations(?:\?limit=\d{1,3})?$/u.test(route) && ['GET', 'POST'].includes(method);
+    const detail = /^\/api\/conversations\/[a-zA-Z0-9_-]+$/u.test(route) && ['GET', 'DELETE'].includes(method);
+    if (!ask && !list && !detail) throw new Error('shared_gateway_route_not_allowed');
+    const requestHeaders = { ...headers, 'X-IMA-Client-Id': clientId, ...(body ? { 'Content-Type': 'application/json' } : {}) };
+    if (ask) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(requestId || '')) throw new Error('request_id_invalid');
+      requestHeaders.Accept = 'text/event-stream';
+      body = JSON.stringify({ ...JSON.parse(body), request_id: requestId, ...(sourceIntent === 'web' ? { sourceIntent: 'web' } : {}) });
+    }
+    return fetchImpl(`${gatewayUrl}${route.replace(/^\/api\//u, '/v1/')}`, { method, headers: requestHeaders, body, signal, redirect: 'error' });
+  }
+  return { configured, readiness, request };
+}
+
 export function createStreamObserver() {
   const decoder = new TextDecoder();
   let pending = '';
@@ -85,6 +126,7 @@ export function createStreamObserver() {
     let boundary;
     while ((boundary = pending.indexOf('\n\n')) >= 0) {
       const packet = pending.slice(0, boundary);
+      if (Buffer.byteLength(packet, 'utf8') + 2 > 65536) throw new Error('provider_event_too_large');
       pending = pending.slice(boundary + 2);
       const name = /^event:\s*([^\s]+)$/mu.exec(packet)?.[1];
       if (!Object.hasOwn(counts, name)) continue;
@@ -97,7 +139,7 @@ export function createStreamObserver() {
         if (name === 'sources') sourceCount = Math.max(sourceCount, Array.isArray(data.sources) ? data.sources.length : 0);
       }
     }
-    if (pending.length > 65536) throw new Error('provider_event_too_large');
+    if (Buffer.byteLength(pending, 'utf8') > 65536) throw new Error('provider_event_too_large');
   }
   return { append, result: () => ({ ...counts, sourceCount, conversationId, complete: counts.done === 1 && counts.error === 0 && counts.delta > 0 }) };
 }

@@ -27,7 +27,11 @@ if [ "$BUNDLE_STATUS" = released ]; then
   }
 fi
 test -f "$SOURCE/onboard.sh" || { echo 'Matching Provider tooling is required; do not fabricate configuration.' >&2; exit 1; }
-NODE=$(sh "$SOURCE/onboard.sh" runtime)
+if [ -f "$SOURCE/scripts/deployment-choice.sh" ]; then
+  NODE=$(sh "$SOURCE/onboard.sh" runtime --deployment-mode independent --allow-bootstrap)
+else
+  NODE=$(sh "$SOURCE/onboard.sh" runtime)
+fi
 PROVIDER_SOURCE_DIR=$SOURCE
 export PROVIDER_SOURCE_DIR
 exec "$NODE" "$ROOT/deploy/onboard.mjs" "$@"
