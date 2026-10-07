@@ -64,6 +64,7 @@ function fixture({ abortDuringWrite = false } = {}) {
   });
   const context = {
     AbortController, createStreamObserver,
+    validateQuestion(question) { assert.equal(question, 'synthetic'); },
     setTimeout(fn) { deadline = fn; return 1; }, clearTimeout() {},
     readBody: async () => ({ question: 'synthetic', requestId: '11111111-1111-4111-8111-111111111111' }),
     getClientId: () => 'demo:synthetic', requireNativeContract: async () => true,
