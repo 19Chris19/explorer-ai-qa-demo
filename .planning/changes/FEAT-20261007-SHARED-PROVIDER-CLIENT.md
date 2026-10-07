@@ -17,3 +17,5 @@
 - Governance: no hard blockers; pre-existing scaffold/ownership warnings retained, no unrelated cleanup.
 - Follow-up: staged scanner flagged JavaScript property expressions (not secret literals); explicit quoted property names avoid that false positive. Initial commit command ran despite the scanner failure; follow-up validation must pass before any push.
 - Capabilities requests include a fixed synthetic readiness visitor, matching gateway authentication without creating a conversation.
+- Review follow-up: shared question validation uses the gateway's conservative 1200-code-unit cap before queue admission or idempotency claims. Independent mode retains its existing limit.
+- Cross-repository synthetic client/gateway test passed: CRUD isolation, byte-preserving SSE, rotation and revocation. This does not test Tailscale or TLS.

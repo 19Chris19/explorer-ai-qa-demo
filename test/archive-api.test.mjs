@@ -64,6 +64,15 @@ test('shared mode requires independent signing secret and rejects legacy Provide
         const forged = await (await fetch(url, { headers: { Cookie: cookie(owner, name, '') } })).json();
         assert.equal(forged.conversations.length, 0);
       }
+      for (const route of ['ask', 'queue']) {
+        const response = await fetch(`http://127.0.0.1:${port}/api/qa/${route}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: 'x'.repeat(1201), requestId: randomUUID(), conversationId: 'synthetic-test' }),
+        });
+        assert.equal(response.status, 400);
+        assert.match((await response.json()).error, /1200/u);
+      }
+      assert.equal(readdirSync(dir).includes('runtime'), false, 'invalid question must not claim a request or queue slot');
     } finally { await stop(child); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

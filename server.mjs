@@ -21,6 +21,7 @@ const providerApiToken = process.env.PROVIDER_A_API_TOKEN || env.PROVIDER_A_API_
 const providerServiceToken = process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || '';
 const knowledgeScopeRef = process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || '';
 const providerMode = process.env.PROVIDER_A_MODE ?? env.PROVIDER_A_MODE ?? 'independent';
+const maxQuestionChars = providerMode === 'shared' ? 1200 : 2000;
 const cookieSecret = process.env.DEMO_COOKIE_SECRET || env.DEMO_COOKIE_SECRET || providerApiToken;
 if (providerMode === 'shared' && (!cookieSecret || cookieSecret.length < 32 || cookieSecret === providerApiToken)) {
   throw new Error('Shared mode requires its own DEMO_COOKIE_SECRET (at least 32 characters)');
@@ -327,9 +328,15 @@ async function queueRoute(req, res, pathname) {
 }
 
 function validateQueuedInput(input, requireIdentity) {
-  if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 2000) throw new Error('Question must be 1–2000 characters');
+  validateQuestion(input.question);
   if (input.sourceIntent !== undefined && input.sourceIntent !== 'web') throw new Error('sourceIntent 只能是 web');
   if (requireIdentity && (!validConversationId(input.conversationId) || !validRequestId(input.requestId))) throw new Error('会话或请求编号格式不正确');
+}
+
+function validateQuestion(question) {
+  if (typeof question !== 'string' || !question.trim() || question.length > maxQuestionChars) {
+    throw new Error(`Question must be 1–${maxQuestionChars} characters`);
+  }
 }
 
 async function supportsWebIntent() {
@@ -376,7 +383,7 @@ async function proxy(req, res, route) {
   try {
     if (req.method === 'POST' && route === '/api/ask') {
       const input = await readBody(req);
-      if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 2000) throw new Error('Question must be 1–2000 characters');
+      validateQuestion(input.question);
       if (typeof input.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(input.requestId)) throw new Error('requestId 格式不正确');
       if (input.sourceIntent !== undefined && input.sourceIntent !== 'web') throw new Error('sourceIntent 只能是 web');
       sourceIntent = input.sourceIntent || '';
