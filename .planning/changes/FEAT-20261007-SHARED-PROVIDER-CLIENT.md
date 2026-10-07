@@ -19,3 +19,4 @@
 - Capabilities requests include a fixed synthetic readiness visitor, matching gateway authentication without creating a conversation.
 - Review follow-up: shared question validation uses the gateway's conservative 1200-code-unit cap before queue admission or idempotency claims. Independent mode retains its existing limit.
 - Cross-repository synthetic client/gateway test passed: CRUD isolation, byte-preserving SSE, rotation and revocation. This does not test Tailscale or TLS.
+- TLS review: direct shared-client construction rejects NODE_TLS_REJECT_UNAUTHORIZED=0, with a red-first regression, even when not started by the installer.

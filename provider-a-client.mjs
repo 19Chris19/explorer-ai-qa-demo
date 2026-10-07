@@ -76,6 +76,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
 }
 
 function createSharedProviderClient({ gatewayUrl, gatewayToken, fetchImpl }) {
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Error('shared_tls_verification_required');
   // Only a server-configured Tailscale Serve origin is accepted, never a browser URL.
   if (typeof gatewayUrl !== 'string' || !/^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.ts\.net$/u.test(gatewayUrl)) {
     throw new Error('shared_gateway_requires_tailscale_https_origin');
