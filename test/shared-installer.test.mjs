@@ -221,6 +221,7 @@ test('Windows entry chooses before dispatch and preserves pinned Provider runtim
   assert.match(ps, /WslRoot/);
   for (const path of ['onboard.sh', 'onboard.ps1']) {
     const content = readFileSync(join(source, path), 'utf8');
-    assert.doesNotMatch(content, /--deployment-mode/);
+    assert.match(content, /deployment-choice\.(?:sh|ps1)/);
+    assert.match(content, /runtime --deployment-mode independent --allow-bootstrap/);
   }
 });
