@@ -26,6 +26,21 @@ migrated across Provider modes; use a fresh installation for shared mode.
 | Initial full regression | 179 passed, 2 optional integration skips before final integration; final count belongs in PR evidence |
 | Container checkpoint | ARM64 image built from 3160d8d; network-disabled synthetic container served page 200, health 503, configured=true, connected=false, ready=false; stopped and removed after check |
 
+## Final integrated checkpoint (2026-10-07)
+
+- Explorer code `5cb5711` and Provider code `9ba954c`: both full Node test
+  suites exited successfully, including the explicit cross-repository gateway
+  integration. Optional platform tests remain skipped; no claim of Windows execution.
+- Explorer build and `check:release` passed (209 release files; no private paths
+  or key patterns). Installer environment tests reject ambient Node preload and
+  disabled TLS verification. Old/new Provider wrapper syntax is tested separately.
+- Final Linux ARM64 image built from `5cb5711`, local tag
+  `explorer-shared-candidate:20261007-final`. An isolated network-disabled
+  container returned page 200, health 503, configured=true, connected=false,
+  ready=false. Only obvious synthetic credentials were used; the container was
+  removed. This is not a Tailscale or full remote Compose acceptance.
+- No release, production upgrade, account access or real IMA request occurred.
+
 Cross-repository synthetic test:
 
 ```sh
