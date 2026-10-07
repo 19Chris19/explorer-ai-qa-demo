@@ -1,5 +1,12 @@
 # Explorer Installer Environment Safety
 
+## CI Follow-up (2026-10-07)
+
+Linux PowerShell CI exercised a locally skipped test and found that the .NET
+setter left an environment entry visible to PowerShell. Use explicit Env-provider
+removal instead. The existing strict test remains unchanged; rerun CI before
+acceptance. No Windows desktop validation is implied.
+
 Change-ID: FIX-20261007-EXPLORER-ENV-SAFETY
 Base: 82e41595fd7c3e8df859ef726e8a10665fe5c406
 Branch: codex/explorer-shared-env-safety-20261007
