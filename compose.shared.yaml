@@ -1,0 +1,37 @@
+services:
+  explorer-qa:
+    image: ${SHARED_IMAGE:?Reviewed shared-adapter image digest required}
+    restart: unless-stopped
+    env_file:
+      - path: .maintenance/shared/explorer.env
+        format: raw
+    volumes:
+      - explorer-state:/var/lib/explorer-qa
+    read_only: true
+    tmpfs: [/tmp]
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4317/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 15s
+      start_period: 120s
+      retries: 5
+  gateway:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SHARED_PORT:?Locked port required}:8080"
+    volumes:
+      - ./deploy/docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      explorer-qa:
+        condition: service_healthy
+networks:
+  backend:
+volumes:
+  explorer-state:
