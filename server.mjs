@@ -447,7 +447,10 @@ async function proxy(req, res, route) {
     }
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 190000);
+  const timeout = setTimeout(() => {
+    controller.abort();
+    res.destroy();
+  }, 190000);
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
   if (res.destroyed) controller.abort();
   try {
@@ -464,11 +467,18 @@ async function proxy(req, res, route) {
         for await (const chunk of upstream.body) {
           if (res.destroyed) break;
           observer.append(chunk);
-          if (!res.write(chunk)) await new Promise(resolve => {
-            const settled = () => { res.off('drain', settled); res.off('close', settled); resolve(); };
+          if (!res.write(chunk)) await new Promise((resolve, reject) => {
+            const settled = () => {
+              res.off('drain', settled);
+              res.off('close', settled);
+              controller.signal.removeEventListener('abort', settled);
+              if (controller.signal.aborted) reject(controller.signal.reason);
+              else resolve();
+            };
             res.once('drain', settled);
             res.once('close', settled);
-            if (res.destroyed) settled();
+            controller.signal.addEventListener('abort', settled, { once: true });
+            if (res.destroyed || controller.signal.aborted) settled();
           });
         }
       } catch {
