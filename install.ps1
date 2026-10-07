@@ -11,6 +11,10 @@ param(
   [string]$Image
 )
 $ErrorActionPreference = 'Stop'
+# Clear Node execution overrides before WSL can forward the ambient environment.
+foreach ($name in @('NODE_OPTIONS', 'NODE_PATH', 'NODE_TLS_REJECT_UNAUTHORIZED')) {
+  [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+}
 function Block([string]$Code, [string]$Next) {
   @{ stage = 'blocked'; code = $Code; next = $Next } | ConvertTo-Json -Compress | Write-Output
   exit 1

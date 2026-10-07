@@ -132,7 +132,7 @@ export async function main(root, args) {
     const { env } = readShared(root, 'node');
     if (present(join(root, '.env.local'))) throw Error('existing_installation_protected');
     if (!existsSync(join(root, 'node_modules'))) throw Error('install_reviewed_dependencies_first');
-    const clean = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PROVIDER_|IMA_|DEMO_|PORT$|NODE_OPTIONS$)/i.test(key)));
+    const clean = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PROVIDER_|IMA_|DEMO_|PORT$|NODE_(OPTIONS|PATH|TLS_REJECT_UNAUTHORIZED)$)/i.test(key)));
     await new Promise((accept, reject) => {
       const child = spawn(process.execPath, ['server.mjs'], { cwd: root, env: { ...clean, ...env }, stdio: 'inherit' });
       child.once('error', () => reject(Error('shared_start_failed')));

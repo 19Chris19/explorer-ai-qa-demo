@@ -225,3 +225,90 @@ test('Windows entry chooses before dispatch and preserves pinned Provider runtim
     assert.match(content, /runtime --deployment-mode independent --allow-bootstrap/);
   }
 });
+
+const unsafeNodeEnv = {
+  NODE_OPTIONS: '--import=data:text/javascript,console.log(%22SYNTHETIC_PRELOAD_EXECUTED%22)',
+  NODE_PATH: '/synthetic/unapproved-modules',
+  NODE_TLS_REJECT_UNAUTHORIZED: '0',
+};
+for (const action of ['preflight', 'init', 'start', 'readiness']) {
+  test(`environment safety before first Node and shared ${action}`, { skip: process.platform === 'win32' }, t => {
+    const { root, options } = shellFixture(t);
+    const calls = join(root, 'environment-calls');
+    const probe = join(root, 'environment-probe.cjs');
+    writeFileSync(probe, `const fs = require('node:fs');
+fs.appendFileSync(process.env.CALLS, JSON.stringify({ args: process.argv.slice(2),
+  unsafe: Object.keys(process.env).filter(key => ${JSON.stringify(Object.keys(unsafeNodeEnv))}.includes(key)) }) + '\\n');
+`);
+    writeFileSync(join(root, 'bin/node'), `#!/bin/sh\nexec '${process.execPath}' '${probe}' "$@"\n`, { mode: 0o700 });
+    writeFileSync(join(root, '.env'), 'echo SYNTHETIC_USER_CONFIG_SOURCED\n');
+    const r = spawnSync('/bin/sh', [join(root, 'install.sh'), '--mode', 'shared', '--runtime', 'node',
+      '--action', action, '--gateway-url', options.gateway, '--token-file', options.tokenFile], {
+      env: { PATH: join(root, 'bin'), CALLS: calls, ...unsafeNodeEnv }, encoding: 'utf8', timeout: 5000,
+    });
+    assert.ifError(r.error);
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout + r.stderr, /SYNTHETIC_PRELOAD_EXECUTED|SYNTHETIC_USER_CONFIG_SOURCED/);
+    const events = readFileSync(calls, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.match(events[0].args.join(' '), /process.versions/);
+    for (const event of events) assert.deepEqual(event.unsafe, [], JSON.stringify(event.args));
+    if (action !== 'preflight') assert.ok(events.at(-1).args.includes(action));
+  });
+}
+test('online and missing mode stay dependency-free with unsafe Node settings', { skip: process.platform === 'win32' }, t => {
+  const { root } = shellFixture(t);
+  for (const [args, status] of [[['--mode', 'online'], 0], [[], 1]]) {
+    const r = spawnSync('/bin/sh', [join(root, 'install.sh'), ...args], {
+      env: { PATH: join(root, 'bin'), ...unsafeNodeEnv }, encoding: 'utf8', input: '', timeout: 5000,
+    });
+    assert.ifError(r.error);
+    assert.equal(r.status, status, r.stderr);
+    assert.doesNotMatch(r.stdout + r.stderr, /SYNTHETIC_PRELOAD_EXECUTED/);
+    assert.equal(existsSync(join(root, '.maintenance')), false);
+  }
+});
+test('shared Node child removes ambient execution and TLS overrides without loading user config', t => {
+  const { root, options } = fixture(t);
+  initializeShared(root, options);
+  mkdirSync(join(root, 'node_modules'));
+  writeFileSync(join(root, 'server.mjs'), `console.log(JSON.stringify({
+    unsafe: Object.keys(process.env).filter(key => ${JSON.stringify(Object.keys(unsafeNodeEnv))}.includes(key)),
+    mode: process.env.PROVIDER_A_MODE, host: process.env.DEMO_LISTEN_HOST,
+    preserved: process.env.SYNTHETIC_KEEP
+  }));`);
+  writeFileSync(join(root, '.env'), 'NODE_TLS_REJECT_UNAUTHORIZED=0\n');
+  // Set overrides after Node startup so this checks the actual child filter.
+  const script = `import { main } from ${JSON.stringify(new URL('../deploy/shared-install.mjs', import.meta.url).href)};
+    Object.assign(process.env, ${JSON.stringify(unsafeNodeEnv)});
+    await main(${JSON.stringify(root)}, ['--runtime', 'node', '--action', 'start']);`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    env: { SYNTHETIC_KEEP: 'preserved' }, encoding: 'utf8', timeout: 5000,
+  });
+  assert.ifError(r.error);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), { unsafe: [], mode: 'shared', host: '127.0.0.1', preserved: 'preserved' });
+});
+test('PowerShell removes Node overrides before WSL dispatch', () => {
+  const ps = readFileSync(join(source, 'install.ps1'), 'utf8');
+  const dispatch = ps.indexOf('& wsl.exe @arguments');
+  for (const key of Object.keys(unsafeNodeEnv)) assert.ok(ps.indexOf(`'${key}'`) >= 0 && ps.indexOf(`'${key}'`) < dispatch, key);
+  assert.match(ps.slice(0, dispatch), /\[Environment\]::SetEnvironmentVariable\(\$name, \$null, 'Process'\)/);
+});
+const pwsh = spawnSync('pwsh', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8' });
+test('PowerShell WSL double observes a clean environment', { skip: pwsh.status !== 0 }, () => {
+  const script = `$env:PROCESSOR_ARCHITECTURE = 'AMD64'
+function global:wsl.exe {
+  foreach ($name in @('NODE_OPTIONS', 'NODE_PATH', 'NODE_TLS_REJECT_UNAUTHORIZED')) {
+    if (Test-Path "Env:$name") { throw 'synthetic_unsafe_environment' }
+  }
+  Write-Output 'synthetic_clean_wsl'
+  $global:LASTEXITCODE = 0
+}
+& '${join(source, 'install.ps1').replaceAll("'", "''")}' -Mode shared -Runtime node -Action preflight -Distribution Synthetic -WslRoot /home/synthetic/explorer`;
+  const r = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    env: { ...process.env, ...unsafeNodeEnv }, encoding: 'utf8', timeout: 5000,
+  });
+  assert.ifError(r.error);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'synthetic_clean_wsl');
+});

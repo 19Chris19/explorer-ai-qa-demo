@@ -1,6 +1,8 @@
 #!/bin/sh
 # Selection must happen before looking for or installing a software runtime.
 set -eu
+# Clear Node execution overrides before any runtime probe or helper dispatch.
+unset NODE_OPTIONS NODE_PATH NODE_TLS_REJECT_UNAUTHORIZED
 umask 077
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 block() { printf '{"stage":"blocked","code":"%s","next":"%s"}\n' "$1" "$2" >&2; exit 1; }
