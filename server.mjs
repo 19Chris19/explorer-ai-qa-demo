@@ -20,12 +20,19 @@ const providerBaseUrl = process.env.PROVIDER_A_BASE_URL || env.PROVIDER_A_BASE_U
 const providerApiToken = process.env.PROVIDER_A_API_TOKEN || env.PROVIDER_A_API_TOKEN || '';
 const providerServiceToken = process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || '';
 const knowledgeScopeRef = process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || '';
+const providerMode = process.env.PROVIDER_A_MODE ?? env.PROVIDER_A_MODE ?? 'independent';
 const cookieSecret = process.env.DEMO_COOKIE_SECRET || env.DEMO_COOKIE_SECRET || providerApiToken;
+if (providerMode === 'shared' && (!cookieSecret || cookieSecret.length < 32 || cookieSecret === providerApiToken)) {
+  throw new Error('Shared mode requires its own DEMO_COOKIE_SECRET (at least 32 characters)');
+}
 const releaseRevision = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_REVISION || 'local-dev';
 const disableAdmin = (process.env.DEMO_DISABLE_ADMIN || env.DEMO_DISABLE_ADMIN) === '1';
 const paths = deploymentPaths({ ...env, ...process.env });
 const assetPrefix = paths.prefix;
 const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef,
+  mode: providerMode,
+  gatewayUrl: process.env.PROVIDER_A_GATEWAY_URL ?? env.PROVIDER_A_GATEWAY_URL,
+  gatewayToken: process.env.PROVIDER_A_GATEWAY_TOKEN ?? env.PROVIDER_A_GATEWAY_TOKEN,
   allowHostGateway: (process.env.PROVIDER_A_ALLOW_HOST_GATEWAY ?? env.PROVIDER_A_ALLOW_HOST_GATEWAY) === 'true' });
 const historyArchive = loadHistoryArchive(process.env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? '');
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');
@@ -198,8 +205,8 @@ function isSameOrigin(req) {
 
 function getClientId(req, res) {
   const current = new RegExp(`(?:^|;\\s*)${paths.cookieName}=([a-f0-9-]{36})\\.([a-f0-9]{64})(?:;|$)`, 'iu').exec(req.headers.cookie || '');
-  if (current && (validSignature(current[1], current[2]) || (!storageNamespace(paths) && validSignature(current[1], current[2], providerApiToken)))) return `demo:${current[1]}`;
-  const match = !storageNamespace(paths) && /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
+  if (current && (validSignature(current[1], current[2]) || (providerMode !== 'shared' && !storageNamespace(paths) && validSignature(current[1], current[2], providerApiToken)))) return `demo:${current[1]}`;
+  const match = providerMode !== 'shared' && !storageNamespace(paths) && /(?:^|;\s*)qa_demo_client=([a-f0-9-]{36})\.([a-f0-9]{64})(?:;|$)/iu.exec(req.headers.cookie || '');
   if (match && validSignature(match[1], match[2], providerApiToken)) return match[1];
   const id = randomUUID();
   res.setHeader('Set-Cookie', `${paths.cookieName}=${id}.${signClientId(id)}; HttpOnly; SameSite=Lax; Path=${paths.cookiePath}; Max-Age=2592000${paths.secure || isPreview(req) ? '; Secure' : ''}`);
