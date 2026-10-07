@@ -292,7 +292,7 @@ test('PowerShell removes Node overrides before WSL dispatch', () => {
   const ps = readFileSync(join(source, 'install.ps1'), 'utf8');
   const dispatch = ps.indexOf('& wsl.exe @arguments');
   for (const key of Object.keys(unsafeNodeEnv)) assert.ok(ps.indexOf(`'${key}'`) >= 0 && ps.indexOf(`'${key}'`) < dispatch, key);
-  assert.match(ps.slice(0, dispatch), /\[Environment\]::SetEnvironmentVariable\(\$name, \$null, 'Process'\)/);
+  assert.match(ps.slice(0, dispatch), /Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue/);
 });
 const pwsh = spawnSync('pwsh', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8' });
 test('PowerShell WSL double observes a clean environment', { skip: pwsh.status !== 0 }, () => {
