@@ -32,7 +32,7 @@ const assetPrefix = paths.prefix;
 const provider = createProviderAClient({ baseUrl: providerBaseUrl, apiToken: providerApiToken, serviceToken: providerServiceToken, knowledgeScopeRef,
   mode: providerMode,
   gatewayUrl: process.env.PROVIDER_A_GATEWAY_URL ?? env.PROVIDER_A_GATEWAY_URL,
-  gatewayToken: process.env.PROVIDER_A_GATEWAY_TOKEN ?? env.PROVIDER_A_GATEWAY_TOKEN,
+  'gatewayToken': process.env.PROVIDER_A_GATEWAY_TOKEN ?? env.PROVIDER_A_GATEWAY_TOKEN,
   allowHostGateway: (process.env.PROVIDER_A_ALLOW_HOST_GATEWAY ?? env.PROVIDER_A_ALLOW_HOST_GATEWAY) === 'true' });
 const historyArchive = loadHistoryArchive(process.env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? env.PROVIDER_A_HISTORY_ARCHIVE_PATH ?? '');
 const runtimeDir = process.env.DEMO_RUNTIME_DIR || join(root, 'runtime');

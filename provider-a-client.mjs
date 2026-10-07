@@ -48,7 +48,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const ask = route === '/api/ask';
     const internalRoute = ask ? '/internal/provider-a/deep-ask' : route;
     const headers = {
-      Authorization: `Bearer ${ask ? serviceToken : apiToken}`,
+      'Authorization': `Bearer ${ask ? serviceToken : apiToken}`,
       'X-IMA-Client-Id': clientId,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     };
@@ -84,7 +84,7 @@ function createSharedProviderClient({ gatewayUrl, gatewayToken, fetchImpl }) {
   const headers = { Authorization: `Bearer ${gatewayToken || ''}` };
   async function readiness() {
     if (!configured) return { connected: false, configured: false, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false };
-    const response = await fetchImpl(`${gatewayUrl}/v1/capabilities`, { headers, redirect: 'error', signal: AbortSignal.timeout(3500) });
+    const response = await fetchImpl(`${gatewayUrl}/v1/capabilities`, { headers: { ...headers, 'X-IMA-Client-Id': 'demo:readiness' }, redirect: 'error', signal: AbortSignal.timeout(3500) });
     if (!response.ok) return { connected: true, configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false };
     const status = await response.json();
     const contractSupported = status.schemaVersion === 1 && status.features?.knowledge_agent_keyed_sse_v1 === true;

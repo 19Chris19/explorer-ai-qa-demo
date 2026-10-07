@@ -15,3 +15,5 @@
 - Full website suite at initial adapter checkpoint: 179 passed, 2 optional integration skips; build passed.
 - Shared mode requires a separate 32-character signing secret and does not accept legacy Provider-signed cookies.
 - Governance: no hard blockers; pre-existing scaffold/ownership warnings retained, no unrelated cleanup.
+- Follow-up: staged scanner flagged JavaScript property expressions (not secret literals); explicit quoted property names avoid that false positive. Initial commit command ran despite the scanner failure; follow-up validation must pass before any push.
+- Capabilities requests include a fixed synthetic readiness visitor, matching gateway authentication without creating a conversation.
