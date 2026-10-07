@@ -125,6 +125,7 @@ export function createStreamObserver() {
     let boundary;
     while ((boundary = pending.indexOf('\n\n')) >= 0) {
       const packet = pending.slice(0, boundary);
+      if (Buffer.byteLength(packet, 'utf8') + 2 > 65536) throw new Error('provider_event_too_large');
       pending = pending.slice(boundary + 2);
       const name = /^event:\s*([^\s]+)$/mu.exec(packet)?.[1];
       if (!Object.hasOwn(counts, name)) continue;
@@ -137,7 +138,7 @@ export function createStreamObserver() {
         if (name === 'sources') sourceCount = Math.max(sourceCount, Array.isArray(data.sources) ? data.sources.length : 0);
       }
     }
-    if (pending.length > 65536) throw new Error('provider_event_too_large');
+    if (Buffer.byteLength(pending, 'utf8') > 65536) throw new Error('provider_event_too_large');
   }
   return { append, result: () => ({ ...counts, sourceCount, conversationId, complete: counts.done === 1 && counts.error === 0 && counts.delta > 0 }) };
 }
