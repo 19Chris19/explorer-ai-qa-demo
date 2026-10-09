@@ -2,8 +2,46 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 export const terminalTask = status => ['succeeded', 'failed', 'cancelled', 'indeterminate'].includes(status);
 
-// A watcher may be replaced freely. Only DELETE cancels the underlying task.
-export async function followTask(provider, { clientId, taskId, emit, signal, onStatus = () => {}, retryMs = 500 }) {
+export function taskTerminalError(status) {
+  return Object.assign(new Error(status === 'cancelled' ? 'cancelled' : 'task_failed'), { confirmedTerminal: true, taskStatus: status });
+}
+
+function finish(status) {
+  if (status !== 'succeeded') throw taskTerminalError(status);
+}
+
+// An empty lookup cannot prove that a dispatched POST was never accepted.
+export async function lookupSubmittedTask(provider, { clientId, requestKey }) {
+  try {
+    const response = await provider.request({ route: `/api/tasks?requestKey=${requestKey}`, method: 'GET', clientId, signal: AbortSignal.timeout(10000) });
+    if (!response.ok) { await response.body?.cancel(); return null; }
+    const data = await response.json();
+    return data.tasks?.find(task => typeof task.id === 'string' && /^[a-zA-Z0-9-]{1,100}$/u.test(task.id)
+      && ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'indeterminate'].includes(task.status)) || null;
+  } catch { return null; }
+}
+
+export async function recoverSubmittedTask(provider, options) {
+  for (;;) {
+    const recorded = options.recordedTask?.();
+    if (recorded) return recorded;
+    const task = await lookupSubmittedTask(provider, options);
+    if (task) return task;
+    await delay(options.retryMs ?? 500);
+  }
+}
+
+export async function cancelTaskAttempt(provider, { clientId, taskId }) {
+  try {
+    const response = await provider.request({ route: `/api/tasks/${taskId}`, method: 'DELETE', clientId, signal: AbortSignal.timeout(10000) });
+    if (!response.ok) { await response.body?.cancel(); return null; }
+    const data = await response.json();
+    return data.task?.id === taskId ? data.task : null;
+  } catch { return null; }
+}
+
+// A watcher may be replaced freely. Only persisted explicit cancellation sends DELETE.
+export async function followTask(provider, { clientId, taskId, emit, signal, onStatus = () => {}, confirmedStatus = () => null, retryMs = 500 }) {
   let cursor = 0;
   let terminal;
   const consume = event => {
@@ -11,15 +49,27 @@ export async function followTask(provider, { clientId, taskId, emit, signal, onS
     if (event.id !== cursor + 1) throw new Error('task_cursor_gap');
     emit(Buffer.from(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`));
     cursor = event.id;
-    if (event.event === 'task.status') onStatus(event.data.status);
+    if (event.event === 'task.status') {
+      onStatus(event.data.status);
+      if (terminalTask(event.data.status) && event.data.status !== 'succeeded') terminal = event.data.status;
+    }
     if (event.event === 'done') terminal = 'succeeded';
-    if (event.event === 'error') terminal = 'failed';
+    // Error bodies describe the failure; task.status owns its terminal category.
   };
-  try {
-    while (!signal?.aborted) {
+  for (;;) {
+    if (terminalTask(confirmedStatus())) return finish(confirmedStatus());
+    if (signal?.aborted) {
+      const task = await cancelTaskAttempt(provider, { clientId, taskId });
+      if (terminalTask(task?.status)) return finish(task.status);
+    } else {
       try {
-        const response = await provider.request({ route: `/api/tasks/${taskId}/events?after=${cursor}`, method: 'GET', clientId, signal });
-        if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('task_subscription_unavailable');
+        const timeout = AbortSignal.timeout(245000);
+        const observationSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+        const response = await provider.request({ route: `/api/tasks/${taskId}/events?after=${cursor}`, method: 'GET', clientId, signal: observationSignal });
+        if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) {
+          await response.body?.cancel();
+          throw new Error('task_subscription_unavailable');
+        }
         let pending = '';
         const decoder = new TextDecoder();
         for await (const chunk of response.body) {
@@ -35,32 +85,26 @@ export async function followTask(provider, { clientId, taskId, emit, signal, onS
           if (pending.length > 2 * 1024 * 1024) throw new Error('task_event_too_large');
           if (terminal) break;
         }
-      } catch (error) {
-        if (signal?.aborted) break;
-        if (['task_cursor_gap', 'task_event_too_large'].includes(error.message)) throw error;
+      } catch {
+        // Subscription rotation, truncated JSON and cursor gaps are not execution failure.
       }
-      if (terminal) {
-        if (terminal !== 'succeeded') throw new Error('task_failed');
-        return;
-      }
-      const response = await provider.request({ route: `/api/tasks/${taskId}`, method: 'GET', clientId, signal }).catch(() => null);
-      if (response?.ok) {
-        const data = await response.json();
-        if (data.task?.id === taskId && data.task.status === 'succeeded' && data.task.eventsExpired
-            && data.task.history?.taskId === taskId) return;
-        for (const event of data.snapshot?.events || []) consume(event);
-        if (terminalTask(data.task?.status)) {
-          if (terminal !== 'succeeded' || data.task.status !== 'succeeded') throw new Error('task_incomplete');
-          return;
-        }
-      } else if ([403, 404, 410].includes(response?.status)) throw new Error('task_unavailable');
-      await delay(retryMs, undefined, { signal });
+      if (terminal) return finish(terminal);
     }
-    throw new Error('cancelled');
-  } finally {
-    if (signal?.aborted) {
-      await provider.request({ route: `/api/tasks/${taskId}`, method: 'DELETE', clientId, signal: AbortSignal.timeout(10000) }).catch(() => {});
-    }
+    let data;
+    try {
+      const response = await provider.request({ route: `/api/tasks/${taskId}`, method: 'GET', clientId, signal: AbortSignal.timeout(10000) });
+      if (response.ok) {
+        data = await response.json();
+        if (data.task?.id && data.task.id !== taskId) data = undefined;
+        for (const event of data?.snapshot?.events || []) consume(event);
+      } else await response.body?.cancel();
+    } catch { /* Retain the task and cursor when observation fails. */ }
+    if (data?.task?.id === taskId && data.task.status === 'succeeded' && data.task.eventsExpired
+        && data.task.history?.taskId === taskId) return;
+    if (terminal) return finish(terminal);
+    if (data?.task?.id === taskId && terminalTask(data.task.status) && data.task.status !== 'succeeded') return finish(data.task.status);
+    if (['queued', 'running'].includes(data?.task?.status)) onStatus(data.task.status);
+    await delay(retryMs);
   }
 }
 

@@ -9,7 +9,11 @@ export class TaskWatchStore {
     let rows;
     try { rows = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; rows = []; }
     if (!Array.isArray(rows) || rows.some(row => !row || !['id', 'clientId', 'conversationId', 'status'].every(key => typeof row[key] === 'string')
-      || !/^[a-zA-Z0-9-]{1,100}$/u.test(row.id) || !['queued', 'running'].includes(row.status) || typeof row.preview !== 'boolean')) throw new Error('invalid_task_watch_storage');
+      || !/^[a-zA-Z0-9-]{1,100}$/u.test(row.id) || !['unconfirmed', 'queued', 'running', 'succeeded', 'failed', 'cancelled', 'indeterminate', 'rejected'].includes(row.status)
+      || typeof row.preview !== 'boolean'
+      || (row.requestId !== undefined && (typeof row.requestId !== 'string' || typeof row.fingerprint !== 'string'))
+      || (row.taskId !== undefined && !/^[a-zA-Z0-9-]{1,100}$/u.test(row.taskId))
+      || (row.cancelRequested !== undefined && typeof row.cancelRequested !== 'boolean'))) throw new Error('invalid_task_watch_storage');
     this.rows = new Map(rows.map(row => [row.id, row]));
   }
   save() {
@@ -23,5 +27,7 @@ export class TaskWatchStore {
   }
   set(row) { const old = this.rows.get(row.id); this.rows.set(row.id, row); try { this.save(); } catch (error) { if (old) this.rows.set(row.id, old); else this.rows.delete(row.id); throw error; } }
   delete(id) { const old = this.rows.get(id); if (!old) return; this.rows.delete(id); try { this.save(); } catch (error) { this.rows.set(id, old); throw error; } }
-  pendingCount() { return [...this.rows.values()].filter(row => row.preview && row.status === 'queued').length; }
+  findRequest(clientId, requestId) { return [...this.rows.values()].find(row => row.clientId === clientId && row.requestId === requestId); }
+  findTask(clientId, taskId) { return [...this.rows.values()].find(row => row.clientId === clientId && (row.taskId || row.id) === taskId); }
+  pendingCount() { return [...this.rows.values()].filter(row => !row.queueId && row.preview && ['unconfirmed', 'queued'].includes(row.status)).length; }
 }
