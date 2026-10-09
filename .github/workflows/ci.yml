@@ -28,21 +28,31 @@ jobs:
       - run: npm run check:release
 
   containers:
-    name: Docker synthetic acceptance
+    name: Paired durable Docker acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      PROVIDER_IMAGE: node:22-bookworm-slim
-      EXPLORER_IMAGE: explorer-ci:${{ github.sha }}
+      WEBSITE_TASK_IMAGE: explorer-ci:${{ github.sha }}
       EXPLORER_REVISION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/prepare-docker-lab.mjs
-      - run: docker build --build-arg SOURCE_REVISION="$EXPLORER_REVISION" -t "$EXPLORER_IMAGE" .
-      - run: docker compose -p air-qa-synthetic -f compose.linux.yaml -f deploy/docker/compose.synthetic.yaml up -d --no-build --wait --wait-timeout 180
-      - run: node scripts/verify-docker-lab.mjs --synthetic
+      - name: Select the fixed published Provider implementation
+        run: |
+          PROVIDER_TAG=$(node --input-type=module -e 'import {readBundle} from "./deploy/bundle.mjs"; console.log(readBundle().PROVIDER_TAG)')
+          echo "PROVIDER_TASK_IMAGE=ghcr.io/19chris19/ima-qa-web-agent:$PROVIDER_TAG" >> "$GITHUB_ENV"
+          echo "SYNTHETIC_SCOPE=$(node -e 'console.log(require("crypto").createHash("sha256").update("synthetic-kb").digest("hex"))')" >> "$GITHUB_ENV"
+      - run: docker pull "$PROVIDER_TASK_IMAGE"
+      - run: docker build --build-arg SOURCE_REVISION="$EXPLORER_REVISION" -t "$WEBSITE_TASK_IMAGE" .
+      - run: docker compose -p qa-durable-20261009 -f deploy/docker/compose.durable-test.yaml up -d --no-build --wait --wait-timeout 180
+      - name: Resolve the isolated loopback ingress
+        run: |
+          PORT=$(docker compose -p qa-durable-20261009 -f deploy/docker/compose.durable-test.yaml port gateway 8080)
+          echo "SYNTHETIC_WEBSITE_URL=http://$PORT" >> "$GITHUB_ENV"
+          echo "SYNTHETIC_PROVIDER_CONTAINER=qa-durable-20261009-provider-a-1" >> "$GITHUB_ENV"
+      - run: node scripts/check-durable-docker.mjs
+      - run: node scripts/check-durable-restart.mjs
       - if: always()
-        run: docker compose -p air-qa-synthetic -f compose.linux.yaml -f deploy/docker/compose.synthetic.yaml stop
+        run: docker compose -p qa-durable-20261009 -f deploy/docker/compose.durable-test.yaml stop

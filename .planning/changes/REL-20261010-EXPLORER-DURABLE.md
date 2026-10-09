@@ -20,3 +20,11 @@ Use immutable website artifacts for 4317/4318 and a fixed image for Docker;
 one writer per runtime. Do not restart the bot or dormant legacy Provider.
 The public proxy merge is a release action. Rollback is compatible code only,
 after draining; never overwrite new histories with a backup.
+
+Review also found the legacy Docker CI fixture advertises only keyed SSE, not
+durable tasks. Container CI now pulls the fixed paired published Provider image
+and runs its real task implementation with a synthetic client in the egress-
+blocked Compose network. BFF, Nginx, observer disconnect/replay, exact history,
+explicit cancellation and dispatched-task restart are exercised. No account
+directory or IMA client is constructed. Website CI must wait for its Provider
+tag/image prerequisite; it may not silently substitute an older image.
