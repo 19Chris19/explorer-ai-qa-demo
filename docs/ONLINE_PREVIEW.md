@@ -45,6 +45,27 @@ seconds and streams the response body without buffering or caching.
 
 ## Revoke and recover
 
+### Visitor-facing failure boundary
+
+The Vercel function replaces non-success upstream responses, redirect responses,
+ngrok error headers and unexpected asset/API content types with controlled
+responses. Page navigation receives a self-contained Chinese recovery page;
+API clients receive a safe JSON message. Vendor HTML, internal hosts and error
+details are not forwarded. Successful SSE remains streaming and unchanged.
+The browser also maps caught request and stream errors to curated messages.
+Questions and mutations are never automatically retried. Visitors explicitly
+reopen the page and check recent conversations before resubmitting.
+
+This does not repair tunnel transport or replace browser-generated DNS/TLS errors
+when the request cannot reach Vercel. Do not claim continuous availability.
+
+2026-10-09 investigation: local records near 09:30 and 09:40 Asia/Shanghai showed
+remote EOF, connection reset, reconnect failure and heartbeat timeout. The user
+was actively using the machine. Evidence identifies tunnel transport disruption,
+not an account failure or proof of sleep. It cannot distinguish an intermediate
+network reset from the remote service closing the connection. No raw logs,
+endpoint identifiers, credentials or conversations belong in this repository.
+
 Stop the tunnel first; this immediately disables public access while local
 4317/3117 remain available. Rotate the gateway key in both locations if it is
 exposed. A rollback of website or Provider A must select the prior code

@@ -176,7 +176,7 @@ document.querySelector('#newChat').addEventListener('click', async () => {
     closeMore();
     closeHistory();
     question.focus();
-  } catch (error) { status(error.message, true); closeMore(); }
+  } catch (error) { status(userError(error), true); closeMore(); }
 });
 moreToggle.addEventListener('click', event => {
   closeHistory();
@@ -323,7 +323,7 @@ sendButton.addEventListener('click', async () => {
   sendButton.disabled = true;
   if (state.activeQueuedId) {
     try { await api(sitePath(`/api/qa/queue/${encodeURIComponent(state.activeQueuedId)}`), { method: 'DELETE' }); }
-    catch (error) { status(error.message, true); sendButton.disabled = false; }
+    catch (error) { status(userError(error), true); sendButton.disabled = false; }
   } else if (state.controller && !state.controller.signal.aborted) state.controller.abort();
   else sendButton.disabled = false;
 });
@@ -377,7 +377,7 @@ function setConnection(text, ready, title = '') {
 async function api(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '请求失败，请稍后重试');
+  if (!response.ok) throw Object.assign(new Error('request_failed'), { status: response.status });
   return data;
 }
 
@@ -428,7 +428,7 @@ function renderConversationList() {
           await api(sitePath(`/api/qa/conversations/${encodeURIComponent(item.conversationId)}`), { method: 'DELETE' });
           if (state.conversationId === item.conversationId) { setConversation(''); welcome(); }
           await loadConversations();
-        } catch (error) { status(error.message, true); closeHistory(); }
+        } catch (error) { status(userError(error), true); closeHistory(); }
       });
       row.append(open, remove); list.append(row);
     }
@@ -451,7 +451,7 @@ async function loadConversation(id, archived = false) {
     await syncQueue();
   } catch (error) {
     if (id === state.conversationId) { setConversation(''); welcome(); }
-    status(error.message, true);
+    status(userError(error), true);
   }
 }
 
@@ -462,6 +462,14 @@ function setConversation(id) {
   state.legacyMode = false;
   if (id) sessionStorage.setItem(storageKey('qa-native-conversation-id'), id);
   else sessionStorage.removeItem(storageKey('qa-native-conversation-id'));
+}
+
+function userError(error) {
+  const en = ui.locale === 'en';
+  if (error?.status === 429) return en ? 'Too many requests. Please try again shortly.' : '当前访问较多，请稍后再试。';
+  if (error?.status === 409) return en ? 'Please check the conversation status before trying again.' : '请先检查当前会话和待发问题的状态，再重试。';
+  if (error?.status === 404) return en ? 'This record is unavailable. Please reopen recent conversations.' : '这条记录暂时无法查看，请重新打开最近对话。';
+  return en ? 'The service is temporarily unavailable. Please try again shortly.' : '服务暂时无法完成此操作，请稍后再试。';
 }
 
 function status(message, showInThread = false) {
@@ -546,7 +554,7 @@ function renderQueue() {
               method: 'PATCH', body: JSON.stringify({ question: questionText, ...(job.sourceIntent === 'web' ? { sourceIntent: 'web' } : {}) }),
             });
             await syncQueue(false);
-          } catch (error) { save.disabled = false; status(error.message, true); }
+          } catch (error) { save.disabled = false; status(userError(error), true); }
         });
         cancel.addEventListener('click', renderQueue);
         editor.focus();
@@ -554,7 +562,7 @@ function renderQueue() {
       remove.addEventListener('click', async () => {
         remove.disabled = true;
         try { await api(sitePath(`/api/qa/queue/${encodeURIComponent(job.id)}`), { method: 'DELETE' }); await syncQueue(false); }
-        catch (error) { remove.disabled = false; status(error.message, true); }
+        catch (error) { remove.disabled = false; status(userError(error), true); }
       });
       controls.append(edit, remove); row.append(controls);
     }
@@ -589,7 +597,7 @@ async function syncQueue(autoConsume = true) {
     }
     renderQueue();
     return Boolean(next);
-  } catch (error) { status(error.message, true); return false; }
+  } catch (error) { status(userError(error), true); return false; }
 }
 
 async function submitQuestion() {
@@ -617,7 +625,7 @@ async function enqueueQuestion(text) {
     state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== data.job.id), data.job];
     renderQueue();
     status('下一问已加入队列');
-  } catch (error) { status(error.message, true); }
+  } catch (error) { status(userError(error), true); }
   finally { state.queueSubmitting = false; updateSendButton(); }
 }
 
@@ -1070,7 +1078,7 @@ async function ask(raw) {
       const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
       setConversation(data.conversation.conversationId);
       await loadConversations();
-    } catch (error) { status(error.message, true); return; }
+    } catch (error) { status(userError(error), true); return; }
     finally { state.preparing = false; updateSendButton(); }
   }
   const requestedWeb = state.webRequested;
@@ -1248,7 +1256,7 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '', queuedCr
       content.classList.remove('typing');
       if (!receivedDelta) content.textContent = '';
       const warning = document.createElement('div'); warning.className = 'message-error';
-      warning.textContent = controller.signal.aborted ? '已停止本次回答。' : `${error.message}。这轮回答未完成，可稍后重试。`;
+      warning.textContent = controller.signal.aborted ? '已停止本次回答。' : '连接暂时中断，这轮回答未完成。已收到的内容会保留，请先查看最近对话，不要重复提交。';
       appendAnswerMeta(reply, warning);
       answerCopies.get(reply)?.control.setReady(receivedDelta && Boolean(answerText.trim()), { partial: true });
     }
@@ -1260,7 +1268,7 @@ async function streamAnswer(text, requestedWeb, request, queuedId = '', queuedCr
     );
     lifecycleTicker = 0;
     if (requestedWeb) setWebRequestState('idle');
-    status(controller.signal.aborted ? '已停止' : reply ? '回答未完成' : error.message, !reply);
+    status(controller.signal.aborted ? '已停止' : reply ? '回答未完成' : userError(error), !reply);
     updateFloatingControls();
   } finally {
     if (lifecycleTicker) clearInterval(lifecycleTicker);

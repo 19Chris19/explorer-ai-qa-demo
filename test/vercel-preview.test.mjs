@@ -15,7 +15,13 @@ test('every application module is accessible through both public allowlists, rea
   const previousFetch = globalThis.fetch;
   process.env.PREVIEW_ORIGIN_KEY = 'synthetic-preview-key-12345678901234567890';
   process.env.PREVIEW_ORIGIN_URL = 'https://synthetic.ngrok.app/';
-  globalThis.fetch = async () => new Response('synthetic module');
+  globalThis.fetch = async target => {
+    const path = new URL(target).pathname;
+    const type = path.endsWith('.css') ? 'text/css' : path.endsWith('.png') ? 'image/png'
+      : path.endsWith('.svg') ? 'image/svg+xml' : path.endsWith('.woff2') ? 'font/woff2'
+      : path.startsWith('/api/') ? 'application/json' : 'text/javascript';
+    return new Response('synthetic module', { headers: { 'Content-Type': type } });
+  };
   try {
     for (const module of modules) {
       for (const method of ['GET', 'HEAD']) {

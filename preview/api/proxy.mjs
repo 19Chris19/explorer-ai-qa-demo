@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { failure, validResponseType } from './failure.mjs';
 
 export const maxDuration = 300;
 
@@ -29,20 +30,20 @@ function allowed(path, method) {
 export async function proxy(request) {
   const key = process.env.PREVIEW_ORIGIN_KEY || '';
   const rawOrigin = process.env.PREVIEW_ORIGIN_URL || '';
-  if (key.length < 32) return new Response('Preview unavailable', { status: 503 });
+  if (key.length < 32) return failure(request);
   let origin;
   try { origin = new URL(rawOrigin); }
-  catch { return new Response('Preview unavailable', { status: 503 }); }
-  if (origin.protocol !== 'https:' || origin.pathname !== '/' || origin.search || origin.hash) {
-    return new Response('Preview unavailable', { status: 503 });
+  catch { return failure(request); }
+  if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) {
+    return failure(request);
   }
   const incoming = new URL(request.url);
   const path = incoming.searchParams.get('path');
   if (path === null || path.startsWith('/') || path.includes('\\') || path.includes('..') || !allowed(path, request.method)) {
-    return new Response('Not found', { status: 404 });
+    return failure(request, 404);
   }
   if (!['GET', 'HEAD'].includes(request.method) && request.headers.get('origin') !== incoming.origin) {
-    return new Response('Invalid request origin', { status: 403 });
+    return failure(request, 403);
   }
   incoming.searchParams.delete('path');
   const target = new URL(`/${path}${incoming.search}`, origin);
@@ -66,14 +67,18 @@ export async function proxy(request) {
       redirect: 'manual',
       cache: 'no-store',
     });
+    if (!upstream.ok || upstream.headers.has('ngrok-error-code') || !validResponseType(path, upstream.headers.get('content-type'))) {
+      await upstream.body?.cancel();
+      return failure(request, upstream.ok ? 503 : upstream.status, upstream.headers.get('retry-after'));
+    }
     const responseHeaders = new Headers({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' });
     for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
-    return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+    return new Response(request.method === 'HEAD' ? null : upstream.body, { status: upstream.status, headers: responseHeaders });
   } catch {
-    return new Response('Air preview is temporarily unavailable', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    return failure(request);
   }
 }
 
