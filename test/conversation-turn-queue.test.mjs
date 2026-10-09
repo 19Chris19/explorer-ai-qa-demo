@@ -105,3 +105,23 @@ test('stopping a running queued answer pauses later questions instead of dispatc
     assert.deepEqual(queue.list('client-a', 'conversation-a').map(item => item.status), ['paused']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('confirmed Provider error is forwarded once, without a second BFF terminal error', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ima-turn-queue-'));
+  try {
+    const queue = new ConversationTurnQueue(join(dir, 'pending.json'), async (job, emit) => {
+      queue.markSubmitting(job);
+      emit('id: 1\nevent: error\ndata: {"code":"task_cancelled"}\n\n');
+      emit('id: 2\nevent: task.status\ndata: {"status":"cancelled"}\n\n');
+      throw Object.assign(new Error('cancelled'), { confirmedTerminal: true, taskStatus: 'cancelled' });
+    });
+    const chunks = [];
+    const broadcast = queue.broadcast.bind(queue);
+    queue.broadcast = (job, chunk) => { chunks.push(chunk.toString()); broadcast(job, chunk); };
+    const { job } = queue.enqueue(turn('synthetic', 'synthetic-conversation', 'synthetic-request', 'synthetic question'));
+    await settle();
+    assert.equal(queue.get('synthetic', job.id).status, 'cancelled');
+    assert.equal(chunks.filter(chunk => chunk.includes('event: error\n')).length, 1);
+    assert.deepEqual(JSON.parse(readFileSync(queue.file, 'utf8')), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

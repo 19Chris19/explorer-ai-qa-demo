@@ -24,8 +24,37 @@ test('rotated watchers resume from cursor without POST and preserve whitespace',
 
 test('explicit stop alone issues DELETE', async () => {
   const calls = []; const controller = new AbortController(); controller.abort();
-  await assert.rejects(followTask({ request: async args => { calls.push(args); return Response.json({}); } }, { clientId: 'synthetic', taskId: 'one', emit() {}, signal: controller.signal }), /cancelled/u);
+  await assert.rejects(followTask({ request: async args => { calls.push(args); return Response.json({ task: { id: 'one', status: 'cancelled' } }); } }, { clientId: 'synthetic', taskId: 'one', emit() {}, signal: controller.signal }), /cancelled/u);
   assert.deepEqual(calls.map(call => call.method), ['DELETE']);
+});
+
+for (const status of ['cancelled', 'indeterminate']) {
+  test(`split error and authoritative ${status} status preserve category and emit error once`, async () => {
+    const output = [];
+    const provider = { request: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(packet(1, 'error', { code: status === 'cancelled' ? 'task_cancelled' : 'execution_interrupted' })));
+        setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode(packet(2, 'task.status', { status })));
+          controller.close();
+        }, 10);
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } }) };
+    await assert.rejects(followTask(provider, { clientId: 'synthetic', taskId: 'one', emit: chunk => output.push(chunk.toString()), retryMs: 1 }),
+      error => error.confirmedTerminal && error.taskStatus === status);
+    assert.equal(output.filter(chunk => chunk.includes('event: error\n')).length, 1);
+    assert.match(output[1], new RegExp(status));
+  });
+}
+
+test('an error frame followed by disconnect uses authoritative snapshot status', async () => {
+  const output = [];
+  await assert.rejects(followTask({ request: async args => args.route.includes('/events')
+    ? new Response(packet(1, 'error', { code: 'task_cancelled' }), { headers: { 'Content-Type': 'text/event-stream' } })
+    : Response.json({ task: { id: 'one', status: 'cancelled' } }) },
+  { clientId: 'synthetic', taskId: 'one', emit: chunk => output.push(chunk.toString()), retryMs: 1 }),
+  error => error.taskStatus === 'cancelled' && error.confirmedTerminal);
+  assert.equal(output.length, 1);
 });
 
 test('retained successful history receipt completes observation after event expiry', async () => {

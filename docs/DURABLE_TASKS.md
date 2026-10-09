@@ -33,6 +33,38 @@ Provider 是任务/终态/正文的唯一执行依据。网站私有 task-watch.
 及观察状态，用于 BFF 重启后重新观察，不存答案或上游凭证。已有待发问题仍可
 编辑/删除；派发后保存 taskId，恢复时只观察该任务，不重新问 IMA。
 
+### BFF recovery contract (FIX-20261009-EXPLORER-TASK-RECOVERY)
+
+- Both submission entry points fsync private request intent before the one-shot
+  Provider POST. The record contains the owner routing identity, request ID,
+  payload fingerprint, optional queue/task ID and observation state. It contains
+  no answer or credentials. Queue drafts retain their existing private storage.
+- A dropped response, truncated JSON, 5xx or empty lookup remains `unconfirmed`.
+  Restart and duplicate request IDs use GET only, never repeat the POST. An intent
+  written just before a process crash may remain unresolved even if no POST left
+  the process; this deliberately favors non-duplication over automatic retry.
+- Definitive 4xx submit rejection releases the direct lane and retains a rejection
+  receipt. Terminal routing receipts also remain private to prevent replay after
+  restart. Do not remove unresolved records to make a request runnable again.
+- Cancellation before dispatch does not POST. Once dispatched, queued cancellation
+  returns HTTP 202 with `{removed:false,cancelPending:true}`; direct cancellation
+  returns HTTP 202 with `{cancelPending:true,taskId}` until Provider confirms a
+  terminal result. Cancellation intent survives restart and retries DELETE/GET.
+  HTTP 200 `{task}` means Provider confirmed terminal, which may be success if
+  completion won the race. It is not proof that IMA stopped remote generation.
+- Stream/JSON/snapshot/lookup failures do not terminalize execution. An `error`
+  frame is forwarded once; `task.status` or the task snapshot determines failed,
+  cancelled or indeterminate. Retained matching history receipts still establish
+  success after event expiry. Browser disconnect remains observation-only.
+- Public pending capacity is shared across `/tasks`, `/queue`, and legacy ask
+  admission. Submitting, unconfirmed and Provider-queued jobs count, even when
+  each conversation has its own locally running dispatcher. Only confirmed
+  running/terminal tasks release pending capacity. No capacity default is raised.
+
+Synthetic regressions: `node --test test/task-recovery.test.mjs
+test/durable-task-bridge.test.mjs test/conversation-turn-queue.test.mjs`.
+These short fault-injection tests are not the separate six-minute real-clock proof.
+
 新任务无 180/190 秒总执行截止。观察连接轮换不是任务完成；只有明确上游成功才
 显示完成。上游错误、进程退出或缺少终态不会冒充成功。Provider 进程重启不能
 恢复已派发的 IMA 生成，只能诚实标记结果不确定，禁止自动重问。

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, openSync, rmSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const pendingTtlMs = 60 * 60 * 1000;
@@ -17,7 +17,11 @@ function validatePreservedRows(rows) {
   const ids = new Set();
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)
-        || Object.keys(row).some(key => ![...keys, 'taskId'].includes(key)) || !keys.every(key => Object.hasOwn(row, key))
+        || Object.keys(row).some(key => ![...keys, 'taskId', 'submissionStarted', 'clientId', 'cancelRequested', 'providerStatus'].includes(key)) || !keys.every(key => Object.hasOwn(row, key))
+        || (row.submissionStarted !== undefined && typeof row.submissionStarted !== 'boolean')
+        || (row.cancelRequested !== undefined && typeof row.cancelRequested !== 'boolean')
+        || (row.clientId !== undefined && (typeof row.clientId !== 'string' || ownerOf(row.clientId) !== row.owner))
+        || (row.providerStatus !== undefined && !['queued', 'running'].includes(row.providerStatus))
         || (row.taskId !== undefined && (typeof row.taskId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/u.test(row.taskId)))
         || typeof row.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(row.id)
         || typeof row.owner !== 'string' || !/^[a-f0-9]{64}$/u.test(row.owner)
@@ -68,8 +72,8 @@ export class ConversationTurnQueue {
     for (const row of saved) {
       if (!row || typeof row.id !== 'string' || typeof row.owner !== 'string' || typeof row.conversationId !== 'string'
           || typeof row.question !== 'string' || typeof row.requestId !== 'string' || !Number.isFinite(row.createdAt)) continue;
-      if (!row.taskId && !this.preserveExpiredPending && this.now() - row.createdAt >= pendingTtlMs) continue;
-      this.jobs.set(row.id, { ...row, status: 'paused', recoverTask: Boolean(row.taskId), events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0 });
+      if (!row.taskId && !row.submissionStarted && !this.preserveExpiredPending && this.now() - row.createdAt >= pendingTtlMs) continue;
+      this.jobs.set(row.id, { ...row, status: 'paused', recoverTask: Boolean(row.taskId || row.submissionStarted), events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0 });
     }
     if (saved.length) this.save();
   }
@@ -113,9 +117,29 @@ export class ConversationTurnQueue {
     job.clientId = clientId;
     job.status = 'running';
     job.controller = new AbortController();
+    if (job.cancelRequested) job.controller.abort();
     const lane = laneOf(job.owner, job.conversationId);
     this.active.add(lane);
     void this.run(job, lane);
+  }
+
+  resumeRecovered() {
+    for (const job of this.jobs.values()) if (job.recoverTask && job.clientId) this.resumeTask(job, job.clientId);
+  }
+
+  markSubmitting(job) {
+    job.submissionStarted = true;
+    this.save();
+  }
+
+  providerStatus(job, status) {
+    if (!['queued', 'running'].includes(status)) return;
+    job.providerStatus = status;
+    this.save();
+  }
+
+  findRequest(clientId, requestId) {
+    return [...this.jobs.values()].find(job => job.owner === ownerOf(clientId) && job.requestId === requestId);
   }
 
   attachTask(job, taskId) {
@@ -125,7 +149,8 @@ export class ConversationTurnQueue {
   }
 
   previewPendingCount() {
-    return [...this.jobs.values()].filter(job => job.preview && ['queued', 'paused'].includes(job.status)).length;
+    return [...this.jobs.values()].filter(job => job.preview && (['queued', 'paused'].includes(job.status)
+      || (job.status === 'running' && job.providerStatus !== 'running'))).length;
   }
 
   maintenanceSnapshot() {
@@ -162,7 +187,7 @@ export class ConversationTurnQueue {
   edit(clientId, id, question, sourceIntent) {
     const job = this.get(clientId, id);
     if (!job) return { error: 'not_found' };
-    if (job.status !== 'queued' && job.status !== 'paused') return { error: 'already_started' };
+    if (job.submissionStarted || job.taskId || (job.status !== 'queued' && job.status !== 'paused')) return { error: 'already_started' };
     job.question = question;
     job.sourceIntent = sourceIntent;
     this.save();
@@ -173,8 +198,10 @@ export class ConversationTurnQueue {
     const job = this.get(clientId, id);
     if (!job) return { error: 'not_found' };
     if (job.status === 'running') {
+      job.cancelRequested = true;
+      this.save();
       job.controller?.abort();
-      return { removed: true };
+      return job.submissionStarted || job.taskId ? { removed: false, cancelPending: true } : { removed: true };
     }
     if (job.status !== 'queued' && job.status !== 'paused') return { error: 'already_finished' };
     this.jobs.delete(id);
@@ -220,13 +247,18 @@ export class ConversationTurnQueue {
   async run(job, lane) {
     try {
       await this.dispatch(job, chunk => this.emit(job, chunk), job.controller.signal);
-      if (job.controller.signal.aborted) throw new Error('cancelled');
+      if (job.controller.signal.aborted && !job.submissionStarted && !job.taskId) throw new Error('cancelled');
       job.status = 'complete';
-    } catch {
-      job.status = job.controller.signal.aborted ? 'cancelled' : 'failed';
-      this.broadcast(job, `event: error\ndata: ${JSON.stringify({ error: job.status === 'cancelled' ? '已停止本次回答' : '排队问答未完整结束' })}\n\n`);
+    } catch (error) {
+      if ((job.submissionStarted || job.taskId) && !error.confirmedTerminal) {
+        job.status = 'paused';
+        job.recoverTask = true;
+        return;
+      }
+      job.status = error.taskStatus === 'cancelled' || (!error.confirmedTerminal && job.controller.signal.aborted) ? 'cancelled' : 'failed';
+      if (!job.providerError) this.broadcast(job, `event: error\ndata: ${JSON.stringify({ error: job.status === 'cancelled' ? '已停止本次回答' : '排队问答未完整结束' })}\n\n`);
     } finally {
-      job.finishedAt = this.now();
+      job.finishedAt = job.recoverTask ? 0 : this.now();
       job.controller = null;
       this.endSubscribers(job);
       this.active.delete(lane);
@@ -238,6 +270,7 @@ export class ConversationTurnQueue {
 
   emit(job, chunk) {
     const buffer = Buffer.from(chunk);
+    if (/^event: error\r?$/mu.test(buffer.toString('utf8'))) job.providerError = true;
     job.bytes += buffer.length;
     if (job.bytes > maxBufferedBytes) throw new Error('queued_stream_too_large');
     job.events.push(buffer);
@@ -292,10 +325,16 @@ export class ConversationTurnQueue {
 
   save() {
     const rows = [...this.jobs.values()].filter(job => ['queued', 'paused', 'running'].includes(job.status))
-      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, taskId }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, ...(taskId ? { taskId } : {}) }));
+      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, taskId, submissionStarted, clientId, cancelRequested, providerStatus }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, ...(taskId ? { taskId } : {}),
+        ...(submissionStarted || taskId ? { submissionStarted: true, clientId, cancelRequested: Boolean(cancelRequested), ...(providerStatus ? { providerStatus } : {}) } : {}) }));
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
     const temp = `${this.file}.${randomUUID()}.tmp`;
-    writeFileSync(temp, JSON.stringify(rows), { mode: 0o600 });
-    renameSync(temp, this.file);
+    const fd = openSync(temp, 'wx', 0o600);
+    try { writeFileSync(fd, JSON.stringify(rows)); fsyncSync(fd); } finally { closeSync(fd); }
+    try {
+      renameSync(temp, this.file);
+      const dir = openSync(dirname(this.file), 'r');
+      try { fsyncSync(dir); } finally { closeSync(dir); }
+    } finally { rmSync(temp, { force: true }); }
   }
 }
