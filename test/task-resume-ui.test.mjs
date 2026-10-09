@@ -52,6 +52,98 @@ test('missing durable capability blocks all submissions and retains the draft in
   } finally { view.close(); }
 });
 
+test('accepted queued question is visible before snapshot and hands off to one running turn', async () => {
+  const queued = task(undefined, undefined, { status: 'queued', createdAt: Date.now() - 5000 });
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const live = stream([], true);
+  const view = await openUi({ fetchImpl(url, options = {}) {
+    if (url === '/api/qa/tasks' && options.method === 'POST') return json({ task: queued });
+    if (url === `/api/qa/tasks/${queued.id}`) return pending;
+    if (url.includes(`/${queued.id}/events`)) return live.response;
+    return conversations(url, options);
+  } });
+  try {
+    submit(view);
+    await until(() => view.document.querySelector('.answer-lifecycle[data-status="queued"]'));
+    assert.equal(view.document.querySelector('.message.user .message-content').textContent, queued.question);
+    assert.equal(view.document.querySelector('#question').value, '');
+    assert.equal(answer(view), '');
+    assert.equal(view.document.querySelector('.typing'), null);
+    assert.ok(Number(view.document.querySelector('.answer-lifecycle-details').textContent.match(/等待 ([\d.]+)/)?.[1]) >= 5);
+    assert.doesNotMatch(view.document.querySelector('.answer-lifecycle-details').textContent, /已用时/);
+    release(snapshot({ ...queued, status: 'running', trace: { dispatchedAt: Date.now() - 2000 } }, []));
+    await until(() => view.document.querySelector('.answer-lifecycle[data-status="connecting"]'));
+    assert.ok(Number(view.document.querySelector('.answer-lifecycle-details').textContent.match(/已用时 ([\d.]+)/)?.[1]) >= 2);
+    live.push(delta(1, 'Synthetic answer'));
+    live.push(done(2)); live.push(terminal(3));
+    await until(() => view.document.querySelector('.answer-lifecycle[data-status="done"]'));
+    assert.equal(view.document.querySelectorAll('.message.user').length, 1);
+    assert.equal(view.document.querySelectorAll('.message.assistant').length, 1);
+    assert.equal(answer(view), 'Synthetic answer');
+    assert.equal(posts(view).filter(row => row.url === '/api/qa/tasks').length, 1);
+  } finally { release(snapshot(queued, [])); view.close(); }
+});
+
+test('queued cancellation has no execution timer or duplicate bubble', async () => {
+  const queued = task(undefined, undefined, { status: 'queued' });
+  const live = stream([], true);
+  const view = await openUi({ fetchImpl(url, options = {}) {
+    if (url === '/api/qa/tasks' && options.method === 'POST') return json({ task: queued });
+    if (url === `/api/qa/tasks/${queued.id}` && options.method === 'DELETE') {
+      live.push(terminal(1, 'cancelled')); return json({ task: { ...queued, status: 'cancelled' } });
+    }
+    if (url === `/api/qa/tasks/${queued.id}`) return snapshot(queued, []);
+    if (url.includes(`/${queued.id}/events`)) return live.response;
+    return conversations(url, options);
+  } });
+  try {
+    submit(view);
+    await until(() => view.requests.some(row => row.url.includes('/events')));
+    view.document.querySelector('#sendButton').click();
+    await until(() => view.document.querySelector('.answer-lifecycle[data-status="cancelled"]'));
+    assert.doesNotMatch(view.document.querySelector('.answer-lifecycle-details').textContent, /用时/);
+    assert.equal(view.document.querySelectorAll('.message.user').length, 1);
+    assert.equal(view.document.querySelector('.typing'), null);
+  } finally { view.close(); }
+});
+
+test('refresh running task restores server elapsed time and original question without POST', async () => {
+  const item = task(undefined, undefined, { createdAt: Date.now() - 30000, trace: { dispatchedAt: Date.now() - 20000 } });
+  const view = await openUi({ conversationId: item.conversationId, fetchImpl(url, options) {
+    if (url.startsWith('/api/qa/tasks?')) return json({ tasks: [item] });
+    if (url === `/api/qa/tasks/${item.id}`) return snapshot(item, []);
+    if (url.includes(`/${item.id}/events`)) return stream([], true).response;
+    return conversations(url, options);
+  } });
+  try {
+    await until(() => view.document.querySelector('.answer-lifecycle[data-status="connecting"]'));
+    const details = view.document.querySelector('.answer-lifecycle-details').textContent;
+    assert.match(details, /等待 10 秒/);
+    assert.ok(Number(details.match(/已用时 ([\d.]+)/)?.[1]) >= 20);
+    assert.equal(view.document.querySelector('.message.user .message-content').textContent, item.question);
+    assert.equal(posts(view).length, 0);
+  } finally { view.close(); }
+});
+
+test('POST conflict keeps the draft and rejects visibly without adopting a task in both languages', async () => {
+  const view = await openUi({ fetchImpl(url, options = {}) {
+    if (url === '/api/qa/tasks' && options.method === 'POST') return new Response('{}', { status: 409 });
+    return conversations(url, options);
+  } });
+  try {
+    for (const locale of ['zh', 'en']) {
+      if (locale === 'en') view.document.querySelector('#languageButton').click();
+      submit(view, 'Synthetic conflicting draft');
+      await until(() => /被拒绝|rejected/.test(view.document.querySelector('#requestStatus').textContent));
+      assert.equal(view.document.querySelector('#question').value, 'Synthetic conflicting draft');
+      assert.equal(view.document.querySelector('.message.user'), null);
+      assert.equal(view.requests.some(row => row.url.includes('requestId=')), false);
+      assert.equal(view.window.localStorage.getItem('qa-task-identities-v1'), '[]');
+    }
+  } finally { view.close(); }
+});
+
 test('direct task rotates its stream and restores a terminal snapshot without false failure or duplicate text', async () => {
   let accepted, reads = 0;
   const view = await openUi({ fetchImpl(url, options = {}) {

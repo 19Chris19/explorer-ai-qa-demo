@@ -137,7 +137,7 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
       if (!validId(data.task?.id) || data.task.conversationId !== input.conversationId) throw fault('invalid_submission');
       return { task: remember({ ...data.task, requestId: input.requestId }) };
     } catch (error) {
-      if (error.status >= 400 && error.status < 500 && ![408, 409].includes(error.status)) {
+      if (error.status >= 400 && error.status < 500 && error.status !== 408) {
         store?.forget(input.requestId);
         throw error;
       }

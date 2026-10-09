@@ -2,7 +2,7 @@ import { createQuestionRotation } from './question-rotation.mjs';
 import { createPromptSparks } from './prompt-sparks.mjs';
 import { createVoicePreview } from './voice-preview.mjs';
 import { inspectSourceEvidence } from './source-evidence.mjs';
-import { lifecycleView } from './turn-lifecycle.mjs';
+import { lifecycleView, taskLifecycleTiming, elapsedLifecycleTiming } from './turn-lifecycle.mjs';
 import { createAnswerProcess } from './answer-process.mjs';
 import { createMessageShapes } from './message-shape.mjs';
 import { resizeComposer, observeComposerWidth } from './composer-shape.mjs';
@@ -505,7 +505,7 @@ function setConversation(id) {
 function userError(error) {
   const en = ui.locale === 'en';
   if (error?.status === 429) return en ? 'Too many requests. Please try again shortly.' : '当前访问较多，请稍后再试。';
-  if (error?.status === 409) return en ? 'Please check the conversation status before trying again.' : '请先检查当前会话和待发问题的状态，再重试。';
+  if (error?.status === 409) return en ? 'The request was rejected due to a conflict. Your draft is retained; check the conversation and request settings.' : '请求因冲突被拒绝，草稿已保留。请检查当前会话和请求设置。';
   if (error?.status === 404) return en ? 'This record is unavailable. Please reopen recent conversations.' : '这条记录暂时无法查看，请重新打开最近对话。';
   return en ? 'The service is temporarily unavailable. Please try again shortly.' : '服务暂时无法完成此操作，请稍后再试。';
 }
@@ -885,12 +885,9 @@ function renderAnswerLifecycle(lifecycle, timing) {
 }
 
 function startAnswerLifecycle(lifecycle, timing) {
-  renderAnswerLifecycle(lifecycle, timing);
+  renderAnswerLifecycle(lifecycle, elapsedLifecycleTiming(timing));
   return setInterval(() => {
-    renderAnswerLifecycle(lifecycle, {
-      ...timing,
-      elapsedMs: performance.now() - timing.startedAt,
-    });
+    renderAnswerLifecycle(lifecycle, elapsedLifecycleTiming(timing));
   }, 250);
 }
 
@@ -898,8 +895,7 @@ function settleAnswerLifecycle(lifecycle, ticker, timing, outcome) {
   if (ticker) clearInterval(ticker);
   if (!lifecycle) return;
   renderAnswerLifecycle(lifecycle, {
-    ...timing,
-    elapsedMs: Math.max(0, performance.now() - timing.startedAt),
+    ...elapsedLifecycleTiming(timing),
     outcome,
   });
 }
@@ -1248,7 +1244,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (phase !== 'connected') status(t(phase === 'confirming' ? 'taskConfirming' : 'taskReconnecting'));
     else status(t(lastView?.text ? 'taskGenerating' : state.activeTask?.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
   };
-  const beginTurn = () => {
+  const beginTurn = (currentTask = task) => {
     if (reply) return;
     if (pending.history) renderThread(taskHistoryPrefix(pending.history, task));
     const thread = currentThread();
@@ -1258,13 +1254,14 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       thread.append(user);
       animateContentIn(user, { distance: 6, duration: 220 });
     }
-    reply = createMessage('assistant', t('taskConnecting'));
+    const queued = currentTask.status === 'queued';
+    reply = createMessage('assistant', queued ? '' : t('taskConnecting'));
     reply.dataset.taskId = task.id;
     content = reply.querySelector('.message-content');
-    content.classList.add('typing');
+    content.classList.toggle('typing', !queued);
     lifecycle = createAnswerLifecycle(reply);
     processView = createAnswerProcess(reply, { locale: ui.locale });
-    lifecycleTiming = { phase: 'connecting', startedAt: performance.now(), queueWaitMs: 0 };
+    lifecycleTiming = taskLifecycleTiming(currentTask);
     lifecycleTicker = startAnswerLifecycle(lifecycle, lifecycleTiming);
     thread.append(reply);
     fadeContentIn(reply, 200);
@@ -1280,14 +1277,18 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       state.activeQueuedId = activeJob.id;
       renderQueue();
     }
+    beginTurn(view.task);
+    Object.assign(lifecycleTiming, taskLifecycleTiming(view.task, lifecycleTiming));
+    renderAnswerLifecycle(lifecycle, elapsedLifecycleTiming(lifecycleTiming));
+    if (state.activeWebRequest) setWebRequestState(view.task.status === 'running' ? 'searching' : 'idle');
     if (view.task.status === 'queued' && !view.text && !view.process.length && !view.done) {
       status(t('taskQueued'));
+      if (state.followLatest) scrollBottom();
       return;
     }
-    beginTurn();
     // Render the reduced full value, never append a snapshot to previously displayed text.
     renderAnswer(content, view.text, view.sources, false);
-    content.classList.toggle('typing', !view.text && !isTerminalTask(view.task));
+    content.classList.toggle('typing', !view.text && view.task.status === 'running');
     for (; processCount < view.process.length; processCount += 1) processView.push(view.process[processCount]);
     setSourceCount(reply, view.done?.source_count ?? view.done?.sourceCount ?? view.sourceCount);
     const copy = answerCopies.get(reply);
@@ -1306,13 +1307,14 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     taskClient.remember(task);
     state.activeTask = task;
     state.activeWebRequest = task.sourceIntent === 'web';
-    setWebRequestState(state.activeWebRequest ? 'searching' : 'idle');
+    setWebRequestState(state.activeWebRequest && task.status === 'running' ? 'searching' : 'idle');
     if (pending.clearDraft && question.value.trim() === pending.clearDraft) {
       question.value = ''; resizeQuestion(); question.blur(); updateSendButton();
     }
     if (pending.clearDraft) state.webRequested = false;
     updateWebIntentControl();
     status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
+    if (task.status === 'queued') beginTurn();
     const view = await taskClient.subscribe(task, { signal: controller.signal, onUpdate: update, onConnection: connectionNotice });
     if (!current()) return;
     if (view.eventsExpired) {

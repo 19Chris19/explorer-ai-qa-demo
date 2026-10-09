@@ -525,7 +525,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
   border: 1.5px solid color-mix(in srgb, var(--muted) 65%, transparent);
   border-radius: 50%;
 }
-.app-page .answer-lifecycle:not(.is-settled) .answer-status-mark {
+.app-page .answer-lifecycle:not(.is-settled):not([data-status="queued"]) .answer-status-mark {
   border-color: color-mix(in srgb, var(--accent) 34%, transparent);
   border-top-color: var(--accent);
   animation: status-mark-spin 1s linear infinite;

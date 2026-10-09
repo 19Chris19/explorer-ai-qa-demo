@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatElapsed, lifecycleView } from '../public/turn-lifecycle.mjs';
+import { formatElapsed, lifecycleView, taskLifecycleTiming, elapsedLifecycleTiming } from '../public/turn-lifecycle.mjs';
 
 test('formats live answer time without false precision on long turns', () => {
   assert.equal(formatElapsed(0), '0.0 秒');
@@ -23,4 +23,33 @@ test('settles cancellation, interruption and failure as distinct outcomes', () =
   assert.equal(lifecycleView({ outcome: 'interrupted' }).label, '回答未完整结束');
   assert.equal(lifecycleView({ outcome: 'failed' }).label, '回答失败');
   assert.equal(lifecycleView({ outcome: 'done', elapsedMs: 1200, locale: 'en' }).details, 'Duration 1.2s');
+});
+
+test('queued timing shows waiting only and starts execution at dispatch, including refresh', () => {
+  const wall = 1800000000000;
+  const queued = taskLifecycleTiming({ status: 'queued', createdAt: wall - 5000 }, {}, 1000, wall);
+  const waiting = elapsedLifecycleTiming(queued, 2000);
+  assert.equal(waiting.elapsedMs, 0);
+  assert.equal(lifecycleView(waiting).details, '等待 6.0 秒');
+  assert.equal(lifecycleView({ ...waiting, locale: 'en' }).label, 'Queued');
+  assert.equal(lifecycleView({ ...waiting, outcome: 'cancelled' }).details, '等待 6.0 秒');
+  const running = { status: 'running', createdAt: wall - 5000, trace: { dispatchedAt: wall - 2000 } };
+  for (const previous of [{}, queued]) {
+    const timing = elapsedLifecycleTiming(taskLifecycleTiming(running, previous, 1000, wall), 1000);
+    assert.equal(timing.elapsedMs, 2000);
+    assert.equal(timing.queueWaitMs, 3000);
+  }
+});
+
+test('invalid, future and pre-creation timestamps fall back without resetting the running clock', () => {
+  const wall = 1800000000000;
+  for (const dispatchedAt of [null, NaN, Infinity, -1, wall + 100000, 'invalid', wall - 20000]) {
+    const task = { status: 'running', createdAt: wall - 10000, trace: { dispatchedAt } };
+    const first = taskLifecycleTiming(task, {}, 1000, wall);
+    assert.equal(first.startedAt, 1000);
+    assert.equal(taskLifecycleTiming(task, first, 2000, wall + 1000).startedAt, 1000);
+  }
+  const fallback = taskLifecycleTiming({ status: 'running', trace: { dispatchedAt: wall + 1 },
+    startedAt: new Date(wall - 3000).toISOString() }, {}, 1000, wall);
+  assert.equal(elapsedLifecycleTiming(fallback, 1000).elapsedMs, 3000);
 });
