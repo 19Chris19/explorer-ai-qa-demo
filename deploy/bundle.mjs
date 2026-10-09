@@ -4,14 +4,19 @@ export function readBundle(file = new URL('./bundle.env', import.meta.url)) {
   const result = {};
   for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
     if (!line || line.startsWith('#')) continue;
-    const match = /^(STATUS|WEBSITE_VERSION|PROVIDER_TAG)=([a-z0-9.]+)$/.exec(line);
+    const match = /^(STATUS|WEBSITE_VERSION|PROVIDER_TAG)=([a-z0-9.-]+)$/.exec(line);
     if (!match || Object.hasOwn(result, match[1])) throw Error('invalid_deployment_bundle');
     result[match[1]] = match[2];
   }
   if (!['candidate', 'released'].includes(result.STATUS)
-    || !/^\d+\.\d+\.\d+$/.test(result.WEBSITE_VERSION || '')
-    || !/^v\d+\.\d+\.\d+$/.test(result.PROVIDER_TAG || '')) throw Error('invalid_deployment_bundle');
+    || !releaseVersionValid(result.WEBSITE_VERSION)
+    || !releaseVersionValid(result.PROVIDER_TAG?.slice(1)) || !result.PROVIDER_TAG?.startsWith('v')
+    || (!result.WEBSITE_VERSION.includes('-rc.') && result.PROVIDER_TAG.includes('-rc.'))) throw Error('invalid_deployment_bundle');
   return result;
+}
+
+export function releaseVersionValid(version) {
+  return typeof version === 'string' && /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-rc\.[1-9]\d*)?$/.test(version);
 }
 
 export function selectBundleImages(bundle, env = process.env) {
@@ -35,6 +40,7 @@ export function releaseManifest(bundle, { revision, digest, providerDigest, prov
   if (![revision, providerRevision].every(value => /^[a-f0-9]{40}$/.test(value || ''))
     || ![digest, providerDigest].every(value => /^sha256:[a-f0-9]{64}$/.test(value || ''))) throw Error('release_evidence_missing');
   return { schemaVersion: 2, version: `v${bundle.WEBSITE_VERSION}`, revision,
+    channel: bundle.WEBSITE_VERSION.includes('-rc.') ? 'prerelease' : 'stable',
     image: 'ghcr.io/19chris19/explorer-ai-qa-demo', digest,
     platforms: ['linux/amd64', 'linux/arm64'], providerBaseline: bundle.PROVIDER_TAG,
     providerImage: 'ghcr.io/19chris19/ima-qa-web-agent', providerDigest, providerRevision,
