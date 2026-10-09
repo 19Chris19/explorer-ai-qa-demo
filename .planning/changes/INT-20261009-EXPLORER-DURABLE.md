@@ -42,3 +42,36 @@ Final Docker images passed chain and restart tests; final browser refresh while
 generating recovered the same third table, then history preserved all three
 answers. DOM overflow checks passed at 390px and 1366px, not visual screenshot
 approval. Detailed evidence and remaining gates: docs/DURABLE_TASK_ACCEPTANCE.md.
+
+Closeout round: acknowledged pending-message cancellation is durable before
+submission; website readiness now prefers its own nested Provider contract
+instead of borrowing bot capacity. Native empty-pool state stays distinct from
+protocol incompatibility, and legacy generic capacity payloads remain supported.
+Runtime 9adec552: 252 tests, 250 passed, 2 optional skips, no failures; build
+passed. These are isolated code results, not a live cutover or public acceptance.
+
+Final closeout runtime: 418cbdb with Provider 350bc8bd. Complete website suite:
+262 tests, 260 pass, 2 optional skip, 0 fail; build and release safety scan passed
+(232 release files). Actual Provider export/parser integration enabled separately:
+7/7 pass. Nested website capability and ordinary camel/snake compatibility pass.
+
+Public proxy reconstructs allowlisted safe task failures by endpoint/status;
+410 expired events stays distinguishable, while ngrok headers, invalid MIME and
+untrusted upstream messages become the designed generic 503 response. No raw
+error body or uncertain task ID is adopted. Seven cross-proxy synthetic scenarios
+and focused safety regressions pass; these are not actual Vercel/ngrok evidence.
+
+The 370977ms real-clock chain at 81f24de / 9adec552 rotated once and completed
+once with one upstream dispatch and exact whitespace; final Provider native
+task/queue/pool/HTTP acceptance independently survived 365127ms upstream silence.
+Fixed final Node artifact is prepared from the committed source, without any
+private configuration/runtime data. Detailed image identities and remaining
+visual, maintenance and real-IMA gates live in docs/DURABLE_TASK_ACCEPTANCE.md.
+
+Final ARM64/AMD64 images passed actual isolated Nginx/BFF/Provider chain and
+restart tests: exact body/history, replay/conflict, owner isolation, explicit
+cancel, blocked management routes and indeterminate dispatched recovery without
+redispatch. Images have no private data; website runs UID 1000. Fixed paired Air
+artifact short chain: 2221ms, Node 22.22.3, one dispatch/terminal, exact whitespace.
+Image IDs and historical-vs-final evidence are in the final report. Test containers
+stopped without deleting synthetic volumes; no production process was changed.
