@@ -15,12 +15,13 @@ test('BFF queues, edits, removes, isolates, then auto-dispatches the next stream
   const started = new Promise(resolve => { firstStarted = resolve; });
   const gate = new Promise(resolve => { releaseFirst = resolve; });
   const providerAsks = [];
+  const durableTasks = new Map();
   let contractEnabled = true;
   let conversationCount = 0;
   const provider = createServer(async (req, res) => {
     if (req.url === '/healthz') { res.setHeader('Content-Type', 'application/json'); res.end('{"ok":true}'); return; }
     if (req.url === '/api/conversations?limit=1') { res.setHeader('Content-Type', 'application/json'); res.end('{"conversations":[]}'); return; }
-    if (req.url === '/internal/provider-a/capacity') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ schemaVersion: 1, policies: { knowledge_agent: { max_concurrent: 1 } }, features: { knowledge_agent_keyed_sse_v1: contractEnabled, source_intent_web_requested_v1: true } })); return; }
+    if (req.url === '/internal/provider-a/capacity') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ schemaVersion: 1, policies: { knowledge_agent: { max_concurrent: 1 } }, features: { knowledge_agent_keyed_sse_v1: contractEnabled, durable_qa_tasks_v1: contractEnabled, source_intent_web_requested_v1: true } })); return; }
     if (req.url === '/api/conversations' && req.method === 'POST') {
       conversationCount += 1;
       res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -39,6 +40,20 @@ test('BFF queues, edits, removes, isolates, then auto-dispatches the next stream
       if (providerAsks.length === 1) { firstStarted(); await gate; }
       res.end(`event: done\ndata: ${JSON.stringify({ conversationId: body.conversationId, source_count: 1 })}\n\n`);
       return;
+    }
+    if (req.url === '/internal/provider-a/tasks' && req.method === 'POST') {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks));
+      providerAsks.push({ body, clientId: req.headers['x-ima-client-id'], key: req.headers['idempotency-key'] });
+      const task = { id: randomUUID(), conversationId: body.conversationId, status: 'succeeded', lastEventId: 3 };
+      durableTasks.set(task.id, task);
+      res.writeHead(202, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ task })); return;
+    }
+    const taskMatch = /^\/internal\/provider-a\/tasks\/([^/]+)\/events\?after=0$/u.exec(req.url);
+    if (taskMatch) {
+      const task = durableTasks.get(taskMatch[1]);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end(`id: 1\nevent: conversation\ndata: ${JSON.stringify({ conversationId: task.conversationId })}\n\nid: 2\nevent: delta\ndata: {"text":"合成回答"}\n\nid: 3\nevent: done\ndata: ${JSON.stringify({ conversationId: task.conversationId })}\n\n`); return;
     }
     res.writeHead(404); res.end();
   });

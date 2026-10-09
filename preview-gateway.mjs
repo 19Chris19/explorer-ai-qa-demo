@@ -11,6 +11,7 @@ const assets = new Set([
   '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs', '/composer-controls.mjs',
   '/answer-copy.mjs',
   '/selection-copy.mjs',
+  '/task-stream.mjs',
   '/host-bridge.mjs',
   '/main-shell.css', '/site/logo.png', '/site/dm-sans-latin.woff2',
   ...['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line'].map(icon => `/site/${icon}.svg`),
@@ -24,6 +25,9 @@ export function allowedPreviewRoute(path, method) {
   if (path === '/api/qa/conversations') return ['GET', 'POST'].includes(method);
   if (/^\/api\/qa\/conversations\/[a-zA-Z0-9-]+$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === '/api/qa/ask') return method === 'POST';
+  if (path === '/api/qa/tasks') return ['GET', 'POST'].includes(method);
+  if (/^\/api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}\/events$/u.test(path)) return method === 'GET';
+  if (/^\/api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === '/api/qa/queue') return ['GET', 'POST'].includes(method);
   if (/^\/api\/qa\/queue\/[a-f0-9-]{36}(?:\/events)?$/iu.test(path)) {
     return path.endsWith('/events') ? method === 'GET' : ['GET', 'PATCH', 'DELETE'].includes(method);

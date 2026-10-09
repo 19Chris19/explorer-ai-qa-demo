@@ -9,6 +9,7 @@ const assets = new Set(['', 'styles.css', 'chat.css', 'icons.svg', 'brand-orbit.
   'composer-shape.mjs', 'composer-controls.mjs',
   'answer-copy.mjs',
   'selection-copy.mjs',
+  'task-stream.mjs',
   'host-bridge.mjs',
   'main-shell.css', 'site/logo.png', 'site/dm-sans-latin.woff2',
   ...['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line'].map(icon => `site/${icon}.svg`),
@@ -21,6 +22,9 @@ function allowed(path, method) {
   if (path === 'api/qa/archive/conversations' || /^api\/qa\/archive\/conversations\/archive(?::|%3A)[a-zA-Z0-9-]{1,100}$/iu.test(path)) return method === 'GET';
   if (/^api\/qa\/conversations\/[a-zA-Z0-9-]+$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === 'api/qa/ask') return method === 'POST';
+  if (path === 'api/qa/tasks') return ['GET', 'POST'].includes(method);
+  if (/^api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}\/events$/u.test(path)) return method === 'GET';
+  if (/^api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === 'api/qa/queue') return ['GET', 'POST'].includes(method);
   if (/^api\/qa\/queue\/[a-f0-9-]{36}\/events$/iu.test(path)) return method === 'GET';
   if (/^api\/qa\/queue\/[a-f0-9-]{36}$/iu.test(path)) return ['GET', 'PATCH', 'DELETE'].includes(method);

@@ -164,10 +164,10 @@ test('server keeps Provider A credentials private and streams two turns under on
       method: 'POST', headers: previewHeaders,
       body: JSON.stringify({ question: '另一会话同步问', conversationId: 'demo-3', requestId: randomUUID() }),
     });
-    assert.equal(simultaneous.status, 429);
-    assert.match((await simultaneous.json()).error, /正在回答/u);
+    assert.equal(simultaneous.status, 200);
+    assert.match(await simultaneous.text(), /event: done/u);
     assert.match(await slow.text(), /event: done/u);
-    assert.equal(providerAsks.filter(item => item.question === '另一会话同步问').length, 0);
+    assert.equal(providerAsks.filter(item => item.question === '另一会话同步问').length, 1);
   } finally {
     child.kill(); fake.close(); rmSync(runtimeDir, { recursive: true, force: true });
   }

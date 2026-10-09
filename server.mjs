@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createProviderAClient, createStreamObserver } from './provider-a-client.mjs';
+import { createProviderAClient, createStreamObserver, requestKey } from './provider-a-client.mjs';
 import { SessionModeStore } from './session-mode-store.mjs';
 import { RequestLedger } from './request-ledger.mjs';
 import { ConversationTurnQueue } from './conversation-turn-queue.mjs';
@@ -11,6 +11,8 @@ import { PreviewAdmission } from './preview-admission.mjs';
 import { deploymentPaths, routePath, storageNamespace } from './deployment-paths.mjs';
 import { loadHistoryArchive } from './history-archive.mjs';
 import { MaintenanceGate } from './maintenance-gate.mjs';
+import { followTask, relayTaskEvents, terminalTask } from './durable-task-bridge.mjs';
+import { TaskWatchStore } from './task-watch-store.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const env = readPrivateEnv(join(root, '.env.local'));
@@ -35,6 +37,9 @@ const maintenance = new MaintenanceGate(process.env.DEMO_MAINTENANCE_STATE_PATH 
 const turnQueue = new ConversationTurnQueue(join(runtimeDir, 'queued-turns.json'), dispatchQueuedTurn, () => Date.now(),
   { preserveExpiredPending: maintenance.enabled });
 const previewAdmission = new PreviewAdmission();
+const taskWatches = new Map();
+const taskWatchStore = new TaskWatchStore(join(runtimeDir, 'task-watch.json'));
+let taskReservations = 0;
 maintenance.start(() => ({ ...turnQueue.maintenanceSnapshot(), ...previewAdmission.maintenanceSnapshot() }));
 process.once('exit', () => maintenance.stop());
 if (maintenance.enabled) {
@@ -66,6 +71,7 @@ const staticFiles = new Map([
   ['/selection-copy.mjs', ['public/selection-copy.mjs', 'text/javascript; charset=utf-8']],
   ['/host-bridge.mjs', ['public/host-bridge.mjs', 'text/javascript; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
+  ['/task-stream.mjs', ['public/task-stream.mjs', 'text/javascript; charset=utf-8']],
   ['/answer-markdown.js', ['public/answer-markdown.js', 'text/javascript; charset=utf-8']],
   ['/vendor/marked.umd.js', ['public/vendor/marked.umd.js', 'text/javascript; charset=utf-8']],
   ['/vendor/purify.min.js', ['public/vendor/purify.min.js', 'text/javascript; charset=utf-8']],
@@ -86,7 +92,7 @@ const server = createServer(async (req, res) => {
     const pathname = routePath(url.pathname, assetPrefix);
     const embedded = pathname === '/' && url.searchParams.get('embed') === '1';
     setSecurityHeaders(res, embedded);
-    if (req.method === 'POST' && ['/api/qa/ask', '/api/qa/queue', '/api/qa/conversations'].includes(pathname)) {
+    if (req.method === 'POST' && ['/api/qa/ask', '/api/qa/tasks', '/api/qa/queue', '/api/qa/conversations'].includes(pathname)) {
       releaseAdmission = maintenance.admit();
       if (!releaseAdmission) {
         res.setHeader('Retry-After', '30');
@@ -110,6 +116,12 @@ const server = createServer(async (req, res) => {
     }
     if (pathname === '/api/qa/health' && req.method === 'GET') {
       await health(res);
+      return;
+    }
+    if (pathname === '/api/qa/tasks' || /^\/api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}(?:\/events)?$/u.test(pathname)) {
+      if (!provider.configured) { sendJson(res, 503, { error: '问答接入尚未完成配置' }); return; }
+      if (req.method !== 'GET' && !isSameOrigin(req)) { sendJson(res, 403, { error: 'Invalid request origin' }); return; }
+      await taskRoute(req, res, pathname, url.searchParams);
       return;
     }
     if (pathname === '/api/qa/archive/conversations' || pathname.startsWith('/api/qa/archive/conversations/')) {
@@ -149,6 +161,7 @@ const server = createServer(async (req, res) => {
 server.listen(port, listenHost, () => {
   console.log(`QA demo listening on ${listenHost}:${port}`);
   if (provider.configured) {
+    for (const row of taskWatchStore.rows.values()) watchDirectTask(row.clientId, row.conversationId, row.id, row.preview, row.status);
     void provider.readiness().then(status => {
       if (status.authenticated && !status.contractSupported) console.warn('Provider A contract incompatible: knowledge_agent_keyed_sse_v1 missing');
     }).catch(() => console.warn('Provider A startup contract check unavailable'));
@@ -224,11 +237,14 @@ function signClientId(id, secret = cookieSecret) {
 }
 
 async function readBody(req) {
-  let content = '';
+  const chunks = [];
+  let bytes = 0;
   for await (const chunk of req) {
-    content += chunk.toString('utf8');
-    if (content.length > 16384) throw new Error('Request too large');
+    bytes += chunk.length;
+    if (bytes > 16384) throw new Error('Request too large');
+    chunks.push(chunk);
   }
+  const content = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
   const body = JSON.parse(content || '{}');
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid JSON object');
   return body;
@@ -243,7 +259,7 @@ async function health(res) {
   }
 }
 
-async function requireNativeContract(res) {
+async function requireNativeContract(res, durable = false) {
   const status = await provider.readiness().catch(() => null);
   if (!status?.connected) {
     sendJson(res, 503, { error: 'Provider A 服务暂不可用', code: 'provider_unavailable' });
@@ -253,11 +269,97 @@ async function requireNativeContract(res) {
     sendJson(res, 503, { error: 'Provider A 接入凭证不可用', code: 'provider_auth_unavailable' });
     return false;
   }
-  if (!status.contractSupported) {
+  if (!status.contractSupported || (durable && !status.durableTasksSupported)) {
     sendJson(res, 409, { error: '当前 Provider A 版本与网站问答协议不兼容', code: 'provider_contract_incompatible' });
     return false;
   }
   return true;
+}
+
+async function taskRoute(req, res, pathname, params) {
+  const clientId = getClientId(req, res);
+  const rootRoute = pathname === '/api/qa/tasks';
+  const events = pathname.endsWith('/events');
+  if (!(rootRoute ? ['GET', 'POST'] : events ? ['GET'] : ['GET', 'DELETE']).includes(req.method)) {
+    sendJson(res, 405, { error: 'Method not allowed' }); return;
+  }
+  let route = pathname.replace('/api/qa/', '/api/');
+  let input;
+  let knownTask = false;
+  if (req.method === 'POST') {
+    try {
+      input = await readBody(req); validateQueuedInput(input, true);
+      if (Object.keys(input).some(key => !['question', 'conversationId', 'requestId', 'sourceIntent'].includes(key))) throw new Error('不支持的请求字段');
+    } catch (error) { sendJson(res, 400, { error: error.message }); return; }
+    if (!nativeSessions.belongsToNative(input.conversationId, clientId)) { sendJson(res, 404, { error: '会话不存在' }); return; }
+    if (!await requireNativeContract(res, true)) return;
+    if (input.sourceIntent === 'web' && !await supportsWebIntent()) { sendJson(res, 409, { error: '当前服务不支持本轮联网请求' }); return; }
+    const visitor = previewVisitor(req);
+    if (visitor) {
+      const existing = await provider.request({ route: `/api/tasks?requestKey=${requestKey(clientId, input.requestId)}`, method: 'GET', clientId, signal: AbortSignal.timeout(60000) });
+      if (!existing.ok) { sendJson(res, 503, { error: '暂时无法确认提交状态，请稍后重试。', code: 'task_request_unconfirmed' }); return; }
+      knownTask = (await existing.json()).tasks?.length > 0;
+    }
+    if (visitor && !knownTask && !previewAdmission.hasRoom(turnQueue.previewPendingCount() + taskWatchStore.pendingCount() + taskReservations)) {
+      sendJson(res, 429, { error: '待发队列已满，问题尚未接收。', code: 'queue_full' }); return;
+    }
+    if (visitor && !knownTask && !previewAdmission.admit(visitor, input.requestId)) {
+      sendJson(res, 429, { error: '提交过于频繁，问题尚未接收。', code: 'submission_rate_limited' }); return;
+    }
+  }
+  if (events) {
+    const after = params.get('after') || '0';
+    if (!/^\d{1,15}$/u.test(after) || !Number.isSafeInteger(Number(after))) { sendJson(res, 400, { error: 'Invalid event cursor' }); return; }
+    await relayTaskEvents(provider, { req, res, route: `${route}?after=${after}`, clientId });
+    return;
+  }
+  if (rootRoute && req.method === 'GET') {
+    const query = new URLSearchParams();
+    const conversationId = params.get('conversationId');
+    if (conversationId) {
+      if (!validConversationId(conversationId) || !nativeSessions.belongsToNative(conversationId, clientId)) { sendJson(res, 404, { error: '会话不存在' }); return; }
+      query.set('conversationId', conversationId);
+    }
+    // Request ids are only correlated within this authenticated visitor.
+    const requestId = params.get('requestId');
+    if (requestId) {
+      if (!validRequestId(requestId)) { sendJson(res, 400, { error: 'Invalid request id' }); return; }
+      query.set('requestKey', requestKey(clientId, requestId));
+    }
+    route += `?${query}`;
+  }
+  let upstream;
+  if (input && isPreview(req) && !knownTask) taskReservations++;
+  try { upstream = await provider.request({ route, method: req.method, clientId,
+    ...(input ? { body: JSON.stringify({ question: input.question, conversationId: input.conversationId }), requestId: input.requestId, sourceIntent: input.sourceIntent } : {}),
+    signal: AbortSignal.timeout(60000) }); }
+  finally { if (input && isPreview(req) && !knownTask) taskReservations--; }
+  if (!upstream.ok) {
+    await upstream.body?.cancel();
+    const status = [400, 403, 404, 409, 410, 429].includes(upstream.status) ? upstream.status : 503;
+    sendJson(res, status, { error: status === 429 ? '待发队列已满，问题尚未接收。' : '当前操作未能确认，请检查原任务状态。', code: status === 429 ? 'queue_full' : 'task_request_unconfirmed' }); return;
+  }
+  const data = await upstream.json();
+  if (input && data.task?.id && !terminalTask(data.task.status)) watchDirectTask(clientId, input.conversationId, data.task.id, isPreview(req), data.task.status);
+  sendJson(res, upstream.status, data);
+}
+
+function watchDirectTask(clientId, conversationId, taskId, preview = false, status = 'queued') {
+  if (taskWatches.has(taskId)) return;
+  const ownsLane = turnQueue.beginDirect(clientId, conversationId);
+  taskWatchStore.set({ clientId, conversationId, id: taskId, preview, status });
+  taskWatches.set(taskId, { clientId, conversationId });
+  void followTask(provider, { clientId, taskId, emit() {}, onStatus(next) {
+    if (['queued', 'running'].includes(next)) taskWatchStore.set({ clientId, conversationId, id: taskId, preview, status: next });
+  } }).then(() => {
+    taskWatchStore.delete(taskId);
+    if (ownsLane) turnQueue.finishDirect(clientId, conversationId, true);
+  }, error => {
+    if (['task_failed', 'task_incomplete', 'task_unavailable'].includes(error.message)) taskWatchStore.delete(taskId);
+    if (ownsLane) turnQueue.finishDirect(clientId, conversationId, false);
+  }).catch(() => {
+    // Storage faults leave a private recovery record; never cancel the Provider task.
+  }).finally(() => taskWatches.delete(taskId));
 }
 
 const validConversationId = value => typeof value === 'string' && /^[a-zA-Z0-9-]{1,100}$/u.test(value);
@@ -302,10 +404,10 @@ async function queueRoute(req, res, pathname) {
   try { input = await readBody(req); validateQueuedInput(input, true); }
   catch (error) { sendJson(res, 400, { error: error.message }); return; }
   if (!nativeSessions.belongsToNative(input.conversationId, clientId)) { sendJson(res, 404, { error: '会话不存在' }); return; }
-  if (!await requireNativeContract(res)) return;
+  if (!await requireNativeContract(res, true)) return;
   if (input.sourceIntent === 'web' && !await supportsWebIntent()) { sendJson(res, 409, { error: '当前问答服务尚未启用本轮联网请求' }); return; }
   const visitor = previewVisitor(req);
-  if (visitor && !previewAdmission.hasRoom(turnQueue.previewPendingCount())) {
+  if (visitor && !previewAdmission.hasRoom(turnQueue.previewPendingCount() + taskWatchStore.pendingCount() + taskReservations)) {
     sendJson(res, 429, { error: '公开预览待发问题已满，请稍后再试。' }); return;
   }
   if (visitor && !previewAdmission.admit(visitor, input.requestId)) {
@@ -332,33 +434,20 @@ async function supportsWebIntent() {
 
 async function dispatchQueuedTurn(job, emit, signal) {
   if (!nativeSessions.belongsToNative(job.conversationId, job.clientId)) throw new Error('conversation_not_owned');
+  if (job.taskId) return followTask(provider, { clientId: job.clientId, taskId: job.taskId, emit, signal });
   const status = await provider.readiness().catch(() => null);
-  if (!status?.authenticated || !status.contractSupported) throw new Error('provider_contract_unavailable');
+  if (!status?.authenticated || !status.durableTasksSupported) throw new Error('provider_contract_unavailable');
   if (job.sourceIntent === 'web' && !await supportsWebIntent()) throw new Error('web_intent_unavailable');
-  const claim = requestLedger.claim(job);
-  if (!claim.accepted) throw new Error('request_already_dispatched');
-  const timeout = setTimeout(() => job.controller?.abort(), 190000);
-  let releasePreview;
-  try {
-    if (job.preview) releasePreview = await previewAdmission.enter(signal);
-    const upstream = await provider.request({
-      route: '/api/ask', method: 'POST', clientId: job.clientId, requestId: job.requestId,
+  const upstream = await provider.request({
+      route: '/api/tasks', method: 'POST', clientId: job.clientId, requestId: job.requestId,
       body: JSON.stringify({ question: job.question, conversationId: job.conversationId }),
-      sourceIntent: job.sourceIntent, signal,
+      sourceIntent: job.sourceIntent, signal: AbortSignal.timeout(60000),
     });
-    if (!upstream.ok || !upstream.headers.get('content-type')?.includes('text/event-stream')) throw new Error('invalid_upstream_response');
-    const observer = createStreamObserver();
-    for await (const chunk of upstream.body) {
-      if (signal.aborted) throw new Error('cancelled');
-      observer.append(chunk);
-      emit(chunk);
-    }
-    const result = observer.result();
-    if (!result.complete || result.conversationId !== job.conversationId || signal.aborted) throw new Error('incomplete_queued_answer');
-    nativeSessions.remember(result.conversationId, job.clientId);
-    if (result.sourceCount > 0) lastRealSuccessAt = new Date().toISOString();
-    requestLedger.complete(claim.key);
-  } finally { clearTimeout(timeout); releasePreview?.(); }
+  if (!upstream.ok) throw new Error('task_submission_unconfirmed');
+  const { task } = await upstream.json();
+  if (!task?.id) throw new Error('task_submission_unconfirmed');
+  turnQueue.attachTask(job, task.id);
+  await followTask(provider, { clientId: job.clientId, taskId: task.id, emit, signal });
 }
 
 async function proxy(req, res, route) {
@@ -412,11 +501,11 @@ async function proxy(req, res, route) {
     }
     const visitor = previewVisitor(req);
     if (visitor) {
-      if (!previewAdmission.hasRoom(turnQueue.previewPendingCount()) || !(releasePreview = previewAdmission.tryEnter())) {
+      if (!previewAdmission.hasRoom(turnQueue.previewPendingCount() + taskWatchStore.pendingCount() + taskReservations)) {
         sendJson(res, 429, { error: '公开预览正在回答，请稍后再试。' }); return;
       }
       if (!previewAdmission.admit(visitor, requestId)) {
-        releasePreview();
+        releasePreview?.();
         sendJson(res, 429, { error: '提交过于频繁，请一分钟后再试。' }); return;
       }
     }

@@ -9,15 +9,16 @@ const maxBufferedBytes = 2 * 1024 * 1024;
 
 const ownerOf = clientId => createHash('sha256').update(clientId).digest('hex');
 const laneOf = (owner, conversationId) => `${owner}:${conversationId}`;
-const snapshot = job => ({ id: job.id, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt });
-const statusEvent = (status, job) => `event: queue.status\ndata: ${JSON.stringify({ status, ...(status === 'running' ? { question: job.question } : {}) })}\n\n`;
+const snapshot = job => ({ id: job.id, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt, ...(job.taskId ? { taskId: job.taskId } : {}) });
+const statusEvent = (status, job) => `event: queue.status\ndata: ${JSON.stringify({ status, ...(status === 'running' ? { question: job.question, ...(job.taskId ? { taskId: job.taskId } : {}) } : {}) })}\n\n`;
 
 function validatePreservedRows(rows) {
   const keys = ['id', 'owner', 'conversationId', 'requestId', 'question', 'sourceIntent', 'preview', 'createdAt', 'status'];
   const ids = new Set();
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)
-        || Object.keys(row).length !== keys.length || !keys.every(key => Object.hasOwn(row, key))
+        || Object.keys(row).some(key => ![...keys, 'taskId'].includes(key)) || !keys.every(key => Object.hasOwn(row, key))
+        || (row.taskId !== undefined && (typeof row.taskId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/u.test(row.taskId)))
         || typeof row.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(row.id)
         || typeof row.owner !== 'string' || !/^[a-f0-9]{64}$/u.test(row.owner)
         || typeof row.conversationId !== 'string' || !row.conversationId.trim()
@@ -67,8 +68,8 @@ export class ConversationTurnQueue {
     for (const row of saved) {
       if (!row || typeof row.id !== 'string' || typeof row.owner !== 'string' || typeof row.conversationId !== 'string'
           || typeof row.question !== 'string' || typeof row.requestId !== 'string' || !Number.isFinite(row.createdAt)) continue;
-      if (!this.preserveExpiredPending && this.now() - row.createdAt >= pendingTtlMs) continue;
-      this.jobs.set(row.id, { ...row, status: 'paused', events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0 });
+      if (!row.taskId && !this.preserveExpiredPending && this.now() - row.createdAt >= pendingTtlMs) continue;
+      this.jobs.set(row.id, { ...row, status: 'paused', recoverTask: Boolean(row.taskId), events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0 });
     }
     if (saved.length) this.save();
   }
@@ -95,13 +96,32 @@ export class ConversationTurnQueue {
   list(clientId, conversationId) {
     this.prune();
     const lane = laneOf(ownerOf(clientId), conversationId);
+    for (const job of this.laneJobs(lane)) this.resumeTask(job, clientId);
     return this.laneJobs(lane).filter(job => ['queued', 'paused', 'running'].includes(job.status)).map(snapshot);
   }
 
   get(clientId, id) {
     this.prune();
     const job = this.jobs.get(id);
+    if (job?.owner === ownerOf(clientId)) this.resumeTask(job, clientId);
     return job?.owner === ownerOf(clientId) ? job : null;
+  }
+
+  resumeTask(job, clientId) {
+    if (!job.recoverTask) return;
+    job.recoverTask = false;
+    job.clientId = clientId;
+    job.status = 'running';
+    job.controller = new AbortController();
+    const lane = laneOf(job.owner, job.conversationId);
+    this.active.add(lane);
+    void this.run(job, lane);
+  }
+
+  attachTask(job, taskId) {
+    job.taskId = taskId;
+    this.save();
+    this.broadcast(job, statusEvent('running', job));
   }
 
   previewPendingCount() {
@@ -249,6 +269,7 @@ export class ConversationTurnQueue {
     let changed = false;
     for (const [id, job] of this.jobs) {
       if (job.status === 'running') continue;
+      if (job.recoverTask) continue;
       const age = this.now() - (job.finishedAt || job.createdAt);
       const limit = job.finishedAt ? completedTtlMs : pendingTtlMs;
       if (age < limit) continue;
@@ -271,7 +292,7 @@ export class ConversationTurnQueue {
 
   save() {
     const rows = [...this.jobs.values()].filter(job => ['queued', 'paused', 'running'].includes(job.status))
-      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status }));
+      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, taskId }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, ...(taskId ? { taskId } : {}) }));
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
     const temp = `${this.file}.${randomUUID()}.tmp`;
     writeFileSync(temp, JSON.stringify(rows), { mode: 0o600 });

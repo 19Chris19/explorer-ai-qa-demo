@@ -28,12 +28,14 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const authenticated = ordinary.ok && capacityResponse.ok;
     const capacity = capacityResponse.ok ? await capacityResponse.json() : {};
     const contractSupported = capacity.schemaVersion === 1 && capacity.features?.knowledge_agent_keyed_sse_v1 === true;
+    const durableTasksSupported = capacity.schemaVersion === 1 && capacity.features?.durable_qa_tasks_v1 === true;
     const nativeCapacity = Number(capacity.policies?.knowledge_agent?.max_concurrent ?? capacity.policy_capacity?.knowledge_agent ?? 0);
     return {
       connected: true,
       configured: true,
       authenticated,
       contractSupported,
+      durableTasksSupported: authenticated && durableTasksSupported,
       ready: authenticated && contractSupported && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
       capacity: authenticated ? nativeCapacity : 0,
       webIntentSupported: authenticated && contractSupported && capacity.features?.source_intent_web_requested_v1 === true,
@@ -44,16 +46,18 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
 
   function request({ route, method, clientId, body, requestId, sourceIntent, signal }) {
     const ask = route === '/api/ask';
-    const internalRoute = ask ? '/internal/provider-a/deep-ask' : route;
+    const task = /^\/api\/tasks(?:[/?]|$)/u.test(route);
+    const submitTask = route === '/api/tasks' && method === 'POST';
+    const internalRoute = ask ? '/internal/provider-a/deep-ask' : task ? route.replace('/api/tasks', '/internal/provider-a/tasks') : route;
     const headers = {
-      Authorization: `Bearer ${ask ? serviceToken : apiToken}`,
+      Authorization: `Bearer ${ask || task ? serviceToken : apiToken}`,
       'X-IMA-Client-Id': clientId,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     };
-    if (ask) {
+    if (ask || submitTask) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(requestId || '')) throw new Error('request_id_invalid');
-      headers.Accept = 'text/event-stream';
-      headers['Idempotency-Key'] = createHash('sha256').update(`demo:v1:${clientId}:${requestId}`).digest('hex');
+      if (ask) headers.Accept = 'text/event-stream';
+      headers['Idempotency-Key'] = requestKey(clientId, requestId, submitTask);
       body = JSON.stringify({
         ...JSON.parse(body),
         retrieval_policy: 'knowledge_agent',
@@ -71,6 +75,10 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
   }
 
   return { configured, readiness, request };
+}
+
+export function requestKey(clientId, requestId, task = true) {
+  return createHash('sha256').update(`demo:${task ? 'tasks:v1' : 'v1'}:${clientId}:${requestId}`).digest('hex');
 }
 
 export function createStreamObserver() {
