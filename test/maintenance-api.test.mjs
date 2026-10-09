@@ -124,7 +124,9 @@ test('private CLI closes live synthetic BFF; existing queue drains, counters set
   await until(() => asks.length === 3); releases[2]();
   assert.match(await events.text(), /event: done/u); await waitingEvents.text();
   await until(() => checkMaintenance(state).drained);
-  assert.equal(cli('check').status, 0);
+  // A busy full-suite run may age the private snapshot between two processes.
+  // Keep the production freshness bound and wait for a new valid observation.
+  await until(() => cli('check').status === 0);
   assert.equal(cli('open', '--generation', '3', '--operation-id', 'synthetic-drain').status, 0);
   const controller = new AbortController();
   const broken = await submit('ask', 'synthetic-1', controller.signal);

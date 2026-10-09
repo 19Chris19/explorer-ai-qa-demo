@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { followTask, relayTaskEvents } from '../durable-task-bridge.mjs';
 import { allowedPreviewRoute } from '../preview-gateway.mjs';
 
@@ -80,10 +80,35 @@ test('subscriber expiry aborts only the observation GET, never the task', async 
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => server.close());
   const response = await fetch(`http://127.0.0.1:${server.address().port}`);
-  assert.match(await response.text(), /transport-heartbeat/u);
+  assert.match(await response.text(), /connected/u);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, 'GET');
   assert.equal(calls[0].signal.aborted, true);
+});
+
+test('transport heartbeat precedes rotation on a controlled clock', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const chunks = [];
+  const res = Object.assign(new EventEmitter(), {
+    writeHead() {}, flushHeaders() {},
+    write(chunk) { chunks.push(String(chunk)); return true; },
+    end() { this.writableEnded = true; },
+  });
+  let observation;
+  const pending = relayTaskEvents({ request: async args => {
+    observation = args;
+    return new Response(new ReadableStream({ start(controller) {
+      args.signal.addEventListener('abort', () => controller.close(), { once: true });
+    } }), { headers: { 'Content-Type': 'text/event-stream' } });
+  } }, { req: {}, res, route: '/api/tasks/one/events?after=0', clientId: 'synthetic', rotationMs: 60, heartbeatMs: 10 });
+  await Promise.resolve();
+  t.mock.timers.tick(10);
+  assert.match(chunks.join(''), /transport-heartbeat/u);
+  assert.equal(observation.signal.aborted, false);
+  t.mock.timers.tick(50);
+  await pending;
+  assert.equal(observation.signal.aborted, true);
+  assert.equal(observation.method, 'GET');
 });
 
 test('public task allowlist admits only supported methods and exact routes', () => {

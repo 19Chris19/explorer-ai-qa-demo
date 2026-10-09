@@ -30,3 +30,15 @@ The optional SYNTHETIC_TOKENLESS fixture setting is only for local synthetic
 built-in UI checks. Production credentials and auth policy are not changed.
 Rollback: drain accepted tasks; revert dependent UI/BFF code together, retain all
 new history and Provider task records. Public/runtime rollout requires approval.
+Final full-suite load exposed two test timing assumptions (heartbeat before a
+60ms expiry and a CLI snapshot remaining fresh across process startup). Focused
+reproduction passed. Heartbeat ordering now uses a controlled clock separately
+from HTTP expiry; the maintenance check waits for a fresh valid snapshot without
+relaxing the production 2-second freshness bound.
+Final verification (2026-10-09): 240 tests, 238 passed, 2 optional skips,
+no failures; build passed. Final paired real-clock synthetic run: 370717ms,
+one subscription rotation, one upstream dispatch, one completion, exact text.
+Final Docker images passed chain and restart tests; final browser refresh while
+generating recovered the same third table, then history preserved all three
+answers. DOM overflow checks passed at 390px and 1366px, not visual screenshot
+approval. Detailed evidence and remaining gates: docs/DURABLE_TASK_ACCEPTANCE.md.
