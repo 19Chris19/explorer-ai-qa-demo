@@ -36,7 +36,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
       authenticated,
       contractSupported,
       durableTasksSupported: authenticated && durableTasksSupported,
-      ready: authenticated && contractSupported && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
+      ready: authenticated && contractSupported && durableTasksSupported && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
       capacity: authenticated ? nativeCapacity : 0,
       webIntentSupported: authenticated && contractSupported && capacity.features?.source_intent_web_requested_v1 === true,
       active: capacity.active ?? service.queue?.activeRequests ?? 0,

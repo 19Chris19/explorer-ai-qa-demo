@@ -74,7 +74,9 @@ test('server keeps Provider A credentials private and streams two turns under on
     }
     const health = await (await fetch(`http://127.0.0.1:${frontendPort}/api/qa/health`)).json();
     assert.equal(health.connected, true);
-    assert.equal(health.ready, true);
+    // This fixture intentionally serves only the legacy keyed-SSE API.
+    assert.equal(health.ready, false);
+    assert.equal(health.durableTasksSupported, false);
     assert.equal(health.contractSupported, true);
     assert.equal(health.capacity, 2);
     assert.equal(health.webIntentSupported, true);
