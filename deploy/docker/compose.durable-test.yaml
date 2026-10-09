@@ -1,0 +1,35 @@
+# Standalone isolated fixture. Never merge this file with a live Compose project.
+services:
+  provider-a:
+    image: ${PROVIDER_TASK_IMAGE:?Set an isolated reviewed Provider candidate image}
+    command: [node, /fixture/durable-provider.cjs]
+    volumes:
+      - ./durable-provider.cjs:/fixture/durable-provider.cjs:ro
+      - provider-test-data:/app/runtime
+    networks: [backend]
+  explorer-qa:
+    image: ${WEBSITE_TASK_IMAGE:?Set an isolated reviewed website candidate image}
+    environment:
+      DEMO_LISTEN_HOST: 0.0.0.0
+      DEMO_COOKIE_SECRET: synthetic-durable-cookie
+      PROVIDER_A_BASE_URL: http://provider-a:3000
+      PROVIDER_A_API_TOKEN: synthetic-api
+      PROVIDER_A_INTERNAL_SERVICE_TOKEN: synthetic-service
+      PROVIDER_A_KNOWLEDGE_SCOPE_REF: ${SYNTHETIC_SCOPE:?Set sha256 of synthetic-kb}
+    volumes:
+      - website-test-data:/var/lib/explorer-qa
+    networks: [backend]
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1::8080"
+    networks: [backend, browser-access]
+networks:
+  backend:
+    internal: true
+  browser-access:
+volumes:
+  provider-test-data:
+  website-test-data:

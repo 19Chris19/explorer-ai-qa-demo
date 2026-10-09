@@ -442,9 +442,14 @@ async function dispatchQueuedTurn(job, emit, signal) {
       route: '/api/tasks', method: 'POST', clientId: job.clientId, requestId: job.requestId,
       body: JSON.stringify({ question: job.question, conversationId: job.conversationId }),
       sourceIntent: job.sourceIntent, signal: AbortSignal.timeout(60000),
-    });
-  if (!upstream.ok) throw new Error('task_submission_unconfirmed');
-  const { task } = await upstream.json();
+    }).catch(() => null);
+  let task;
+  if (upstream?.ok) ({ task } = await upstream.json());
+  else if (!upstream || upstream.status >= 500) {
+    // An ambiguous response is resolved with GET only, never a second IMA POST.
+    const lookup = await provider.request({ route: `/api/tasks?requestKey=${requestKey(job.clientId, job.requestId)}`, method: 'GET', clientId: job.clientId, signal: AbortSignal.timeout(60000) });
+    if (lookup.ok) task = (await lookup.json()).tasks?.[0];
+  }
   if (!task?.id) throw new Error('task_submission_unconfirmed');
   turnQueue.attachTask(job, task.id);
   await followTask(provider, { clientId: job.clientId, taskId: task.id, emit, signal });

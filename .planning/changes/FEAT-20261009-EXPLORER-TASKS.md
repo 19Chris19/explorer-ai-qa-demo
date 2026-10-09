@@ -25,3 +25,8 @@ byte-equivalent Markdown and one 240-second subscription rotation after a
 deliberate viewer disconnect. This used development Provider core code and the
 actual local proxy function, not the live Vercel/ngrok network or real IMA.
 Final combined candidate and Docker checks remain integration gates.
+
+Additional synthetic fixture: actual Provider application in an isolated image,
+fake upstream only, internal Compose network and separate temporary volumes.
+Queue submission ambiguity is resolved by read-only request-key lookup, never a
+second POST. Docker commands and evidence are recorded in the integration change.

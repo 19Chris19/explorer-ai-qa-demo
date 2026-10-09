@@ -53,6 +53,14 @@ SYNTHETIC_PROVIDER_SOURCE=/absolute/path/to/provider-candidate \
 Vercel/ngrok 网络、真机软键盘或真实长回答已通过。短测可设置
 `SYNTHETIC_DURATION_MS=1500`，但不能替代六分钟验收。
 
+Docker 另用 `deploy/docker/compose.durable-test.yaml`，独立 Compose 项目及独立
+合成卷，Provider/BFF 网络禁止外网，只注入假上游，绝不挂载真实运行目录。
+先串行构建本候选与 Provider 候选镜像，再显式设置 `PROVIDER_TASK_IMAGE`、
+`WEBSITE_TASK_IMAGE` 和 `SYNTHETIC_SCOPE`（synthetic-kb 的 SHA-256）。从
+`docker compose -f deploy/docker/compose.durable-test.yaml -p <专用测试项目> port gateway 8080`
+取得本机临时端口，用 `SYNTHETIC_WEBSITE_URL=http://127.0.0.1:<端口> node scripts/check-durable-docker.mjs`
+验证重连、幂等冲突、归属、表格、历史、停止和管理封锁。不得对现有部署执行此测试配置。
+
 发布前还须整合任务调度分支、Node/Docker 回归、浏览器桌面/手机模拟，记录固定
 提交与镜像。4318 接入共享 Provider 前重新确认维护窗口并保留机器人扩展。
 真实 IMA 长问题/追问另行授权。4317、机器人和公网入口不会因合并候选自动更新。
