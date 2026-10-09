@@ -26,9 +26,14 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
       }),
     ]);
     const authenticated = ordinary.ok && capacityResponse.ok;
-    const capacity = capacityResponse.ok ? await capacityResponse.json() : {};
-    const contractSupported = capacity.schemaVersion === 1 && capacity.features?.knowledge_agent_keyed_sse_v1 === true;
-    const durableTasksSupported = capacity.schemaVersion === 1 && capacity.features?.durable_qa_tasks_v1 === true;
+    const payload = capacityResponse.ok ? await capacityResponse.json() : {};
+    // Bot capacity is not evidence of website capability or available slots.
+    const hasWebsite = Object.hasOwn(payload ?? {}, 'website');
+    const snapshot = hasWebsite ? payload.website : payload;
+    const capacity = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) ? snapshot : {};
+    const nativeMode = !hasWebsite || capacity.mode === 'knowledge_agent';
+    const contractSupported = nativeMode && capacity.schemaVersion === 1 && capacity.features?.knowledge_agent_keyed_sse_v1 === true;
+    const durableTasksSupported = nativeMode && capacity.schemaVersion === 1 && capacity.features?.durable_qa_tasks_v1 === true;
     const nativeCapacity = Number(capacity.policies?.knowledge_agent?.max_concurrent ?? capacity.policy_capacity?.knowledge_agent ?? 0);
     return {
       connected: true,
@@ -39,8 +44,8 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
       ready: authenticated && contractSupported && durableTasksSupported && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
       capacity: authenticated ? nativeCapacity : 0,
       webIntentSupported: authenticated && contractSupported && capacity.features?.source_intent_web_requested_v1 === true,
-      active: capacity.active ?? service.queue?.activeRequests ?? 0,
-      queued: capacity.queued ?? service.queue?.queuedRequests ?? 0,
+      active: capacity.active ?? (hasWebsite ? 0 : service.queue?.activeRequests ?? 0),
+      queued: capacity.queued ?? (hasWebsite ? 0 : service.queue?.queuedRequests ?? 0),
     };
   }
 
