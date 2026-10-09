@@ -10,10 +10,15 @@ import { composerControlState, providerAccessState } from './composer-controls.m
 import { createAnswerCopy } from './answer-copy.mjs';
 import { createSelectionCopy } from './selection-copy.mjs';
 import { createHostBridge } from './host-bridge.mjs';
+import { createTaskClient, createTaskStore, isTerminalTask } from './task-stream.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
 const storageKey = key => `${document.querySelector('meta[name="qa-storage-namespace"]')?.content || ''}${key}`;
+const taskStore = createTaskStore({
+  getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value),
+}, storageKey('qa-task-identities-v1'));
+const taskClient = createTaskClient({ path: sitePath, store: taskStore });
 let hostBridge = null;
 const answerCopies = new WeakMap();
 
@@ -52,12 +57,13 @@ const queuedTurns = document.querySelector('#queuedTurns');
 const adminLink = document.querySelector('.admin-link');
 if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
 const state = {
-  conversationId: sessionStorage.getItem(storageKey('qa-native-conversation-id')) || '',
+  conversationId: sessionStorage.getItem(storageKey('qa-native-conversation-id')) || taskStore.list().at(-1)?.conversationId || '',
   legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false, access: 'checking',
   activeWebRequest: false, webRequestState: 'idle',
   queuedJobs: [], queueSubmitting: false, preparing: false, activeQueuedId: '',
   questionBank: [], questionRotation: null, currentSuggestions: null, carouselTimer: 0, carouselHover: false, carouselFocus: false, suggestionSelected: false, composing: false,
   followLatest: true,
+  durableTasksSupported: false, activeTask: null, viewEpoch: 0, completedTasks: new Set(), queueTimer: 0,
 };
 let conversationItems = [];
 let archiveConversationId = '';
@@ -85,6 +91,14 @@ const labels = {
     jumpLatest: '回到最新', sendQuestion: '发送问题', stopAnswer: '停止回答', enqueueQuestion: '加入队列', queued: '排队中', paused: '上一轮未完成，已暂停', starting: '即将回答', editQueued: '编辑待发问题', deleteQueued: '删除待发问题', saveQueued: '保存修改', cancelEdit: '取消编辑',
     copyAnswer: '复制回答 Markdown', copyPartial: '复制已收到的部分回答', copied: '已复制', copyFailed: '复制失败，请选择下面的文字复制', closeCopyText: '关闭可复制文字',
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
+    taskReconnecting: '连接暂时中断，正在恢复同一任务。已收到的内容会保留，无需重新提交。',
+    taskConfirming: '正在确认任务是否已接收，请勿重复提交。草稿已保留。',
+    taskFailed: '任务未能完成。已收到的部分内容已保留。', taskCancelled: '已停止本次回答，已收到的内容已保留。',
+    taskIndeterminate: '任务结果暂时无法确认。已收到的内容已保留，请勿重复提交。',
+    taskUnavailable: '暂时无法恢复任务，请稍后从最近对话重新打开。请勿重复提交。',
+    taskPartial: '任务已结束，但回答正文尚不完整。请稍后重新打开最近对话，勿重复提交。',
+    taskDone: '回答已完成', taskConnecting: '正在连接知识库…', taskGenerating: '正在生成回答…',
+    taskQueued: '正在等待上一轮完成…', taskStopping: '正在确认停止结果…', queueAdded: '下一问已加入队列',
   },
   en: {
     myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
@@ -99,6 +113,14 @@ const labels = {
     jumpLatest: 'Jump to latest', sendQuestion: 'Send question', stopAnswer: 'Stop answer', enqueueQuestion: 'Queue next', queued: 'Queued', paused: 'Paused after an incomplete turn', starting: 'Starting next answer', editQueued: 'Edit queued question', deleteQueued: 'Remove queued question', saveQueued: 'Save changes', cancelEdit: 'Cancel editing',
     copyAnswer: 'Copy answer Markdown', copyPartial: 'Copy received partial answer', copied: 'Copied', copyFailed: 'Copy failed; select the text below to copy', closeCopyText: 'Close selectable text',
     copySelection: 'Copy selected text', selectionActions: 'Selected text actions', selectionCopyFailed: 'Copy failed; select the text below',
+    taskReconnecting: 'Connection interrupted. Reconnecting to the same task; received text is kept. No need to resubmit.',
+    taskConfirming: 'Checking whether the task was accepted. Your draft is kept; please do not resubmit.',
+    taskFailed: 'The task could not finish. Any partial answer has been kept.', taskCancelled: 'Answer stopped. Received text has been kept.',
+    taskIndeterminate: 'The task outcome is uncertain. Received text is kept; please do not resubmit.',
+    taskUnavailable: 'The task cannot be restored right now. Reopen it from recent conversations later; please do not resubmit.',
+    taskPartial: 'The task ended, but its answer is not yet complete. Reopen recent conversations later; please do not resubmit.',
+    taskDone: 'Answer complete', taskConnecting: 'Connecting to the knowledge base…', taskGenerating: 'Generating answer…',
+    taskQueued: 'Waiting for the previous turn…', taskStopping: 'Confirming cancellation…', queueAdded: 'Next question queued',
   },
 };
 function t(key) { return labels[ui.locale][key] || key; }
@@ -165,9 +187,12 @@ function restoreHeaderFocus() {
 
 document.querySelector('#newChat').addEventListener('click', async () => {
   voicePreview.stop();
-  if (state.busy || state.preparing || state.queueSubmitting || state.queuedJobs.length) return;
+  if (state.preparing || state.queueSubmitting) return;
+  state.preparing = true;
+  updateSendButton();
   try {
     const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
+    detachTaskView();
     setConversation(data.conversation.conversationId);
     question.value = '';
     state.suggestionSelected = false;
@@ -177,6 +202,7 @@ document.querySelector('#newChat').addEventListener('click', async () => {
     closeHistory();
     question.focus();
   } catch (error) { status(userError(error), true); closeMore(); }
+  finally { state.preparing = false; updateSendButton(); }
 });
 moreToggle.addEventListener('click', event => {
   closeHistory();
@@ -321,11 +347,12 @@ document.addEventListener('keydown', event => {
 sendButton.addEventListener('click', async () => {
   if (!state.busy || question.value.trim()) return;
   sendButton.disabled = true;
-  if (state.activeQueuedId) {
-    try { await api(sitePath(`/api/qa/queue/${encodeURIComponent(state.activeQueuedId)}`), { method: 'DELETE' }); }
-    catch (error) { status(userError(error), true); sendButton.disabled = false; }
-  } else if (state.controller && !state.controller.signal.aborted) state.controller.abort();
-  else sendButton.disabled = false;
+  const task = state.activeTask;
+  if (!task?.id) { status(t('taskConfirming'), true); updateSendButton(); return; }
+  status(t('taskStopping'));
+  try { await taskClient.cancel(task.id); }
+  catch { if (state.activeTask?.id === task.id) status(t('taskStopping'), true); }
+  finally { updateSendButton(); }
 });
 form.addEventListener('submit', event => { event.preventDefault(); void submitQuestion(); });
 question.addEventListener('keydown', event => {
@@ -346,16 +373,19 @@ async function checkHealth() {
     const response = await fetch(sitePath('/api/qa/health'));
     const data = await response.json();
     state.webIntentSupported = response.ok && data.webIntentSupported === true;
+    state.durableTasksSupported = response.ok && data.durableTasksSupported === true;
     document.querySelector('#runtimeVersion').textContent = `${data.websiteRelease || 'local-dev'} · Provider 合同 ${data.contractSupported ? 'v1' : '未确认'}`;
     if (!state.webIntentSupported) state.webRequested = false;
     updateWebIntentControl();
     state.access = providerAccessState(response.ok, data);
+    if (response.ok && !state.durableTasksSupported) state.access = 'incompatible';
     const ready = state.access === 'ready';
-    const text = ready ? (data.lastRealSuccessAt ? t('verified') : t('ready')) : data.connected ? (!data.authenticated ? t('noCredentials') : data.contractSupported === false ? t('incompatible') : t('noCapacity')) : t('offline');
+    const text = ready ? (data.lastRealSuccessAt ? t('verified') : t('ready')) : t(state.access);
     const title = ready ? `原生知识库 Agent 容量 ${data.capacity}；${data.lastRealSuccessAt ? '最近一次真实回答已完成' : '尚无本次运行中的真实回答记录'}` : '';
     setConnection(text, ready, title);
   } catch {
     state.access = 'offline';
+    state.durableTasksSupported = false;
     state.webIntentSupported = false;
     state.webRequested = false;
     updateWebIntentControl();
@@ -418,7 +448,7 @@ function renderConversationList() {
         label.textContent = ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读';
         open.append(document.createElement('br'), label);
       }
-      open.addEventListener('click', () => { if (!state.busy && !state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived); });
+      open.addEventListener('click', () => { if (!state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived); });
       if (item.archived) { row.append(open); list.append(row); continue; }
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'conversation-delete';
       remove.textContent = '×'; remove.setAttribute('aria-label', `${t('deleteConfirm')} ${item.title || t('newConversation')}`);
@@ -435,8 +465,13 @@ function renderConversationList() {
 }
 
 async function loadConversation(id, archived = false) {
+  detachTaskView();
+  const epoch = state.viewEpoch;
+  state.preparing = true;
+  updateSendButton();
   try {
     const data = await api(sitePath(`/api/qa/${archived ? 'archive/' : ''}conversations/${encodeURIComponent(id)}`));
+    if (epoch !== state.viewEpoch) return;
     setConversation(archived ? '' : data.conversation.conversationId);
     archiveConversationId = archived ? id : '';
     if (archived) { state.queuedJobs = []; renderQueue(); }
@@ -448,11 +483,14 @@ async function loadConversation(id, archived = false) {
     if (archived) status(ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读', true);
     closeHistory({ restore: true });
     await loadConversations();
+    if (epoch !== state.viewEpoch) return;
+    if (!archived && await restoreTaskView(data.messages || [], epoch)) { await syncQueue(false); return; }
     await syncQueue();
   } catch (error) {
+    if (epoch !== state.viewEpoch) return;
     if (id === state.conversationId) { setConversation(''); welcome(); }
     status(userError(error), true);
-  }
+  } finally { if (epoch === state.viewEpoch) { state.preparing = false; updateSendButton(); } }
 }
 
 function setConversation(id) {
@@ -561,7 +599,11 @@ function renderQueue() {
       });
       remove.addEventListener('click', async () => {
         remove.disabled = true;
-        try { await api(sitePath(`/api/qa/queue/${encodeURIComponent(job.id)}`), { method: 'DELETE' }); await syncQueue(false); }
+        try {
+          await api(sitePath(`/api/qa/queue/${encodeURIComponent(job.id)}`), { method: 'DELETE' });
+          taskStore.forget(job.id);
+          await syncQueue(false);
+        }
         catch (error) { remove.disabled = false; status(userError(error), true); }
       });
       controls.append(edit, remove); row.append(controls);
@@ -571,33 +613,59 @@ function renderQueue() {
 }
 
 async function syncQueue(autoConsume = true) {
+  clearTimeout(state.queueTimer);
+  const epoch = state.viewEpoch;
   const conversationId = state.conversationId;
   if (!conversationId) { state.queuedJobs = []; renderQueue(); return false; }
   try {
     const data = await api(sitePath(`/api/qa/queue?conversationId=${encodeURIComponent(conversationId)}`));
-    if (conversationId !== state.conversationId) return false;
+    if (epoch !== state.viewEpoch) return false;
     const fresh = Array.isArray(data.queue) ? data.queue : [];
-    const replay = autoConsume ? state.queuedJobs.filter(job =>
-      ['queued', 'running', 'replay'].includes(job.status)
-      && job.id !== state.activeQueuedId && !fresh.some(item => item.id === job.id),
-    ).map(job => ({ ...job, status: 'replay' })) : [];
-    state.queuedJobs = [...fresh, ...replay];
+    const previous = state.queuedJobs;
+    state.queuedJobs = fresh;
     const next = state.queuedJobs.find(job => ['running', 'queued', 'replay'].includes(job.status));
-    if (autoConsume && next && !state.controller && !state.activeQueuedId) {
-      state.activeQueuedId = next.id;
-      renderQueue();
-      void streamAnswer(
-        next.question,
-        next.sourceIntent === 'web',
-        signal => fetch(sitePath(`/api/qa/queue/${encodeURIComponent(next.id)}/events`), { signal }),
-        next.id,
-        next.createdAt,
-      );
-      return true;
+    if (autoConsume && state.durableTasksSupported && !state.controller) {
+      const tasks = await taskClient.list(conversationId);
+      if (epoch !== state.viewEpoch || state.controller) return false;
+      let task = tasks.find(item => !state.completedTasks.has(item.id) &&
+        (!isTerminalTask(item) || taskStore.list().some(record => record.id === item.id)));
+      // A queued task may have finished and vanished from /queue before this poll.
+      if (!task) {
+        for (const record of taskStore.list().filter(row => row.conversationId === conversationId && row.queue && row.requestId)) {
+          task = await taskClient.lookup(record);
+          if (epoch !== state.viewEpoch || state.controller) return false;
+          if (task && !state.completedTasks.has(task.id)) {
+            task.question ||= previous.find(job => job.id === record.jobId)?.question;
+            break;
+          }
+          if (task) taskStore.forget(record.requestId);
+          task = null;
+        }
+      }
+      if (task) {
+        const job = fresh.find(item => item.taskId === task.id || ((task.requestId || task.clientRequestId) && item.requestId === (task.requestId || task.clientRequestId)));
+        const record = taskStore.list().find(row => row.id === task.id || (job && row.jobId === job.id));
+        void streamAnswer({ ...task, question: task.question || job?.question,
+          requestId: task.requestId || task.clientRequestId || record?.requestId }, job);
+        renderQueue();
+        return true;
+      }
+      if (next?.taskId && !state.completedTasks.has(next.taskId)) {
+        void streamAnswer({ id: next.taskId, conversationId, status: next.status, question: next.question, requestId: next.requestId }, next);
+        return true;
+      }
     }
+    if (next && !state.controller && state.durableTasksSupported) state.queueTimer = window.setTimeout(() => void syncQueue(), 1500);
     renderQueue();
     return Boolean(next);
-  } catch (error) { status(userError(error), true); return false; }
+  } catch (error) {
+    if (epoch === state.viewEpoch) {
+      renderQueue();
+      status(t('taskReconnecting'));
+      if (state.durableTasksSupported) state.queueTimer = window.setTimeout(() => void syncQueue(), 3000);
+    }
+    return false;
+  }
 }
 
 async function submitQuestion() {
@@ -605,8 +673,17 @@ async function submitQuestion() {
   const text = question.value.trim();
   if (!text || state.preparing || state.queueSubmitting) return;
   if (state.access !== 'ready') { status(t(state.access), true); return; }
+  if (taskStore.list().some(row => row.conversationId === state.conversationId && !row.id && !row.jobId)) {
+    status(t('taskConfirming'), true);
+    if (!state.controller) await loadConversation(state.conversationId);
+    return;
+  }
+  if (!state.busy && taskStore.list().some(row => row.conversationId === state.conversationId && row.id)) {
+    await loadConversation(state.conversationId);
+    return;
+  }
   if (state.busy) { await enqueueQuestion(text); return; }
-  if (state.queuedJobs.some(job => job.status === 'paused')) { status('请先删除上一轮未完成的待发问题，再继续提问。', true); return; }
+  if (state.queuedJobs.some(job => job.status === 'paused')) { status(ui.locale === 'en' ? 'Remove the paused queued question before continuing.' : '请先删除上一轮未完成的待发问题，再继续提问。', true); return; }
   await ask(text);
 }
 
@@ -615,17 +692,15 @@ async function enqueueQuestion(text) {
   state.queueSubmitting = true;
   updateSendButton();
   try {
-    const data = await api(sitePath('/api/qa/queue'), {
-      method: 'POST',
-      body: JSON.stringify({ question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(), ...(state.webRequested ? { sourceIntent: 'web' } : {}) }),
-    });
+    const data = await taskClient.submit({ question: text, conversationId: state.conversationId,
+      requestId: crypto.randomUUID(), ...(state.webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
     if (question.value.trim() === text) { question.value = ''; resizeQuestion(); }
     state.webRequested = false;
     updateWebIntentControl();
-    state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== data.job.id), data.job];
+    if (data.job) state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== data.job.id), data.job];
     renderQueue();
-    status('下一问已加入队列');
-  } catch (error) { status(userError(error), true); }
+    status(t('queueAdded'));
+  } catch (error) { status(error.code === 'submission_unknown' ? t('taskConfirming') : userError(error), true); }
   finally { state.queueSubmitting = false; updateSendButton(); }
 }
 
@@ -1066,222 +1141,250 @@ function renderAnswer(element, text, sources = [], answerComplete = true) {
   }
 }
 
+function detachTaskView() {
+  state.viewEpoch += 1;
+  state.controller?.abort();
+  state.controller = null;
+  state.activeTask = null;
+  state.activeQueuedId = '';
+  state.activeWebRequest = false;
+  clearTimeout(state.queueTimer);
+  busy(false);
+}
+
+// Prefer stable turn identity. Older history can contain the unfinished final pair.
+function taskHistoryPrefix(messages, task) {
+  const requestId = task.requestId || task.clientRequestId;
+  let at = messages.findIndex(message => message.taskId === task.id
+    || (requestId && (message.requestId || message.clientRequestId) === requestId));
+  if (at < 0 && task.question) {
+    const lastUser = messages.findLastIndex(message => message.role === 'user');
+    const answer = messages[lastUser + 1];
+    if (lastUser >= 0 && messages[lastUser].content === task.question
+      && (lastUser === messages.length - 1 || answer?.complete === false || answer?.interrupted === true)) at = lastUser;
+  }
+  if (at >= 0 && messages[at].role !== 'user' && messages[at - 1]?.role === 'user') at -= 1;
+  if (at >= 0 && messages[at].role === 'user') task.question ||= messages[at].content;
+  return at < 0 ? messages : messages.slice(0, at);
+}
+
+async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
+  if (!state.durableTasksSupported || !state.conversationId) return false;
+  const conversationId = state.conversationId;
+  const records = taskStore.list().filter(row => row.conversationId === conversationId);
+  try {
+    const tasks = await taskClient.list(conversationId);
+    if (epoch !== state.viewEpoch) return true;
+    const candidates = tasks.filter(item => {
+      if (item.status === 'succeeded' && !item.eventsExpired && messages.some(message => message.role === 'assistant'
+        && message.taskId === item.id && message.complete !== false && !message.interrupted && message.content?.trim())) {
+        state.completedTasks.add(item.id);
+        taskStore.forget(item.id);
+        return false;
+      }
+      return true;
+    });
+    const task = candidates.find(item => item.status === 'running')
+      || candidates.find(item => !isTerminalTask(item))
+      || candidates.find(item => records.some(record => record.id === item.id
+        || record.requestId === (item.requestId || item.clientRequestId)));
+    if (task) {
+      const record = records.find(row => row.id === task.id || row.requestId === (task.requestId || task.clientRequestId));
+      const restored = { ...task, requestId: task.requestId || task.clientRequestId || record?.requestId };
+      void streamAnswer(restored, null, { history: messages });
+      return true;
+    }
+    const unresolved = taskStore.list().find(row => row.conversationId === conversationId && !row.jobId);
+    if (unresolved) {
+      if (unresolved.id) void streamAnswer({ ...unresolved, status: 'running' });
+      else void streamAnswer(null, null, { record: unresolved });
+      return true;
+    }
+    return false;
+  } catch {
+    if (epoch === state.viewEpoch) status(t('taskUnavailable'), true);
+    return true;
+  }
+}
+
 async function ask(raw) {
   const text = raw.trim();
-  if (!text || state.busy || state.preparing) return;
+  if (!text || state.busy || state.preparing || !state.durableTasksSupported) return;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
-  if (!state.conversationId) {
-    if (archiveConversationId) { archiveConversationId = ''; welcome(); }
-    state.preparing = true;
-    updateSendButton();
-    try {
+  state.preparing = true;
+  updateSendButton();
+  try {
+    if (!state.conversationId) {
+      if (archiveConversationId) { archiveConversationId = ''; welcome(); }
       const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
       setConversation(data.conversation.conversationId);
       await loadConversations();
-    } catch (error) { status(userError(error), true); return; }
-    finally { state.preparing = false; updateSendButton(); }
-  }
-  const requestedWeb = state.webRequested;
-  state.webRequested = false;
-  updateWebIntentControl();
-  const requestId = crypto.randomUUID();
-  await streamAnswer(text, requestedWeb, signal => fetch(sitePath('/api/qa/ask'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ question: text, conversationId: state.conversationId, requestId, ...(requestedWeb ? { sourceIntent: 'web' } : {}) }),
-    signal,
-  }));
+    }
+    const input = { question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(),
+      ...(state.webRequested ? { sourceIntent: 'web' } : {}) };
+    try {
+      const { task } = await taskClient.submit(input);
+      void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null, { clearDraft: text });
+    } catch (error) {
+      if (error.code !== 'submission_unknown') throw error;
+      void streamAnswer(null, null, { record: input, clearDraft: text });
+    }
+  } catch (error) { status(userError(error), true); }
+  finally { state.preparing = false; updateSendButton(); }
 }
 
-async function streamAnswer(text, requestedWeb, request, queuedId = '', queuedCreatedAt = '') {
-  let displayText = text;
-  const draftBeforeRequest = question.value;
-  let clearedDraft = false;
-  const controller = new AbortController(); state.controller = controller;
-  state.activeWebRequest = requestedWeb;
-  setWebRequestState(requestedWeb ? 'searching' : 'idle');
-  busy(true); status(queuedId ? '正在等待上一轮完成…' : '正在连接知识库…');
-  if (!queuedId && question.value.trim() === text) {
-    question.value = ''; clearedDraft = true;
-    resizeQuestion(); question.blur(); updateSendButton();
-  }
-  updateCarouselTimer();
-  let reply, content, lifecycle, processView, lifecycleTicker = 0;
-  let lifecycleTiming = null;
-  const numericQueuedAt = Number(queuedCreatedAt);
-  const queuedAt = Number.isFinite(numericQueuedAt) && numericQueuedAt > 0 ? numericQueuedAt : Date.parse(queuedCreatedAt);
-  const setLifecyclePhase = phase => {
-    if (!lifecycleTiming) return;
-    lifecycleTiming.phase = phase;
-    renderAnswerLifecycle(lifecycle, {
-      ...lifecycleTiming,
-      elapsedMs: performance.now() - lifecycleTiming.startedAt,
-    });
+async function streamAnswer(initialTask, job = null, pending = {}) {
+  const controller = new AbortController();
+  const epoch = state.viewEpoch;
+  state.controller = controller;
+  state.activeQueuedId = job?.id || '';
+  busy(true);
+  let task = initialTask;
+  let reply, content, lifecycle, processView, lifecycleTiming, lifecycleTicker = 0;
+  let processCount = 0, lastView = null, settled = false;
+  const current = () => !controller.signal.aborted && epoch === state.viewEpoch;
+  const connectionNotice = phase => {
+    if (!current()) return;
+    if (phase !== 'connected') status(t(phase === 'confirming' ? 'taskConfirming' : 'taskReconnecting'));
+    else status(t(lastView?.text ? 'taskGenerating' : state.activeTask?.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
   };
   const beginTurn = () => {
     if (reply) return;
+    if (pending.history) renderThread(taskHistoryPrefix(pending.history, task));
     const thread = currentThread();
     thread.querySelector('.chat-notice')?.remove();
-    if (!queuedId) state.followLatest = true;
-    updateFloatingControls();
-    const userMessage = createMessage('user', displayText);
-    thread.append(userMessage);
-    reply = createMessage('assistant', '正在查找相关资料…');
-    content = reply.querySelector('.message-content'); content.classList.add('typing');
+    if (task.question) {
+      const user = createMessage('user', task.question);
+      thread.append(user);
+      animateContentIn(user, { distance: 6, duration: 220 });
+    }
+    reply = createMessage('assistant', t('taskConnecting'));
+    reply.dataset.taskId = task.id;
+    content = reply.querySelector('.message-content');
+    content.classList.add('typing');
     lifecycle = createAnswerLifecycle(reply);
     processView = createAnswerProcess(reply, { locale: ui.locale });
-    lifecycleTiming = {
-      phase: 'connecting', startedAt: performance.now(),
-      queueWaitMs: queuedId && Number.isFinite(queuedAt) ? Math.max(0, Date.now() - queuedAt) : 0,
-    };
+    lifecycleTiming = { phase: 'connecting', startedAt: performance.now(), queueWaitMs: 0 };
     lifecycleTicker = startAnswerLifecycle(lifecycle, lifecycleTiming);
     thread.append(reply);
-    animateContentIn(userMessage, { distance: 6, duration: 220 });
     fadeContentIn(reply, 200);
-    if (state.followLatest) scrollBottom();
+    updateFloatingControls();
   };
-  let doneCount = 0, receivedDelta = false, parser = '', answerText = '', answerSources = [], doneMetadata = null;
-  let renderFrame = 0;
-  const scheduleRender = () => {
-    if (renderFrame) return;
-    renderFrame = requestAnimationFrame(() => {
-      renderFrame = 0;
-      renderAnswer(content, answerText, answerSources, false);
-      if (state.followLatest) scrollBottom();
-    });
+  const update = view => {
+    if (!current()) return;
+    lastView = view;
+    state.activeTask = view.task;
+    const activeJob = state.queuedJobs.find(job => job.taskId === task.id);
+    if (activeJob && (activeJob.status !== view.task.status || state.activeQueuedId !== activeJob.id)) {
+      activeJob.status = view.task.status;
+      state.activeQueuedId = activeJob.id;
+      renderQueue();
+    }
+    if (view.task.status === 'queued' && !view.text && !view.process.length && !view.done) {
+      status(t('taskQueued'));
+      return;
+    }
+    beginTurn();
+    // Render the reduced full value, never append a snapshot to previously displayed text.
+    renderAnswer(content, view.text, view.sources, false);
+    content.classList.toggle('typing', !view.text && !isTerminalTask(view.task));
+    for (; processCount < view.process.length; processCount += 1) processView.push(view.process[processCount]);
+    setSourceCount(reply, view.done?.source_count ?? view.done?.sourceCount ?? view.sourceCount);
+    const copy = answerCopies.get(reply);
+    if (copy) { copy.text = view.text; copy.sources = view.sources; }
+    if (view.text) {
+      lifecycleTiming.phase = 'generating';
+      status(t('taskGenerating'));
+    }
+    if (state.followLatest) scrollBottom();
   };
   try {
-    if (!queuedId) beginTurn();
-    const response = await request(controller.signal);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.error || '问答服务暂不可用');
+    if (!task) task = await taskClient.resolve(pending.record, { signal: controller.signal, onConnection: connectionNotice });
+    if (!current()) return;
+    task = { ...task, requestId: task.requestId || task.clientRequestId || pending.record?.requestId,
+      question: task.question || pending.record?.question, sourceIntent: task.sourceIntent || pending.record?.sourceIntent };
+    taskClient.remember(task);
+    state.activeTask = task;
+    state.activeWebRequest = task.sourceIntent === 'web';
+    setWebRequestState(state.activeWebRequest ? 'searching' : 'idle');
+    if (pending.clearDraft && question.value.trim() === pending.clearDraft) {
+      question.value = ''; resizeQuestion(); question.blur(); updateSendButton();
     }
-    if (!response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('服务返回了意外的响应格式');
-    setLifecyclePhase('retrieving');
-    const reader = response.body.getReader(), decoder = new TextDecoder();
-    while (true) {
-      const { value, done: streamDone } = await reader.read();
-      if (streamDone) break;
-      parser += decoder.decode(value, { stream: true });
-      parser = parser.replace(/\r\n/g, '\n');
-      let split;
-      while ((split = parser.indexOf('\n\n')) !== -1) {
-        const packet = parser.slice(0, split); parser = parser.slice(split + 2);
-        const event = /^event:\s*(.+)$/mu.exec(packet)?.[1];
-        const dataLine = packet.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n');
-        let data = {}; try { data = JSON.parse(dataLine); } catch { continue; }
-        if (event === 'queue.status') {
-          if (data.status === 'deleted' || data.status === 'expired') {
-            state.queuedJobs = state.queuedJobs.filter(job => job.id !== queuedId);
-            throw new Error('待发问题已移除，没有发送');
-          }
-          if (data.status === 'paused') throw new Error('待发问题未发送，请检查队列状态');
-          if (data.status === 'running') {
-            if (typeof data.question === 'string') displayText = data.question;
-            beginTurn();
-            state.queuedJobs = state.queuedJobs.filter(job => job.id !== queuedId);
-            renderQueue();
-            status('正在连接知识库…');
-            setLifecyclePhase('connecting');
-          }
-        }
-        if (queuedId && data.conversationId && data.conversationId !== state.conversationId) throw new Error('待发问题的会话不一致');
-        if (queuedId && ['conversation', 'process', 'sources', 'delta', 'done'].includes(event)) beginTurn();
-        if (event === 'conversation' && data.conversationId) setConversation(data.conversationId);
-        if (event === 'process') {
-          processView?.push(data);
-          if (state.followLatest) scrollBottom();
-        }
-        if (event === 'sources') {
-          answerSources = Array.isArray(data.sources) ? data.sources : [];
-          setSourceCount(reply, data.sourceCount ?? answerSources.length);
-          if (receivedDelta) scheduleRender();
-          if (!receivedDelta) {
-            status('已找到资料，正在组织回答…');
-            setLifecyclePhase('composing');
-          }
-        }
-        if (event === 'delta' && typeof data.text === 'string') {
-          if (!receivedDelta) {
-            content.textContent = '';
-            content.classList.remove('typing');
-            receivedDelta = true;
-            fadeContentIn(content, 180);
-          }
-          answerText += data.text;
-          scheduleRender();
-          status('正在生成回答…');
-          setLifecyclePhase('generating');
-        }
-        if (event === 'done') {
-          doneCount += 1;
-          doneMetadata = data;
-          if (data.conversationId) setConversation(data.conversationId);
-        }
-        if (event === 'error') throw new Error(data.error || '问答服务暂不可用');
-      }
+    if (pending.clearDraft) state.webRequested = false;
+    updateWebIntentControl();
+    status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
+    const view = await taskClient.subscribe(task, { signal: controller.signal, onUpdate: update, onConnection: connectionNotice });
+    if (!current()) return;
+    if (view.eventsExpired) {
+      const reference = view.task.history;
+      if (reference?.conversationId !== task.conversationId || reference?.taskId !== task.id) throw new Error('invalid_task_history');
+      const history = await api(sitePath(`/api/qa/conversations/${encodeURIComponent(reference.conversationId)}`));
+      if (!current()) return;
+      const messages = Array.isArray(history.messages) ? history.messages : [];
+      const historicAnswer = messages.find(message => message.role === 'assistant' && message.taskId === task.id);
+      if (!historicAnswer?.content?.trim()) throw new Error('task_history_unavailable');
+      renderThread(messages);
+      settled = true;
+      state.completedTasks.add(task.id);
+      taskStore.forget(task.id);
+      status(t(view.task.status === 'succeeded' ? 'taskDone'
+        : { cancelled: 'taskCancelled', failed: 'taskFailed' }[view.task.status] || 'taskIndeterminate'));
+      return;
     }
-    if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
-    if (doneCount !== 1) throw new Error(doneCount ? '服务返回了重复的完成确认' : '连接中断，未收到完成确认');
-    if (!answerText.trim()) throw new Error('本次请求未返回回答正文');
-    renderAnswer(content, answerText, answerSources);
-    const evidence = inspectSourceEvidence(doneMetadata || {}, requestedWeb, answerSources.length);
-    const finalSourceCount = doneMetadata?.source_count ?? doneMetadata?.sourceCount ?? answerSources.length;
-    setSourceCount(reply, finalSourceCount);
-    setEvidenceStatus(reply, evidence, requestedWeb);
-    content.classList.remove('typing'); status('回答已完成');
-    answerCopies.get(reply)?.control.setReady(Boolean(answerText.trim()));
-    processView?.settle('done');
-    settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, 'done');
-    if (Number.isFinite(doneMetadata?.timing?.elapsed_ms)) {
-      renderAnswerLifecycle(lifecycle, {
-        elapsedMs: doneMetadata.timing.elapsed_ms,
-        queueWaitMs: lifecycleTiming.queueWaitMs + (doneMetadata.timing.queue_wait_ms || 0), outcome: 'done',
+    settled = true;
+    state.completedTasks.add(task.id);
+    taskStore.forget(task.id);
+    beginTurn();
+    const complete = view.task.status === 'succeeded' && Boolean(view.text.trim()) && Boolean(view.done);
+    const outcome = complete ? 'done' : view.task.status === 'cancelled' ? 'cancelled' : 'interrupted';
+    renderAnswer(content, view.text, view.sources, complete);
+    content.classList.remove('typing');
+    processView.settle(outcome);
+    settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, outcome);
+    lifecycleTicker = 0;
+    answerCopies.get(reply)?.control.setReady(Boolean(view.text.trim()), { partial: !complete });
+    if (complete) {
+      const evidence = inspectSourceEvidence(view.done, task.sourceIntent === 'web', view.sources.length);
+      setEvidenceStatus(reply, evidence, task.sourceIntent === 'web');
+      if (task.sourceIntent === 'web') setWebRequestState(evidence.kind === 'requested_web_found' ? 'verified' : 'missing');
+      if (Number.isFinite(view.done.timing?.elapsed_ms)) renderAnswerLifecycle(lifecycle, {
+        elapsedMs: view.done.timing.elapsed_ms, queueWaitMs: view.done.timing.queue_wait_ms || 0, outcome: 'done',
       });
-    }
-    lifecycleTicker = 0;
-    if (requestedWeb) setWebRequestState(evidence.kind === 'requested_web_found' ? 'verified' : 'missing');
-    updateFloatingControls();
-    await loadConversations();
-  } catch (error) {
-    processView?.settle(controller.signal.aborted ? 'cancelled' : 'interrupted');
-    if (clearedDraft && !receivedDelta && !controller.signal.aborted && !question.value.trim()) {
-      question.value = draftBeforeRequest;
-      resizeQuestion(); renderSuggestions();
-    }
-    if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
-    if (reply) {
-      if (receivedDelta) renderAnswer(content, answerText, answerSources, false);
-      content.classList.remove('typing');
-      if (!receivedDelta) content.textContent = '';
-      const warning = document.createElement('div'); warning.className = 'message-error';
-      warning.textContent = controller.signal.aborted ? '已停止本次回答。' : '连接暂时中断，这轮回答未完成。已收到的内容会保留，请先查看最近对话，不要重复提交。';
+      status(t('taskDone'));
+    } else {
+      const key = { failed: 'taskFailed', cancelled: 'taskCancelled', indeterminate: 'taskIndeterminate' }[view.task.status] || 'taskPartial';
+      const warning = document.createElement('div'); warning.className = 'message-error'; warning.textContent = t(key);
       appendAnswerMeta(reply, warning);
-      answerCopies.get(reply)?.control.setReady(receivedDelta && Boolean(answerText.trim()), { partial: true });
+      status(t(key));
+      if (task.sourceIntent === 'web') setWebRequestState('idle');
     }
-    settleAnswerLifecycle(
-      lifecycle,
-      lifecycleTicker,
-      lifecycleTiming,
-      controller.signal.aborted ? 'cancelled' : receivedDelta ? 'interrupted' : 'failed',
-    );
-    lifecycleTicker = 0;
-    if (requestedWeb) setWebRequestState('idle');
-    status(controller.signal.aborted ? '已停止' : reply ? '回答未完成' : userError(error), !reply);
-    updateFloatingControls();
+    await loadConversations();
+  } catch {
+    if (!current()) return;
+    status(t('taskUnavailable'), true);
+    if (reply) {
+      content.classList.remove('typing');
+      processView?.settle('interrupted');
+      settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, 'interrupted');
+      lifecycleTicker = 0;
+      answerCopies.get(reply)?.control.setReady(Boolean(lastView?.text.trim()), { partial: true });
+    }
   } finally {
     if (lifecycleTicker) clearInterval(lifecycleTicker);
-    state.controller = null;
-    state.activeWebRequest = false;
-    updateWebIntentControl();
-    if (queuedId) state.activeQueuedId = '';
-    const nextStarted = await syncQueue();
-    if (!nextStarted || !state.activeQueuedId) busy(false);
-    if (state.followLatest) scrollBottom();
-    void checkHealth(); updateCarouselTimer();
+    if (current()) {
+      state.controller = null; state.activeTask = null; state.activeQueuedId = '';
+      state.activeWebRequest = false; busy(false);
+      if (settled) {
+        const pendingRecord = taskStore.list().find(row => row.conversationId === state.conversationId && !row.id && !row.jobId);
+        if (pendingRecord) void streamAnswer(null, null, { record: pendingRecord });
+        else await syncQueue();
+      }
+      updateCarouselTimer();
+    }
   }
 }
+
+window.addEventListener('pagehide', detachTaskView);
 
 function scrollBottom() {
   log.scrollTop = log.scrollHeight;
