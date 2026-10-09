@@ -31,12 +31,13 @@ const app = createApp({ config: {
   concurrency: { maxConcurrentAsk: 5, queueLimit: 20, requestTimeoutMs: 180000 },
   limits: { maxQuestionLength: 2000 }, rateLimit: { windowMs: 0, max: 0 },
 }, conversationStore: store, webReadiness: { mode: 'knowledge_agent', snapshot: () => ({ mode: 'knowledge_agent', knowledgeAgentCapacity: 5, capacity: 5, schedulable: 5 }) },
-imaWebAgentClient: { async *streamAsk({ signal }) {
+imaWebAgentClient: { async *streamAsk({ signal, onDispatch, onActivity }) {
+  onDispatch?.();
   dispatches++;
   signal.addEventListener('abort', () => { upstreamAborted = true; }, { once: true });
   const until = Date.now() + durationMs;
   // No正文 until the end: transport heartbeats must not be mistaken for a failure.
-  while (Date.now() < until) { await delay(Math.min(5000, until - Date.now()), undefined, { signal }); yield { type: 'heartbeat' }; }
+  while (Date.now() < until) { await delay(Math.min(5000, until - Date.now()), undefined, { signal }); onActivity?.({ bytes: 1 }); yield { type: 'heartbeat' }; }
   for (const text of [answer.slice(0, 13), answer.slice(13)]) yield { type: 'delta', text };
   yield { type: 'done' };
 } } });
@@ -97,7 +98,7 @@ try {
         const data = JSON.parse(packet.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5)).join('\n'));
         if (name === 'delta') text += data.text;
         if (name === 'done') done++;
-        assert.notEqual(name, 'error');
+        assert.notEqual(name, 'error', `Synthetic chain failed: ${data.failureReason || 'unknown'}`);
       }
     }
     if (!done) { rotations++; console.log(JSON.stringify({ phase: 'resubscribe', elapsedMs: Date.now() - started, cursor })); }

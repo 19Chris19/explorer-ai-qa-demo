@@ -22,5 +22,11 @@ Browser interaction on this preliminary image passed refresh during generation,
 offline/online recovery, table completion, desktop and 390px DOM overflow checks.
 Page.captureScreenshot timed out, so visual screenshot approval remains pending.
 These checks must be repeated on the final recovery integration before rollout.
+Final-chain rerun initially exposed an outdated synthetic client: it omitted
+the required pre-dispatch callback and was correctly rejected. The fixture now
+marks dispatch and reports byte-count-only activity; the 1500ms smoke passed in
+2473ms. The >=6-minute rerun remains a separate required result.
+The optional SYNTHETIC_TOKENLESS fixture setting is only for local synthetic
+built-in UI checks. Production credentials and auth policy are not changed.
 Rollback: drain accepted tasks; revert dependent UI/BFF code together, retain all
 new history and Provider task records. Public/runtime rollout requires approval.

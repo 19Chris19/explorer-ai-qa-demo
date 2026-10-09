@@ -8,7 +8,9 @@ fs.mkdirSync('/app/runtime', { recursive: true, mode: 0o700 });
 const store = new ConversationStore({ storePath: '/app/runtime/history.json' });
 const app = createApp({ config: {
   qaProvider: 'ima-web-agent', mimo: {}, webAgent: { sharedKnowledgeBaseId: 'synthetic-kb' },
-  conversations: { storePath: store.storePath }, security: { apiToken: 'synthetic-api', internalServiceToken: 'synthetic-service' },
+  conversations: { storePath: store.storePath }, security: {
+    apiToken: process.env.SYNTHETIC_TOKENLESS === '1' ? '' : 'synthetic-api', internalServiceToken: 'synthetic-service',
+  },
   concurrency: { maxConcurrentAsk: 5, queueLimit: 20, requestTimeoutMs: 180000 },
   limits: { maxQuestionLength: 2000 }, rateLimit: { windowMs: 0, max: 0 },
 }, conversationStore: store, webReadiness: { mode: 'knowledge_agent', snapshot: () => ({ mode: 'knowledge_agent', knowledgeAgentCapacity: 5, capacity: 5, schedulable: 5 }) },
