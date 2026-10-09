@@ -33,3 +33,8 @@ Final regression initially caught two obsolete test expectations: a hard-coded
 Provider v0.4.2 and the retired legacy CI image. Tests now compare onboarding
 metadata to the reviewed bundle and assert fixed-image selection before Compose.
 The same credential-preservation and override-isolation assertions remain.
+
+Final local tests/build, 241-file release scan, six-minute synthetic chain and
+platform image checks: docs/RELEASE_ACCEPTANCE_20261010.md. Draft PR #8 has green
+tests/build and an unaccepted protected preview. Container CI awaits fixed
+Provider RC image; no merge or live cutover.

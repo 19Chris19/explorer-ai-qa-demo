@@ -2,7 +2,8 @@
 
 Started 2026-10-09; final container/documentation closeout 2026-10-10 (Asia/Shanghai).
 The isolated results below predate the authorized Air preview addendum at the
-end of this report. The durable candidate is not a published Release.
+end of this report. The durable candidate is not a published Release. For the
+newer RC checkpoint, see [release acceptance](RELEASE_ACCEPTANCE_20261010.md).
 No real IMA question, account/credential data, live runtime change or remote
 push was used for the isolated phase. Services/robot/Vercel were unchanged then.
 
@@ -15,7 +16,7 @@ push was used for the isolated phase. Services/robot/Vercel were unchanged then.
 
 Closeout commits after these revisions only change evidence/documentation.
 Local image identities below are not published registry digests. Published
-deploy/bundle.env remains the previous release baseline, not a declaration that
+deploy/bundle.env at this historical checkpoint remained the old baseline, not a declaration that
 new task features are released. Use explicit candidate images for the fixture.
 
 ## Final code results
