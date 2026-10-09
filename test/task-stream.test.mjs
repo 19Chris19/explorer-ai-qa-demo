@@ -129,6 +129,22 @@ test('unresolved POST survives refresh and resolves only through reads', async (
   assert.equal(posts, 1);
 });
 
+test('definitive POST 409 conflicts reject without looking up or adopting the original task', async () => {
+  for (const queue of [false, true]) {
+    const calls = [];
+    const store = createTaskStore();
+    const client = createTaskClient({ store, fetch: async (url, options) => {
+      calls.push([url, options.method]);
+      return options.method === 'POST'
+        ? new Response(JSON.stringify({ error: 'request_fingerprint_conflict' }), { status: 409 })
+        : json({ tasks: [task] });
+    } });
+    await assert.rejects(client.submit({ ...task, question: 'Different synthetic question' }, { queue }), { status: 409 });
+    assert.deepEqual(calls, [[queue ? '/api/qa/queue' : '/api/qa/tasks', 'POST']]);
+    assert.deepEqual(store.list(), []);
+  }
+});
+
 test('blocked/corrupt storage is safe; accepted queue identity contains no draft', async () => {
   const broken = createTaskStore({ getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); } }, 'synthetic');
   broken.remember({ ...task, question: 'private', token: 'private' });
