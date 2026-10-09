@@ -24,7 +24,10 @@ async function fixture(t, { watchRows } = {}) {
     const url = new URL(req.url, 'http://synthetic');
     const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
     if (url.pathname === '/healthz') return json(200, {});
-    if (url.pathname === '/internal/provider-a/capacity') return json(200, { schemaVersion: 1, features: { knowledge_agent_keyed_sse_v1: true, durable_qa_tasks_v1: true }, policies: { knowledge_agent: { max_concurrent: 5 } } });
+    if (url.pathname === '/internal/provider-a/capacity') {
+      if (state.holdReadiness?.()) { state.readinessHeld = true; return; }
+      return json(200, { schemaVersion: 1, features: { knowledge_agent_keyed_sse_v1: true, durable_qa_tasks_v1: true }, policies: { knowledge_agent: { max_concurrent: 5 } } });
+    }
     if (url.pathname === '/api/conversations') return json(200, req.method === 'POST' ? { conversation: { conversationId: randomUUID() } } : { conversations: [] });
     if (!url.pathname.startsWith('/internal/provider-a/tasks')) return json(404, {});
     const owner = req.headers['x-ima-client-id'];
@@ -111,6 +114,30 @@ test('queued cancellation during readiness cannot dispatch a POST', async () => 
   controller.abort(); ready({ authenticated: true, durableTasksSupported: true });
   await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(posts, 0); assert.equal(intents, 0);
+});
+
+test('DELETE during queued readiness survives a process restart without resurrecting the draft', async t => {
+  const f = await fixture(t); const input = await f.input();
+  f.state.holdReadiness = () => f.rows('queued-turns.json').some(row => row.status === 'running');
+  const submitted = await f.request('queue', 'POST', input);
+  assert.equal(submitted.status, 202);
+  const { job } = await submitted.json();
+  await until(() => f.state.readinessHeld);
+  assert.equal(f.rows('queued-turns.json')[0].submissionStarted, undefined);
+  assert.equal(f.state.posts, 0);
+  const cancelled = await f.request('queue/' + job.id, 'DELETE');
+  assert.equal(cancelled.status, 200);
+  assert.equal((await cancelled.json()).removed, true);
+  // Kill while readiness is still pending, before the dispatch finally can save.
+  await f.stop();
+  f.state.holdReadiness = null;
+  await f.start();
+  const response = await f.request('queue?conversationId=' + input.conversationId);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).queue, []);
+  assert.deepEqual(f.rows('queued-turns.json'), []);
+  assert.equal(f.state.posts, 0);
+  assert.equal(f.state.deletes, 0);
 });
 
 test('ambiguous direct POST and pending DELETE survive two restarts without repost or false cancellation', async t => {
