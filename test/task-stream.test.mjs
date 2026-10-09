@@ -129,6 +129,35 @@ test('unresolved POST survives refresh and resolves only through reads', async (
   assert.equal(posts, 1);
 });
 
+test('foreign or malformed rejection receipts cannot clear an unresolved identity', async () => {
+  for (const receipt of [
+    { requestId: 'synthetic-other', conversationId: task.conversationId, status: 'rejected', rejectionStatus: 429 },
+    { requestId: task.requestId, conversationId: 'synthetic-other', status: 'rejected', rejectionStatus: 429 },
+    { requestId: task.requestId, conversationId: task.conversationId, status: 'rejected', rejectionStatus: 503 },
+  ]) {
+    const store = createTaskStore(); store.remember(task);
+    const client = createTaskClient({ store, fetch: async () => json({ tasks: [], receipt }) });
+    await assert.rejects(client.lookup(task), /invalid_receipt/);
+    assert.equal(store.list().length, 1);
+  }
+});
+
+test('foreign queue or cancellation receipts cannot link or clear another request', async () => {
+  const record = { requestId: task.requestId, conversationId: task.conversationId, queue: true };
+  for (const data of [
+    { receipt: { ...record, requestId: 'synthetic-other', status: 'cancelled' } },
+    { receipt: { ...record, conversationId: 'synthetic-other', status: 'cancelled' } },
+    { job: { ...record, id: 'synthetic-job', requestId: 'synthetic-other', status: 'paused' } },
+    { job: { ...record, id: 'synthetic-job', conversationId: 'synthetic-other', status: 'queued' } },
+    { job: { ...record, id: 'synthetic-job', status: 'cancelled' } },
+  ]) {
+    const store = createTaskStore(); store.remember(record);
+    const client = createTaskClient({ store, fetch: async () => json({ tasks: [], ...data }) });
+    await assert.rejects(client.lookup(record), /invalid_receipt/);
+    assert.deepEqual(store.list(), [record]);
+  }
+});
+
 test('definitive POST 409 conflicts reject without looking up or adopting the original task', async () => {
   for (const queue of [false, true]) {
     const calls = [];

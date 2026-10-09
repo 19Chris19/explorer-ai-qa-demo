@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { setTimeout as delay } from 'node:timers/promises';
 import { TASK_WATCH_MAX_RECORDS } from '../task-watch-store.mjs';
+import { createTaskClient, createTaskStore } from '../public/task-stream.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 async function until(check) {
@@ -36,6 +37,7 @@ async function fixture(t, { watchRows } = {}) {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks));
       if (state.postMode === 'reject') return json(429, { error: 'synthetic rejection' });
+      if (state.postMode === 'hold-reject') { state.held.push(() => json(429, { error: 'synthetic delayed rejection' })); return; }
       const task = { id: randomUUID(), conversationId: body.conversationId, status: state.status, requestKey: req.headers['idempotency-key'] };
       state.tasks.set(task.id, { owner, task });
       if (state.postMode === 'truncated') { res.writeHead(202, { 'Content-Type': 'application/json' }); res.end('{'); return; }
@@ -95,9 +97,10 @@ async function fixture(t, { watchRows } = {}) {
     return (await response.json()).conversation.conversationId;
   };
   const input = async () => ({ conversationId: await conversation(), question: 'synthetic question', requestId: randomUUID() });
-  const request = (route, method = 'GET', body) => fetch(base + '/api/qa/' + route, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const request = (route, method = 'GET', body, overrideHeaders) => fetch(base + '/api/qa/' + route, { method, headers: overrideHeaders || headers, ...(body ? { body: JSON.stringify(body) } : {}) });
   const rows = file => { try { return JSON.parse(readFileSync(join(runtime, file), 'utf8')); } catch { return []; } };
-  return { state, stop, start, input, request, rows };
+  const writeRows = (file, rows) => writeFileSync(join(runtime, file), JSON.stringify(rows), { mode: 0o600 });
+  return { state, stop, start, input, request, rows, writeRows };
 }
 
 test('queued cancellation during readiness cannot dispatch a POST', async () => {
@@ -242,4 +245,109 @@ test('full receipt store rejects both admission routes before any Provider POST'
   assert.equal(f.state.posts, 0);
   assert.equal(f.rows('task-watch.json').length, TASK_WATCH_MAX_RECORDS);
   assert.equal(f.rows('queued-turns.json').length, 0);
+});
+
+test('lost definitive rejection is recovered by requestId GET after BFF restart without repost', async t => {
+  const f = await fixture(t); const input = await f.input();
+  f.state.postMode = 'reject';
+  const store = createTaskStore();
+  let discard = true;
+  const client = createTaskClient({ store, fetch: async (url, options = {}) => {
+    const response = await f.request(url.replace('/api/qa/', ''), options.method, options.body && JSON.parse(options.body));
+    if (options.method === 'POST' && discard) { discard = false; await response.body.cancel(); throw Error('synthetic lost rejection'); }
+    return response;
+  } });
+  await assert.rejects(client.submit(input), error => error.code === 'submission_rejected' && error.status === 429);
+  assert.deepEqual(store.list(), []);
+  await f.stop(); await f.start();
+  const response = await f.request(`tasks?requestId=${input.requestId}&conversationId=${input.conversationId}`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { tasks: [], receipt: {
+    requestId: input.requestId, conversationId: input.conversationId, status: 'rejected', rejectionStatus: 429,
+  } });
+  assert.equal(f.state.posts, 1);
+});
+
+test('rejected receipts are scoped to the owner and optional conversation filter', async t => {
+  const f = await fixture(t); const input = await f.input(); const other = await f.input();
+  f.state.postMode = 'reject';
+  assert.equal((await f.request('tasks', 'POST', input)).status, 429);
+  for (const response of [
+    await f.request(`tasks?requestId=${input.requestId}&conversationId=${other.conversationId}`),
+    await f.request(`tasks?requestId=${input.requestId}`, 'GET', null, {}),
+  ]) {
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { tasks: [] });
+  }
+  assert.equal(f.state.posts, 1);
+});
+
+test('lost queued acceptance links requestId through pause, deletion and two restarts without dispatch', async t => {
+  const f = await fixture(t); const first = await f.input();
+  const { task } = await (await f.request('tasks', 'POST', first)).json();
+  const input = { ...first, requestId: randomUUID(), question: 'synthetic queued question' };
+  const store = createTaskStore();
+  const client = createTaskClient({ store, fetch: async (url, options = {}) => {
+    const response = await f.request(url.replace('/api/qa/', ''), options.method, options.body && JSON.parse(options.body));
+    if (options.method === 'POST') { await response.body.cancel(); throw Error('synthetic lost queue acceptance'); }
+    return response;
+  } });
+  const { job } = await client.submit(input, { queue: true });
+  assert.equal(job.requestId, input.requestId);
+  assert.equal(store.list()[0].jobId, job.id);
+  assert.equal(job.status, 'queued');
+  await f.request('tasks/' + task.id, 'DELETE');
+  await until(() => f.rows('queued-turns.json')[0]?.status === 'paused');
+  await f.stop(); await f.start();
+  const query = `tasks?requestId=${input.requestId}&conversationId=${input.conversationId}`;
+  const paused = await (await f.request(query)).json();
+  assert.equal(paused.job.id, job.id); assert.equal(paused.job.status, 'paused');
+  assert.equal(paused.job.requestId, input.requestId);
+  const deleted = await f.request('queue/' + job.id, 'DELETE');
+  assert.equal(deleted.status, 200);
+  const cancelled = { tasks: [], receipt: { requestId: input.requestId, conversationId: input.conversationId, status: 'cancelled' } };
+  assert.deepEqual(await (await f.request(query)).json(), cancelled);
+  await f.stop(); await f.start();
+  assert.deepEqual(await (await f.request(query)).json(), cancelled);
+  assert.equal((await f.request('queue', 'POST', input)).status, 409);
+  assert.equal((await f.request('tasks', 'POST', input)).status, 409);
+  assert.equal(f.state.posts, 1);
+});
+
+test('persisted local cancellation removes a stale queued draft on restart before any dispatch', async t => {
+  const f = await fixture(t); const first = await f.input();
+  const { task } = await (await f.request('tasks', 'POST', first)).json();
+  const input = { ...first, requestId: randomUUID(), question: 'synthetic stale cancelled draft' };
+  const { job } = await (await f.request('queue', 'POST', input)).json();
+  const stale = f.rows('queued-turns.json');
+  await f.request('queue/' + job.id, 'DELETE');
+  await f.request('tasks/' + task.id, 'DELETE');
+  await f.stop();
+  // Simulate a crash between the cancellation receipt fsync and queue removal.
+  f.writeRows('queued-turns.json', stale);
+  await f.start();
+  assert.deepEqual(await (await f.request('queue?conversationId=' + input.conversationId)).json(), { queue: [] });
+  assert.equal(f.state.posts, 1);
+});
+
+test('late definitive rejection settles a request whose first lookup was empty', async t => {
+  const f = await fixture(t); const input = await f.input();
+  f.state.postMode = 'hold-reject';
+  const store = createTaskStore();
+  let discarded;
+  const client = createTaskClient({ store, fetch: async (url, options = {}) => {
+    if (options.method === 'POST') {
+      discarded = f.request('tasks', 'POST', input).then(response => response.body.cancel());
+      await until(() => f.state.held.length === 1);
+      throw Error('synthetic observation timeout before rejection');
+    }
+    return f.request(url.replace('/api/qa/', ''));
+  } });
+  await assert.rejects(client.submit(input), /submission_unknown/);
+  assert.equal(store.list().length, 1);
+  f.state.held[0](); await discarded;
+  await assert.rejects(client.resolve(store.list()[0], { signal: new AbortController().signal }),
+    error => error.code === 'submission_rejected' && error.status === 429);
+  assert.deepEqual(store.list(), []);
+  assert.equal(f.state.posts, 1);
 });

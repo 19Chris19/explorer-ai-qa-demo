@@ -161,7 +161,10 @@ const server = createServer(async (req, res) => {
 server.listen(port, listenHost, () => {
   console.log(`QA demo listening on ${listenHost}:${port}`);
   if (provider.configured) {
-    for (const row of taskWatchStore.rows.values()) if (!row.queueId) watchDirectTask(row);
+    for (const row of taskWatchStore.rows.values()) {
+      if (row.queueId && row.status === 'cancelled' && !taskIdOf(row)) turnQueue.remove(row.clientId, row.queueId);
+      else if (!row.queueId) watchDirectTask(row);
+    }
     turnQueue.resumeRecovered();
     void provider.readiness().then(status => {
       if (status.authenticated && !status.contractSupported) console.warn('Provider A contract incompatible: knowledge_agent_keyed_sse_v1 missing');
@@ -281,11 +284,11 @@ const taskIdOf = row => row.taskId || (!row.requestId ? row.id : null);
 const pendingPublicCount = () => turnQueue.previewPendingCount() + taskWatchStore.pendingCount();
 const activeWatch = row => !terminalTask(row.status) && row.status !== 'rejected';
 
-function submissionIntent(clientId, input, preview, queueId) {
+function submissionIntent(clientId, input, preview, queueId, status = 'unconfirmed') {
   const existing = taskWatchStore.findRequest(clientId, input.requestId);
   if (existing) return existing;
   const row = { id: 'intent-' + requestKey(clientId, input.requestId), clientId, conversationId: input.conversationId,
-    requestId: input.requestId, fingerprint: submissionFingerprint(input), preview, status: 'unconfirmed', ...(queueId ? { queueId } : {}) };
+    requestId: input.requestId, fingerprint: submissionFingerprint(input), preview, status, ...(queueId ? { queueId } : {}) };
   taskWatchStore.set(row);
   return row;
 }
@@ -343,6 +346,9 @@ async function taskRoute(req, res, pathname, params) {
     if (existing) {
       if (existing.fingerprint !== submissionFingerprint(input)) { sendJson(res, 409, { error: '此请求编号已用于另一问题。', code: 'task_request_conflict' }); return; }
       if (existing.status === 'rejected') { sendJson(res, existing.rejectionStatus || 409, { error: '原请求未被接收。', code: 'task_request_rejected' }); return; }
+      if (existing.status === 'cancelled' && existing.queueId && !taskIdOf(existing)) {
+        sendJson(res, 409, { error: '原待发问题已删除。', code: 'task_request_conflict' }); return;
+      }
       const task = await lookupSubmittedTask(provider, { clientId, requestKey: requestKey(clientId, input.requestId) });
       if (task) recordTask(existing, task);
       if (!existing.queueId) watchDirectTask(taskWatchStore.rows.get(existing.id));
@@ -399,6 +405,22 @@ async function taskRoute(req, res, pathname, params) {
     const requestId = params.get('requestId');
     if (requestId) {
       if (!validRequestId(requestId)) { sendJson(res, 400, { error: 'Invalid request id' }); return; }
+      const receipt = taskWatchStore.findRequest(clientId, requestId);
+      if (receipt?.status === 'rejected' && (!conversationId || receipt.conversationId === conversationId)) {
+        sendJson(res, 200, { tasks: [], receipt: { requestId, conversationId: receipt.conversationId,
+          status: 'rejected', rejectionStatus: receipt.rejectionStatus } });
+        return;
+      }
+      if (receipt?.status === 'cancelled' && receipt.queueId && !taskIdOf(receipt)
+          && (!conversationId || receipt.conversationId === conversationId)) {
+        sendJson(res, 200, { tasks: [], receipt: { requestId, conversationId: receipt.conversationId, status: 'cancelled' } });
+        return;
+      }
+      const queued = turnQueue.findRequest(clientId, requestId);
+      if (queued && (!conversationId || queued.conversationId === conversationId)) {
+        const job = turnQueue.list(clientId, queued.conversationId).find(item => item.requestId === requestId);
+        if (job) { sendJson(res, 200, { tasks: [], job }); return; }
+      }
       query.set('requestKey', requestKey(clientId, requestId));
     }
     route += '?' + query;
@@ -477,6 +499,10 @@ async function queueRoute(req, res, pathname) {
     if (match[2] && req.method === 'GET') { turnQueue.subscribe(clientId, match[1], res); return; }
     if (match[2]) { sendJson(res, 405, { error: 'Method not allowed' }); return; }
     if (req.method === 'DELETE') {
+      if (!job.submissionStarted && !job.taskId) {
+        const receipt = submissionIntent(clientId, job, job.preview, job.id, 'cancelled');
+        if (receipt.status !== 'cancelled') taskWatchStore.set({ ...receipt, status: 'cancelled' });
+      }
       const result = turnQueue.remove(clientId, match[1]);
       sendJson(res, result.error ? 409 : result.cancelPending ? 202 : 200, result.error ? { error: '这条问题已开始处理，无法作为待发项删除' } : result);
       return;

@@ -4,6 +4,7 @@ const messages = {
   404: '没有找到这个页面或记录。',
   409: '当前操作暂时无法完成，请检查会话状态后重试。',
   410: '这条记录的保留期限已结束，请查看原会话。',
+  422: '问题未被接收，请检查输入后重试。',
   429: '当前访问较多，请稍后再试。',
 };
 
@@ -12,7 +13,7 @@ function taskFailureCode(path, method, status) {
     return { 409: 'task_cursor_mismatch', 410: 'task_events_expired', 503: 'task_subscription_unavailable' }[status];
   }
   if (method === 'POST' && ['api/qa/tasks', 'api/qa/queue'].includes(path)) {
-    return { 409: 'task_request_conflict', 503: 'task_request_unconfirmed' }[status];
+    return { 409: 'task_request_conflict', 422: 'task_request_rejected', 503: 'task_request_unconfirmed' }[status];
   }
   if (['GET', 'DELETE'].includes(method) && /^api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}$/u.test(path)) {
     return { 410: 'task_request_unconfirmed', 503: 'task_request_unconfirmed' }[status];
@@ -21,7 +22,9 @@ function taskFailureCode(path, method, status) {
 
 export function failure(request, status = 503, retryAfter, { apiJsonError = false } = {}) {
   const path = new URL(request.url).searchParams.get('path') || '';
-  const code = Object.hasOwn(messages, status) && (status !== 410 || (apiJsonError && path.startsWith('api/'))) ? status : 503;
+  const submission = request.method === 'POST' && ['api/qa/tasks', 'api/qa/queue'].includes(path);
+  const code = Object.hasOwn(messages, status) && (status !== 410 || (apiJsonError && path.startsWith('api/')))
+    && (status !== 422 || (apiJsonError && submission)) ? status : 503;
   const message = messages[code] || '服务暂时连接不上，请稍后重试。';
   const machineCode = apiJsonError && taskFailureCode(path, request.method, status);
   const page = !path.startsWith('api/') && (path === '' || request.headers.get('accept')?.includes('text/html'));

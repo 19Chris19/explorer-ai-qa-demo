@@ -504,6 +504,7 @@ function setConversation(id) {
 
 function userError(error) {
   const en = ui.locale === 'en';
+  if (error?.status === 422) return en ? 'The request was rejected. Your draft is retained; please check the input.' : '问题未被接收，草稿已保留。请检查输入后重试。';
   if (error?.status === 429) return en ? 'Too many requests. Please try again shortly.' : '当前访问较多，请稍后再试。';
   if (error?.status === 409) return en ? 'The request was rejected due to a conflict. Your draft is retained; check the conversation and request settings.' : '请求因冲突被拒绝，草稿已保留。请检查当前会话和请求设置。';
   if (error?.status === 404) return en ? 'This record is unavailable. Please reopen recent conversations.' : '这条记录暂时无法查看，请重新打开最近对话。';
@@ -601,7 +602,7 @@ function renderQueue() {
         remove.disabled = true;
         try {
           await api(sitePath(`/api/qa/queue/${encodeURIComponent(job.id)}`), { method: 'DELETE' });
-          taskStore.forget(job.id);
+          taskStore.forget(job.requestId || job.id);
           await syncQueue(false);
         }
         catch (error) { remove.disabled = false; status(userError(error), true); }
@@ -621,6 +622,8 @@ async function syncQueue(autoConsume = true) {
     const data = await api(sitePath(`/api/qa/queue?conversationId=${encodeURIComponent(conversationId)}`));
     if (epoch !== state.viewEpoch) return false;
     const fresh = Array.isArray(data.queue) ? data.queue : [];
+    for (const job of fresh) if (job.requestId) taskStore.remember({ conversationId, requestId: job.requestId,
+      jobId: job.id, queue: true, ...(job.taskId ? { id: job.taskId } : {}) });
     const previous = state.queuedJobs;
     state.queuedJobs = fresh;
     const next = state.queuedJobs.find(job => ['running', 'queued', 'replay'].includes(job.status));
@@ -632,6 +635,7 @@ async function syncQueue(autoConsume = true) {
       // A queued task may have finished and vanished from /queue before this poll.
       if (!task) {
         for (const record of taskStore.list().filter(row => row.conversationId === conversationId && row.queue && row.requestId)) {
+          if (fresh.some(job => job.requestId === record.requestId)) continue;
           task = await taskClient.lookup(record);
           if (epoch !== state.viewEpoch || state.controller) return false;
           if (task && !state.completedTasks.has(task.id)) {
@@ -661,6 +665,10 @@ async function syncQueue(autoConsume = true) {
   } catch (error) {
     if (epoch === state.viewEpoch) {
       renderQueue();
+      if (['submission_rejected', 'submission_cancelled'].includes(error.code)) {
+        status(error.code === 'submission_rejected' ? userError(error) : t('taskCancelled'));
+        return false;
+      }
       status(t('taskReconnecting'));
       if (state.durableTasksSupported) state.queueTimer = window.setTimeout(() => void syncQueue(), 3000);
     }
@@ -1254,7 +1262,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   busy(true);
   let task = initialTask;
   let reply, content, lifecycle, processView, lifecycleTiming, lifecycleTicker = 0;
-  let processCount = 0, lastView = null, settled = false;
+  let processCount = 0, lastView = null, settled = false, queuedReceipt = false;
   const current = () => !controller.signal.aborted && epoch === state.viewEpoch;
   const connectionNotice = phase => {
     if (!current()) return;
@@ -1378,9 +1386,13 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       if (task.sourceIntent === 'web') setWebRequestState('idle');
     }
     await loadConversations();
-  } catch {
+  } catch (error) {
     if (!current()) return;
-    status(t('taskUnavailable'), true);
+    if (error.code === 'submission_queued') {
+      queuedReceipt = true;
+      status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
+    } else status(error.code === 'submission_rejected' ? userError(error)
+      : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), true);
     if (reply) {
       content.classList.remove('typing');
       processView?.settle('interrupted');
@@ -1393,7 +1405,8 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (current()) {
       state.controller = null; state.activeTask = null; state.activeQueuedId = '';
       state.activeWebRequest = false; busy(false);
-      if (settled) {
+      if (queuedReceipt) await syncQueue();
+      else if (settled) {
         const pendingRecord = taskStore.list().find(row => row.conversationId === state.conversationId && !row.id && !row.jobId);
         if (pendingRecord) void streamAnswer(null, null, { record: pendingRecord });
         else await syncQueue();

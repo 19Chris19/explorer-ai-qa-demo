@@ -72,7 +72,52 @@ for (const queue of [false, true]) {
     assert.equal(f.responses[0].code, 'task_request_conflict');
     assert.deepEqual(store.list(), []);
   });
+  test(`cross-proxy POST 422 remains a definitive sanitized rejection (queue: ${queue})`, async t => {
+    const f = fixture(t, () => json(privateError, 422));
+    const store = createTaskStore();
+    await assert.rejects(f.client({ store }).submit({ ...task, question: 'synthetic retained draft' }, { queue }), { status: 422 });
+    assert.deepEqual(f.calls.map(call => call.method), ['POST']);
+    assert.equal(f.responses[0].code, 'task_request_rejected');
+    assert.deepEqual(store.list(), []);
+  });
 }
+
+test('422 is preserved only for allowlisted JSON submission errors', async t => {
+  let headers = {};
+  const f = fixture(t, () => json(privateError, 422, headers));
+  for (const path of ['/api/qa/tasks', '/api/qa/tasks/synthetic-task', '/api/qa/tasks/synthetic-task/events', '/questions.json']) {
+    assert.equal((await f.request(path)).status, 503);
+  }
+  for (headers of [{ 'ngrok-error-code': 'ERR_NGROK_3200' }, { 'Content-Type': 'text/html' }, { 'Content-Type': 'text/event-stream' }]) {
+    assert.equal((await f.request('/api/qa/tasks', { method: 'POST', body: '{}' })).status, 503);
+    assert.equal(f.responses.at(-1).code, 'preview_503');
+  }
+});
+
+test('cross-proxy lost rejection resolves from a sanitized successful receipt response', async t => {
+  const receipt = { requestId: task.requestId, conversationId: task.conversationId, status: 'rejected', rejectionStatus: 422 };
+  const f = fixture(t, (_url, options) => {
+    if (options.method === 'POST') throw Error('synthetic lost response');
+    return json({ tasks: [], receipt });
+  });
+  const store = createTaskStore();
+  await assert.rejects(f.client({ store }).submit({ ...task, question: 'synthetic retained draft' }),
+    error => error.code === 'submission_rejected' && error.status === 422);
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET']);
+  assert.deepEqual(store.list(), []);
+});
+
+test('cross-proxy lost queued acceptance links its paused job without repost', async t => {
+  const job = { id: 'synthetic-job', requestId: task.requestId, conversationId: task.conversationId, status: 'paused' };
+  const f = fixture(t, (_url, options) => {
+    if (options.method === 'POST') throw Error('synthetic lost response');
+    return json({ tasks: [], job });
+  });
+  const store = createTaskStore();
+  assert.deepEqual((await f.client({ store }).submit({ ...task, question: 'synthetic retained draft' }, { queue: true })).job, job);
+  assert.equal(store.list()[0].jobId, job.id);
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET']);
+});
 
 test('cross-proxy DELETE 202 preserves pending cancellation without claiming a terminal outcome', async t => {
   const pending = { cancelPending: true, taskId: task.id };
