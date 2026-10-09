@@ -28,3 +28,8 @@ blocked Compose network. BFF, Nginx, observer disconnect/replay, exact history,
 explicit cancellation and dispatched-task restart are exercised. No account
 directory or IMA client is constructed. Website CI must wait for its Provider
 tag/image prerequisite; it may not silently substitute an older image.
+
+Final regression initially caught two obsolete test expectations: a hard-coded
+Provider v0.4.2 and the retired legacy CI image. Tests now compare onboarding
+metadata to the reviewed bundle and assert fixed-image selection before Compose.
+The same credential-preservation and override-isolation assertions remain.

@@ -59,9 +59,12 @@ test('deploy.sh uses recorded project/images despite environment pollution and r
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('synthetic CI supplies required Provider interpolation before Compose merges overrides', () => {
+test('synthetic CI selects the fixed Provider image before the durable Compose startup', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /PROVIDER_IMAGE: node:22-bookworm-slim/);
+  assert.match(workflow, /readBundle\(\)\.PROVIDER_TAG/);
+  assert.match(workflow, /PROVIDER_TASK_IMAGE=ghcr\.io\/19chris19\/ima-qa-web-agent:\$PROVIDER_TAG/);
+  assert.ok(workflow.indexOf('docker pull "$PROVIDER_TASK_IMAGE"') < workflow.indexOf('up -d --no-build'));
+  assert.match(workflow, /compose\.durable-test\.yaml/);
 });
 
 for (const failNewCheck of [false, true]) test(`deploy upgrade and rollback use current locks (new acceptance fails: ${failNewCheck})`, () => {
