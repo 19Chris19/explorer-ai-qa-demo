@@ -80,6 +80,13 @@ test('BFF submits durable tasks, isolates visitors and does not cancel on browse
     assert.equal((await fetch(`${base}/api/qa/tasks/${task.id}`, { method: 'DELETE', headers })).status, 200);
     assert.equal(calls.filter(call => call.method === 'DELETE').length, 1);
     enabled = false;
+    const legacyHealth = await (await fetch(`${base}/api/qa/health`)).json();
+    assert.equal(legacyHealth.connected, true);
+    assert.equal(legacyHealth.authenticated, true);
+    assert.equal(legacyHealth.contractSupported, true);
+    assert.equal(legacyHealth.capacity, 5);
+    assert.equal(legacyHealth.durableTasksSupported, false);
+    assert.equal(legacyHealth.ready, false);
     assert.equal((await submit({ ...input, requestId: randomUUID() })).status, 409);
     assert.equal(tasks.size, 2);
   } finally {

@@ -39,7 +39,7 @@ test('native capacity zero stays unready even when both credentials work', async
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, auth: options.headers?.Authorization });
       if (url.endsWith('/healthz')) return new Response('{"queue":{"queuedRequests":0}}', { status: 200 });
-      if (url.endsWith('/capacity')) return new Response('{"schemaVersion":1,"policies":{"knowledge_agent":{"max_concurrent":0}},"features":{"knowledge_agent_keyed_sse_v1":true}}', { status: 200 });
+      if (url.endsWith('/capacity')) return new Response('{"schemaVersion":1,"policies":{"knowledge_agent":{"max_concurrent":0}},"features":{"knowledge_agent_keyed_sse_v1":true,"durable_qa_tasks_v1":true}}', { status: 200 });
       return new Response('{"conversations":[]}', { status: 200 });
     },
   });
@@ -51,6 +51,29 @@ test('native capacity zero stays unready even when both credentials work', async
   assert.equal(result.capacity, 0);
   assert.equal(calls.find(call => call.url.endsWith('/capacity')).auth, 'Bearer internal');
   assert.equal(calls.find(call => call.url.includes('/api/conversations')).auth, 'Bearer ordinary');
+});
+
+test('legacy keyed SSE alone is not ready for the durable UI but retains capability and capacity facts', async () => {
+  for (const durable of [undefined, false, 'true', true]) {
+    const client = createProviderAClient({
+      baseUrl: 'http://127.0.0.1:3117', apiToken: 'synthetic-api', serviceToken: 'synthetic-service',
+      knowledgeScopeRef: 'a'.repeat(64),
+      fetchImpl: async url => new Response(JSON.stringify(url.endsWith('/capacity') ? {
+        schemaVersion: 1, features: { knowledge_agent_keyed_sse_v1: true,
+          source_intent_web_requested_v1: true, durable_qa_tasks_v1: durable },
+        policies: { knowledge_agent: { max_concurrent: 2 } }, active: 2, queued: 3,
+      } : {})),
+    });
+    const result = await client.readiness();
+    assert.equal(result.authenticated, true);
+    assert.equal(result.contractSupported, true);
+    assert.equal(result.webIntentSupported, true);
+    assert.equal(result.capacity, 2);
+    assert.equal(result.active, 2);
+    assert.equal(result.queued, 3);
+    assert.equal(result.durableTasksSupported, durable === true);
+    assert.equal(result.ready, durable === true);
+  }
 });
 
 test('native streaming uses internal service credentials and a stable upstream idempotency key', async () => {
@@ -79,7 +102,7 @@ test('readiness advertises web intent only when Provider A declares the internal
       return new Response('{"conversations":[]}', { status: 200 });
     },
   });
-  const compatible = await makeClient({ knowledge_agent_keyed_sse_v1: true, source_intent_web_requested_v1: true }).readiness();
+  const compatible = await makeClient({ knowledge_agent_keyed_sse_v1: true, durable_qa_tasks_v1: true, source_intent_web_requested_v1: true }).readiness();
   assert.equal(compatible.ready, true);
   assert.equal(compatible.webIntentSupported, true);
   const older = await makeClient({ source_intent_web_requested_v1: true }).readiness();

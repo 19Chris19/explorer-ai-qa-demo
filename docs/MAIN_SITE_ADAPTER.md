@@ -14,6 +14,17 @@
 打印的本机地址仅连接脚本内存中的假 Provider，无真实凭证或 IMA 访问；
 退出时停止所启动进程并删除其合成运行目录，不操作现有服务。
 
+当前 UI 要求 durable task 能力。健康检查的 `ready` 同时要求鉴权成功、
+keyed-SSE 与 `durable_qa_tasks_v1`、正整数原生容量；旧 Provider 仍可报告
+`contractSupported` 和真实容量，但不再被标记为可供当前 UI 问答。
+旧 ask API 合同保持不变，不因 UI readiness 变更而移除。
+
+主站预览与测试共用 `test-support/synthetic-task-provider.mjs`，覆盖任务提交、
+幂等回执、按所有者查询、快照、SSE 游标、显式取消和历史恢复。断开订阅不会
+取消任务。这只是内存 HTTP/UI 假服务，不验证磁盘持久性、崩溃恢复、生产公平
+调度、长时轮换或真实 IMA 回答。旧 Docker synthetic-provider 仍是 legacy
+验收夹具，不能作为当前 durable UI 的完整预览或 ready 证明。
+
 `requestFocus` 在 Escape 关闭模块内浮层时传出 `more`，主站应将焦点返回
 自己的更多按钮。菜单位于被隐藏的内部页头之外，`openOptions()` 在嵌入模式
 仍可使用。路由内容区需要明确的可用高度；iframe 不强制 520px 最小高度，
