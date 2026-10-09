@@ -77,7 +77,10 @@ computer; a Linux server does not gain a desktop browser from containerization.
    [nginx-qa-snippet.conf](./nginx-qa-snippet.conf) is the older direct-Node
    example: change its 4317 upstream to 4417 when using this Docker recipe.
    Preserve SSE streaming, forward cookies,
-   disable response buffering and caching, and set a read timeout above 190s.
+   disable response buffering and caching. Read-only task subscriptions rotate
+   at 240s with approximately 15s heartbeats; allow at least 300s per subscription
+   at the proxy and reconnect with its task cursor. Never impose a proxy request
+   lifetime as the total lifetime of the Provider task or retry its POST.
    Exclude `/admin` and all Provider A `/internal/` paths. Keep HTTPS at the
    edge; add the main site's user identity integration before treating
    anonymous histories as cross-device user accounts.
