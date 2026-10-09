@@ -119,7 +119,7 @@ test('refresh running task restores server elapsed time and original question wi
   try {
     await until(() => view.document.querySelector('.answer-lifecycle[data-status="connecting"]'));
     const details = view.document.querySelector('.answer-lifecycle-details').textContent;
-    assert.match(details, /等待 10 秒/);
+    assert.match(details, /等待 10(?:\.0)? 秒/);
     assert.ok(Number(details.match(/已用时 ([\d.]+)/)?.[1]) >= 20);
     assert.equal(view.document.querySelector('.message.user .message-content').textContent, item.question);
     assert.equal(posts(view).length, 0);
@@ -166,6 +166,81 @@ test('direct task rotates its stream and restores a terminal snapshot without fa
     assert.equal(view.document.querySelector('.message-error'), null);
   } finally { view.close(); }
 });
+
+test('answer lifecycle becomes generating with text and stays generating across ticks and reconnect', async () => {
+  const item = task();
+  const live = stream([], true);
+  let reads = 0;
+  const view = await openUi({ conversationId: item.conversationId, fetchImpl(url, options) {
+    if (url.startsWith('/api/qa/tasks?')) return json({ tasks: [item] });
+    if (url === `/api/qa/tasks/${item.id}`) { reads++; return snapshot(item, [delta(1, '# Synthetic ongoing answer')]); }
+    if (url.includes(`/${item.id}/events`)) return reads === 1 ? stream([]).response : live.response;
+    return conversations(url, options);
+  } });
+  try {
+    await until(() => answer(view)?.includes('Synthetic ongoing answer'));
+    assert.equal(view.document.querySelector('.answer-lifecycle').dataset.status, 'generating');
+    await eventually(() => reads >= 2);
+    assert.equal(view.document.querySelector('.answer-lifecycle').dataset.status, 'generating');
+    view.document.querySelector('#languageButton').click();
+    await eventually(() => view.document.querySelector('.answer-lifecycle-label').textContent === 'Generating the answer');
+    assert.equal(view.document.querySelectorAll('.message.assistant').length, 1);
+    assert.equal(posts(view).length, 0);
+  } finally { view.close(); }
+});
+
+for (const outcome of ['failed', 'cancelled', 'indeterminate']) {
+  for (const withHistory of [false, true]) {
+  test(`refresh restores newest ${outcome} partial answer without local identity (earlier history: ${withHistory})`, async () => {
+    const item = task('synthetic-terminal', 'synthetic-conversation', { status: outcome, createdAt: 2000, trace: { terminalAt: 4000 } });
+    const older = task('synthetic-old-success', item.conversationId, { status: 'succeeded', createdAt: 1000 });
+    const olderFailed = task('synthetic-old-failed', item.conversationId, { status: 'failed', createdAt: 1500 });
+    const messages = withHistory ? [{ role: 'user', taskId: older.id, content: 'Earlier question' },
+      { role: 'assistant', taskId: older.id, content: 'Earlier answer', createdAt: new Date(3000).toISOString() }] : [];
+    const view = await openUi({ conversationId: item.conversationId, fetchImpl(url, options) {
+      if (url.startsWith('/api/qa/tasks?')) return json({ tasks: withHistory ? [item, olderFailed, older] : [item, olderFailed] });
+      if (url === `/api/qa/conversations/${item.conversationId}`) return json({ conversation: { conversationId: item.conversationId }, messages });
+      if (url === `/api/qa/tasks/${item.id}`) return snapshot(item, [delta(1, 'Retained partial answer'), terminal(2, outcome)]);
+      return conversations(url, options);
+    } });
+    try {
+      await until(() => view.requests.some(row => row.url.startsWith('/api/qa/queue?')));
+      assert.deepEqual([...view.document.querySelectorAll('.message.assistant .message-content')].map(node => node.textContent), withHistory ? ['Earlier answer', 'Retained partial answer'] : ['Retained partial answer']);
+      assert.equal(view.document.querySelectorAll('.message.user').length, withHistory ? 2 : 1);
+      assert.equal(view.document.querySelectorAll('.message-error').length, 1);
+      assert.equal(posts(view).length, 0);
+      assert.equal(view.requests.some(row => row.url.includes('/events')), false);
+      assert.equal(view.requests.some(row => row.url === `/api/qa/tasks/${olderFailed.id}`), false);
+      assert.doesNotMatch(view.window.localStorage.getItem('qa-task-identities-v1') || '', /Retained partial|question/);
+    } finally { view.close(); }
+  });
+  }
+}
+
+for (const receiptListed of [true, false]) {
+  test(`refresh does not resurrect an older failure before newer history (receipt listed: ${receiptListed})`, async () => {
+    const old = task('synthetic-old-failure', 'synthetic-conversation', { status: 'failed', createdAt: 1000, trace: { terminalAt: 2000 } });
+    const newer = task('synthetic-success', old.conversationId, { status: 'succeeded', createdAt: 3000 });
+    const view = await openUi({ conversationId: old.conversationId, setup(window) {
+      window.localStorage.setItem('qa-task-identities-v1', JSON.stringify([{ id: old.id, conversationId: old.conversationId }]));
+    }, fetchImpl(url, options) {
+      if (url.startsWith('/api/qa/tasks?')) return json({ tasks: receiptListed ? [newer, old] : [old] });
+      if (url === `/api/qa/conversations/${old.conversationId}`) return json({ conversation: { conversationId: old.conversationId }, messages: [
+        { role: 'user', taskId: newer.id, content: 'Newer question' },
+        { role: 'assistant', taskId: newer.id, content: 'Newer successful answer', createdAt: new Date(4000).toISOString() },
+      ] });
+      if (url === `/api/qa/tasks/${old.id}`) return snapshot(old, [delta(1, 'Old partial'), terminal(2, 'failed')]);
+      return conversations(url, options);
+    } });
+    try {
+      await until(() => view.requests.some(row => row.url.startsWith('/api/qa/queue?')));
+      assert.equal(view.document.querySelectorAll('.message.assistant').length, 1);
+      assert.equal(answer(view), 'Newer successful answer');
+      assert.equal(view.requests.some(row => row.url === `/api/qa/tasks/${old.id}`), false);
+      assert.equal(posts(view).length, 0);
+    } finally { view.close(); }
+  });
+}
 
 test('new conversation detaches viewing without cancel and accepts a task while another conversation runs', async () => {
   const first = task(), second = task('synthetic-second', 'synthetic-new');
