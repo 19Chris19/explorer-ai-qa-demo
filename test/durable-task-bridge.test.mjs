@@ -28,6 +28,16 @@ test('explicit stop alone issues DELETE', async () => {
   assert.deepEqual(calls.map(call => call.method), ['DELETE']);
 });
 
+test('retained successful history receipt completes observation after event expiry', async () => {
+  const calls = [];
+  await followTask({ request: async args => {
+    calls.push(args);
+    if (args.route.includes('/events')) return Response.json({}, { status: 410 });
+    return Response.json({ task: { id: 'expired-one', status: 'succeeded', eventsExpired: true, history: { taskId: 'expired-one', conversationId: 'synthetic' } }, snapshot: { events: [] } });
+  } }, { clientId: 'synthetic', taskId: 'expired-one', emit() { assert.fail('Expired events must not be fabricated'); }, retryMs: 1 });
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'GET']);
+});
+
 test('subscriber expiry aborts only the observation GET, never the task', async t => {
   const calls = [];
   const provider = { request: async args => {

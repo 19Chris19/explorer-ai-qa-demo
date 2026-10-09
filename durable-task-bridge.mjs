@@ -46,6 +46,8 @@ export async function followTask(provider, { clientId, taskId, emit, signal, onS
       const response = await provider.request({ route: `/api/tasks/${taskId}`, method: 'GET', clientId, signal }).catch(() => null);
       if (response?.ok) {
         const data = await response.json();
+        if (data.task?.id === taskId && data.task.status === 'succeeded' && data.task.eventsExpired
+            && data.task.history?.taskId === taskId) return;
         for (const event of data.snapshot?.events || []) consume(event);
         if (terminalTask(data.task?.status)) {
           if (terminal !== 'succeeded' || data.task.status !== 'succeeded') throw new Error('task_incomplete');
