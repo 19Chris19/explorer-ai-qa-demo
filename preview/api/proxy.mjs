@@ -71,9 +71,14 @@ export async function proxy(request) {
       redirect: 'manual',
       cache: 'no-store',
     });
-    if (!upstream.ok || upstream.headers.has('ngrok-error-code') || !validResponseType(path, upstream.headers.get('content-type'))) {
+    const contentType = upstream.headers.get('content-type');
+    const invalidUpstream = upstream.headers.has('ngrok-error-code') || !validResponseType(path, contentType);
+    if (!upstream.ok || invalidUpstream) {
+      // Only allowlisted JSON API errors may carry safe task machine semantics.
+      const apiJsonError = !invalidUpstream && path.startsWith('api/')
+        && (contentType || '').split(';')[0].trim().toLowerCase() === 'application/json';
       await upstream.body?.cancel();
-      return failure(request, upstream.ok ? 503 : upstream.status, upstream.headers.get('retry-after'));
+      return failure(request, invalidUpstream ? 503 : upstream.status, upstream.headers.get('retry-after'), { apiJsonError });
     }
     const responseHeaders = new Headers({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' });
     for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
