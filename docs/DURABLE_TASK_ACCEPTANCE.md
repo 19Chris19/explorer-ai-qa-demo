@@ -1,9 +1,10 @@
 # Durable QA final isolated acceptance
 
 Started 2026-10-09; final container/documentation closeout 2026-10-10 (Asia/Shanghai).
-Status: isolated candidate, not released or deployed.
-No real IMA question, account/credential data, production runtime change or remote
-push was used. Existing services, robot and Vercel are unchanged.
+The isolated results below predate the authorized Air preview addendum at the
+end of this report. The durable candidate is not a published Release.
+No real IMA question, account/credential data, live runtime change or remote
+push was used for the isolated phase. Services/robot/Vercel were unchanged then.
 
 ## Fixed runtime pair
 
@@ -123,7 +124,8 @@ These are historical, not visual approval of the final pair. Browser/screenshot
 tools are unavailable here; fresh desktop/mobile screenshots, phone keyboard/safe
 area, real mobile disconnect and actual Vercel/ngrok recovery remain unaccepted.
 
-Renew maintenance authorization before updating 3117 and 4318 together. Never
+The isolated checkpoint required renewed maintenance authorization before updating
+3117 and 4318 together; that preview gate was subsequently approved below. Never
 update 4318 alone against an old Provider. Real long IMA question/follow-up require
 explicit authorization and upstream-terminal/output comparison. Synthetic results
 do not prove native IMA equivalence, real per-account parallelism or cloud uptime.
@@ -135,3 +137,34 @@ ownership, terminal/history and the authorized real question/follow-up.
 Rollback stops admission and drains activity; retain journals/accounts/new history.
 Never overwrite them with old snapshots or reask dispatched uncertain work. Older
 code must leave unfamiliar task journals archived, never delete them to admit work.
+
+## Authorized Air preview, 2026-10-10
+
+3117 and 4318 were updated after fresh idle proofs and private backups. 4318
+revision durable-418cbdb0-4318 retains original persistent visitor data and signing
+configuration. Five Provider accounts and old admin assets are preserved. Air's
+legacy native website mode is explicitly knowledge_agent, not the generic classic
+fallback. Maintenance gates reopened; capacity five and empty queues verified.
+
+Real first question and serial follow-up through 4318 each produced one successful
+terminal and no error. Execution: 312709ms and 146294ms. Same upstream account and
+session, exact replay/snapshot/history, exactly two history answers. Renderer
+counts: three tables / 25 rows, then one table / 10 rows; no executable nodes.
+Three and two structured source events respectively are knowledge evidence, not
+proof of web retrieval. No independent process events were received.
+
+Viewer disconnect did not cancel the first task. An inspection transport read
+subsequently stopped the probe tool; recovery watched the same accepted task and
+never issued a replacement question. Completed tasks and original dispatch times
+remain unchanged after the later Provider restart, and history is still two turns.
+
+Real results cover Provider 350bc8bd / website 418cbdb0. Dense output also exposed
+health starvation; separate Provider fix 97dbb5c yields during parsing and passed
+three observer tests, the full suite and fixed-artifact startup/admin tests before
+its second idle rollout. No extra IMA question was sent for that small correction.
+Earlier container identities do not include it; rebuild before image publication.
+
+4317/4417 website code, Vercel and robot were not upgraded or restarted by this
+preview deployment. Legacy clients still use the old direct connection lifecycle.
+No remote push/PR/Release. Fresh browser visual approval, phone behavior and actual
+public-network recovery remain pending; no native IMA equivalence is claimed.

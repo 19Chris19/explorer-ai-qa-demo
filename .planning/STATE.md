@@ -1,6 +1,7 @@
 # Durable website candidate handoff
 
-2026-10-10: codex/INT-20261009-EXPLORER-DURABLE is isolated and unpublished.
+2026-10-10: codex/OPS-20261010-EXPLORER-DURABLE-PREVIEW records an authorized
+4318 preview rollout; the durable candidate remains unpublished.
 Earlier verified runtime source 05a5bf5; Provider pair 866b731. Latest website
 runtime source 418cbdb includes durable-aware readiness, a synthetic task preview
 fixture, acknowledged cancellation recovery and safe proxy error contracts. See
@@ -9,10 +10,11 @@ docs/DURABLE_TASK_ACCEPTANCE.md for fixed images and exact verification.
 Implemented: owned task BFF, durable submit/cancel recovery, GET-only observation,
 browser refresh/reconnect/partial terminal recovery, queued task integration,
 public route allowlists and removal of the public single-execution gate.
-Production configuration, credentials and live services are unchanged.
+During isolated verification production configuration, credentials and live
+services were unchanged. The authorized live addendum below supersedes that state.
 
-Current gates: renewed maintenance window, actual public-network/IMA
-verification, visual approval and paired release review. Do not update 4318
+Current gates: actual public-network verification, visual approval, patched
+image rebuild and paired release review. Do not update a website
 alone against an old Provider; do not silently fall back to direct execution.
 
 Earlier verification: 238 pass / 2 optional skip; build; 370717ms synthetic chain;
@@ -27,4 +29,17 @@ Final ARM64/AMD64 images passed Nginx/BFF/Provider chain and restart checks;
 image identities are in the acceptance report. No private image data, website
 UID 1000, empty persistent-data directory. Fixed Node 22 artifact short chain
 passed 2221ms. Test containers stopped without deleting retained synthetic volumes.
-No real IMA, remote PR/release or production deployment was performed.
+No real IMA, remote PR/release or live deployment was used in those isolated results.
+
+Authorized live addendum: 4318 now runs durable-418cbdb0-4318, Provider final
+source 97dbb5c (separate cooperative-parser fix after real probe on 350bc8bd).
+Original runtime/config/signing/ownership preserved, five Provider accounts retained.
+Real first question 312709ms, serial follow-up 146294ms, both success/one terminal,
+same account/session, exact replay/history, three tables then one, two history answers.
+Disconnect did not cancel the first task; tool recovery never re-submitted.
+Finished tasks/history survive the later idle Provider patch restart unchanged.
+Final parser patch: three focused tests, full suite and artifact startup passed;
+no extra real questions or final patched image builds performed.
+Admission gates OPEN, ready capacity five, queues idle. 4317/4417/public code
+unchanged and robot neither started nor restarted. New browser space permission
+pending; no fresh screenshot/phone/public-network pass is claimed.
