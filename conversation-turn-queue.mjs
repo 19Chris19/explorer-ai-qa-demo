@@ -72,6 +72,8 @@ export class ConversationTurnQueue {
     for (const row of saved) {
       if (!row || typeof row.id !== 'string' || typeof row.owner !== 'string' || typeof row.conversationId !== 'string'
           || typeof row.question !== 'string' || typeof row.requestId !== 'string' || !Number.isFinite(row.createdAt)) continue;
+      // Acknowledged local cancellation is final only before submission intent.
+      if (row.cancelRequested === true && !row.taskId && !row.submissionStarted) continue;
       if (!row.taskId && !row.submissionStarted && !this.preserveExpiredPending && this.now() - row.createdAt >= pendingTtlMs) continue;
       this.jobs.set(row.id, { ...row, status: 'paused', recoverTask: Boolean(row.taskId || row.submissionStarted), events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0 });
     }
@@ -326,6 +328,7 @@ export class ConversationTurnQueue {
   save() {
     const rows = [...this.jobs.values()].filter(job => ['queued', 'paused', 'running'].includes(job.status))
       .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, taskId, submissionStarted, clientId, cancelRequested, providerStatus }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, ...(taskId ? { taskId } : {}),
+        ...(cancelRequested ? { cancelRequested: true } : {}),
         ...(submissionStarted || taskId ? { submissionStarted: true, clientId, cancelRequested: Boolean(cancelRequested), ...(providerStatus ? { providerStatus } : {}) } : {}) }));
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
     const temp = `${this.file}.${randomUUID()}.tmp`;
