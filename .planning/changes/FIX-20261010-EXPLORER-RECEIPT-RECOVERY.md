@@ -50,6 +50,24 @@ recovery by requestId, and safe preview HTTP 422 semantics before parent review.
   Expanded queue regression suite passed 67/67; final delayed rejection,
   no-replay and crash-window checks passed 3/3. Whitespace clean; external root
   governance 0 failures / 3 existing warnings.
+- Preview 422 red-first: 3 failures / 1 passing containment boundary test.
+  Both submission entry points returned submission_unknown rather than 422;
+  browser rejection text was missing. Implemented narrow JSON submission status
+  preservation and bilingual rejection text. Focused 4/4 passed; final affected
+  19-suite run passed 122/122, 0 failures, 0 skips, on a public-source temporary
+  copy with minimal environment. Added the same isolated runner for parent use:
+  `node test-support/run-receipt-regressions.mjs`.
+- Committed isolated runner also passed 122/122 (31170ms). Final whitespace and
+  staged review clean; external root governance 0 failures / 3 existing warnings.
+
+## Handoff
+
+- Rejection behavior commit: fd99311.
+- Queue correlation/cancellation behavior commit: 6439098.
+- Preview 422, final tests and documentation are included in the final
+  `fix(preview): preserve definitive 422 submission rejection` commit.
+- All three fixes implemented; full suite, build, visual/public-network checks,
+  image/version workflows and rollout remain with parent. No real data accessed.
 
 ## Rollout And Rollback
 

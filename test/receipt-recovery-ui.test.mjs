@@ -69,3 +69,21 @@ for (const knownJob of [false, true]) test(`refresh after a lost draft deletion 
     assert.equal(view.requests.some(row => ['POST', 'DELETE'].includes(row.options?.method)), false);
   } finally { view.close(); }
 });
+
+test('422 rejects visibly in both languages without lookup and retains the draft', async () => {
+  const view = await openUi({ conversationId, fetchImpl(url, options = {}) {
+    if (url === '/api/qa/tasks' && options.method === 'POST') return new Response('{}', { status: 422 });
+    return conversations(url);
+  } });
+  try {
+    await until(() => view.requests.some(row => row.url.startsWith('/api/qa/queue?')));
+    for (const locale of ['zh', 'en']) {
+      if (locale === 'en') view.document.querySelector('#languageButton').click();
+      submit(view, 'Synthetic invalid retained draft');
+      await until(() => /未被接收|rejected/.test(view.document.querySelector('#requestStatus').textContent));
+      assert.equal(view.document.querySelector('#question').value, 'Synthetic invalid retained draft');
+      assert.equal(view.window.localStorage.getItem('qa-task-identities-v1'), '[]');
+      assert.equal(view.requests.some(row => row.url.includes('requestId=')), false);
+    }
+  } finally { view.close(); }
+});

@@ -72,6 +72,11 @@ Provider 是任务/终态/正文的唯一执行依据。网站私有 task-watch.
   GET returns only requestId, conversationId and status=cancelled. Response-loss
   and refresh recovery clear the matching queue identity without POST or DELETE.
   Submitted-task cancellation still waits for Provider terminal confirmation.
+- Preview preserves HTTP 422 with code=task_request_rejected only for known JSON
+  errors on POST /api/qa/tasks and POST /api/qa/queue. Browser treats it as a
+  definitive rejection, retains the draft and does not enter request lookup.
+  Tunnel/HTML/SSE errors, assets and other methods/routes remain generic 503;
+  no raw upstream error bodies are forwarded.
 - Stream/JSON/snapshot/lookup failures do not terminalize execution. An `error`
   frame is forwarded once; `task.status` or the task snapshot determines failed,
   cancelled or indeterminate. Retained matching history receipts still establish
@@ -84,6 +89,13 @@ Provider 是任务/终态/正文的唯一执行依据。网站私有 task-watch.
 Synthetic regressions: `node --test test/task-recovery.test.mjs
 test/durable-task-bridge.test.mjs test/conversation-turn-queue.test.mjs`.
 These short fault-injection tests are not the separate six-minute real-clock proof.
+
+Receipt recovery regression entry point (FIX-20261010-EXPLORER-RECEIPT-RECOVERY):
+`node test-support/run-receipt-regressions.mjs`. It runs the 19 affected suites
+on a temporary public-source copy with existing dependencies and a minimal child
+environment. It does not copy .env files, runtime, artifacts or private history;
+BFF fixtures use only their synthetic temporary storage and loopback Provider.
+This is not a full-suite/build/image/public-network or real-answer acceptance.
 
 新任务无 180/190 秒总执行截止。观察连接轮换不是任务完成；只有明确上游成功才
 显示完成。上游错误、进程退出或缺少终态不会冒充成功。Provider 进程重启不能

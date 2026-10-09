@@ -504,6 +504,7 @@ function setConversation(id) {
 
 function userError(error) {
   const en = ui.locale === 'en';
+  if (error?.status === 422) return en ? 'The request was rejected. Your draft is retained; please check the input.' : '问题未被接收，草稿已保留。请检查输入后重试。';
   if (error?.status === 429) return en ? 'Too many requests. Please try again shortly.' : '当前访问较多，请稍后再试。';
   if (error?.status === 409) return en ? 'The request was rejected due to a conflict. Your draft is retained; check the conversation and request settings.' : '请求因冲突被拒绝，草稿已保留。请检查当前会话和请求设置。';
   if (error?.status === 404) return en ? 'This record is unavailable. Please reopen recent conversations.' : '这条记录暂时无法查看，请重新打开最近对话。';

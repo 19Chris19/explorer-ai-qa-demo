@@ -43,3 +43,17 @@ no extra real questions or final patched image builds performed.
 Admission gates OPEN, ready capacity five, queues idle. 4317/4417/public code
 unchanged and robot neither started nor restarted. New browser space permission
 pending; no fresh screenshot/phone/public-network pass is claimed.
+
+## Local Receipt Recovery Repair
+
+2026-10-10: codex/FIX-20261010-EXPLORER-RECEIPT-RECOVERY starts at 4c4e3bb.
+Rejection receipt recovery: fd99311. Queue requestId/pause/deletion recovery:
+6439098. Narrow preview 422 preservation and bilingual rejection text complete
+the repair. Change record: .planning/changes/FIX-20261010-EXPLORER-RECEIPT-RECOVERY.md.
+Red-first rejection: 2 failures; queue: 3 failures; crash window: 1 failure;
+422: 3 failures / 1 existing containment pass. Final affected suites: 122 pass,
+0 fail, 0 skip. Reproduce with node test-support/run-receipt-regressions.mjs;
+public-source temporary copy, minimal environment, synthetic loopback data only.
+No push, deploy, private data access, version/image workflow or bundle changes.
+Parent owns final review/integration and full suite/build/rollout gates. Earlier
+live evidence above is historical and is not validation of this local repair.
