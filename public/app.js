@@ -1171,7 +1171,23 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
   try {
     const tasks = await taskClient.list(conversationId);
     if (epoch !== state.viewEpoch) return true;
+    // Provider lists tasks newest-first; history timestamps describe completion,
+    // not submission, so prefer the matching task receipt when it is available.
+    const latest = tasks[0];
+    const lastAnswer = messages.findLast(message => message.role === 'assistant'
+      && message.complete !== false && !message.interrupted && message.content?.trim());
+    const receiptIndex = lastAnswer?.taskId ? tasks.findIndex(item => item.id === lastAnswer.taskId) : -1;
+    const historyAt = typeof lastAnswer?.createdAt === 'number' ? lastAnswer.createdAt : Date.parse(lastAnswer?.createdAt);
+    const terminalAt = latest?.trace?.terminalAt;
+    const unfinished = item => ['failed', 'cancelled', 'indeterminate'].includes(item?.status);
+    const latestPartial = unfinished(latest) && !latest.eventsExpired && (!lastAnswer || receiptIndex > 0
+      || (receiptIndex < 0 && Number.isFinite(historyAt) && Number.isFinite(terminalAt) && terminalAt > historyAt)) ? latest : null;
     const candidates = tasks.filter(item => {
+      if (unfinished(item) && item !== latestPartial && !item.eventsExpired) {
+        state.completedTasks.add(item.id);
+        taskStore.forget(item.id);
+        return false;
+      }
       if (item.status === 'succeeded' && !item.eventsExpired && messages.some(message => message.role === 'assistant'
         && message.taskId === item.id && message.complete !== false && !message.interrupted && message.content?.trim())) {
         state.completedTasks.add(item.id);
@@ -1182,6 +1198,7 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
     });
     const task = candidates.find(item => item.status === 'running')
       || candidates.find(item => !isTerminalTask(item))
+      || latestPartial
       || candidates.find(item => records.some(record => record.id === item.id
         || record.requestId === (item.requestId || item.clientRequestId)));
     if (task) {
@@ -1279,6 +1296,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     }
     beginTurn(view.task);
     Object.assign(lifecycleTiming, taskLifecycleTiming(view.task, lifecycleTiming));
+    if (view.text) lifecycleTiming.phase = 'generating';
     renderAnswerLifecycle(lifecycle, elapsedLifecycleTiming(lifecycleTiming));
     if (state.activeWebRequest) setWebRequestState(view.task.status === 'running' ? 'searching' : 'idle');
     if (view.task.status === 'queued' && !view.text && !view.process.length && !view.done) {
@@ -1294,7 +1312,6 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     const copy = answerCopies.get(reply);
     if (copy) { copy.text = view.text; copy.sources = view.sources; }
     if (view.text) {
-      lifecycleTiming.phase = 'generating';
       status(t('taskGenerating'));
     }
     if (state.followLatest) scrollBottom();
