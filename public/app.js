@@ -1378,9 +1378,9 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       if (task.sourceIntent === 'web') setWebRequestState('idle');
     }
     await loadConversations();
-  } catch {
+  } catch (error) {
     if (!current()) return;
-    status(t('taskUnavailable'), true);
+    status(error.code === 'submission_rejected' ? userError(error) : t('taskUnavailable'), true);
     if (reply) {
       content.classList.remove('typing');
       processView?.settle('interrupted');

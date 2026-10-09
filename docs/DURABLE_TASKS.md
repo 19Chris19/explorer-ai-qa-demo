@@ -44,7 +44,11 @@ Provider 是任务/终态/正文的唯一执行依据。网站私有 task-watch.
   written just before a process crash may remain unresolved even if no POST left
   the process; this deliberately favors non-duplication over automatic retry.
 - Definitive 4xx submit rejection releases the direct lane and retains a rejection
-  receipt. Terminal routing receipts also remain private to prevent replay after
+  receipt. RequestId-filtered GET returns an owner/conversation-scoped rejection
+  receipt with only requestId, conversationId, status and rejectionStatus. Browser
+  response-loss and refresh recovery clear the identity only on this definitive
+  receipt, never on an empty Provider lookup. Terminal routing receipts remain
+  private to prevent replay after
   restart. Do not remove unresolved records to make a request runnable again.
 - The watch store admits at most 20,000 records. A new `/tasks` or `/queue`
   submission at capacity returns HTTP 429 `task_storage_full` before any Provider

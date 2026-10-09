@@ -399,6 +399,12 @@ async function taskRoute(req, res, pathname, params) {
     const requestId = params.get('requestId');
     if (requestId) {
       if (!validRequestId(requestId)) { sendJson(res, 400, { error: 'Invalid request id' }); return; }
+      const receipt = taskWatchStore.findRequest(clientId, requestId);
+      if (receipt?.status === 'rejected' && (!conversationId || receipt.conversationId === conversationId)) {
+        sendJson(res, 200, { tasks: [], receipt: { requestId, conversationId: receipt.conversationId,
+          status: 'rejected', rejectionStatus: receipt.rejectionStatus } });
+        return;
+      }
       query.set('requestKey', requestKey(clientId, requestId));
     }
     route += '?' + query;

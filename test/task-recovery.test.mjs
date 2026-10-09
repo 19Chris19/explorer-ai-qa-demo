@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { setTimeout as delay } from 'node:timers/promises';
 import { TASK_WATCH_MAX_RECORDS } from '../task-watch-store.mjs';
+import { createTaskClient, createTaskStore } from '../public/task-stream.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 async function until(check) {
@@ -95,7 +96,7 @@ async function fixture(t, { watchRows } = {}) {
     return (await response.json()).conversation.conversationId;
   };
   const input = async () => ({ conversationId: await conversation(), question: 'synthetic question', requestId: randomUUID() });
-  const request = (route, method = 'GET', body) => fetch(base + '/api/qa/' + route, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const request = (route, method = 'GET', body, overrideHeaders) => fetch(base + '/api/qa/' + route, { method, headers: overrideHeaders || headers, ...(body ? { body: JSON.stringify(body) } : {}) });
   const rows = file => { try { return JSON.parse(readFileSync(join(runtime, file), 'utf8')); } catch { return []; } };
   return { state, stop, start, input, request, rows };
 }
@@ -242,4 +243,39 @@ test('full receipt store rejects both admission routes before any Provider POST'
   assert.equal(f.state.posts, 0);
   assert.equal(f.rows('task-watch.json').length, TASK_WATCH_MAX_RECORDS);
   assert.equal(f.rows('queued-turns.json').length, 0);
+});
+
+test('lost definitive rejection is recovered by requestId GET after BFF restart without repost', async t => {
+  const f = await fixture(t); const input = await f.input();
+  f.state.postMode = 'reject';
+  const store = createTaskStore();
+  let discard = true;
+  const client = createTaskClient({ store, fetch: async (url, options = {}) => {
+    const response = await f.request(url.replace('/api/qa/', ''), options.method, options.body && JSON.parse(options.body));
+    if (options.method === 'POST' && discard) { discard = false; await response.body.cancel(); throw Error('synthetic lost rejection'); }
+    return response;
+  } });
+  await assert.rejects(client.submit(input), error => error.code === 'submission_rejected' && error.status === 429);
+  assert.deepEqual(store.list(), []);
+  await f.stop(); await f.start();
+  const response = await f.request(`tasks?requestId=${input.requestId}&conversationId=${input.conversationId}`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { tasks: [], receipt: {
+    requestId: input.requestId, conversationId: input.conversationId, status: 'rejected', rejectionStatus: 429,
+  } });
+  assert.equal(f.state.posts, 1);
+});
+
+test('rejected receipts are scoped to the owner and optional conversation filter', async t => {
+  const f = await fixture(t); const input = await f.input(); const other = await f.input();
+  f.state.postMode = 'reject';
+  assert.equal((await f.request('tasks', 'POST', input)).status, 429);
+  for (const response of [
+    await f.request(`tasks?requestId=${input.requestId}&conversationId=${other.conversationId}`),
+    await f.request(`tasks?requestId=${input.requestId}`, 'GET', null, {}),
+  ]) {
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { tasks: [] });
+  }
+  assert.equal(f.state.posts, 1);
 });

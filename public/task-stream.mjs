@@ -119,6 +119,12 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
   async function lookup(record, signal) {
     const data = await json(`${endpoint()}?requestId=${encodeURIComponent(record.requestId)}&conversationId=${encodeURIComponent(record.conversationId)}`, { signal });
     if (!Array.isArray(data.tasks)) throw fault('invalid_task_list');
+    if (data.receipt?.status === 'rejected') {
+      if (data.receipt.requestId !== record.requestId || data.receipt.conversationId !== record.conversationId
+          || ![400, 403, 404, 409, 410, 422, 429].includes(data.receipt.rejectionStatus)) throw fault('invalid_receipt');
+      store?.forget(record.requestId);
+      throw fault('submission_rejected', data.receipt.rejectionStatus);
+    }
     const task = data.tasks.find(item => item.conversationId === record.conversationId
       && (item.requestId || item.clientRequestId) === record.requestId)
       || (data.tasks.length === 1 && data.tasks[0].conversationId === record.conversationId
@@ -141,7 +147,8 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
         store?.forget(input.requestId);
         throw error;
       }
-      try { const task = await lookup(record); if (task) return { task }; } catch { /* Keep the unresolved request identity. */ }
+      try { const task = await lookup(record); if (task) return { task }; }
+      catch (error) { if (error.code === 'submission_rejected') throw error; /* Keep the unresolved request identity. */ }
       throw fault('submission_unknown');
     }
   }
@@ -149,7 +156,7 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
     let attempts = 0;
     while (!signal.aborted) {
       try { const task = await lookup(record, signal); if (task) return task; }
-      catch (error) { if ([401, 403, 404].includes(error.status)) throw error; }
+      catch (error) { if (error.code === 'submission_rejected' || [401, 403, 404].includes(error.status)) throw error; }
       onConnection('confirming');
       await delay(Math.min(1000 * 2 ** Math.min(attempts++, 4), 15000), signal);
     }

@@ -129,6 +129,19 @@ test('unresolved POST survives refresh and resolves only through reads', async (
   assert.equal(posts, 1);
 });
 
+test('foreign or malformed rejection receipts cannot clear an unresolved identity', async () => {
+  for (const receipt of [
+    { requestId: 'synthetic-other', conversationId: task.conversationId, status: 'rejected', rejectionStatus: 429 },
+    { requestId: task.requestId, conversationId: 'synthetic-other', status: 'rejected', rejectionStatus: 429 },
+    { requestId: task.requestId, conversationId: task.conversationId, status: 'rejected', rejectionStatus: 503 },
+  ]) {
+    const store = createTaskStore(); store.remember(task);
+    const client = createTaskClient({ store, fetch: async () => json({ tasks: [], receipt }) });
+    await assert.rejects(client.lookup(task), /invalid_receipt/);
+    assert.equal(store.list().length, 1);
+  }
+});
+
 test('definitive POST 409 conflicts reject without looking up or adopting the original task', async () => {
   for (const queue of [false, true]) {
     const calls = [];
