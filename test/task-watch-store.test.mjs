@@ -20,6 +20,25 @@ test('task watch metadata survives restart without question or answer data', t =
   reload.delete(row.id); assert.equal(new TaskWatchStore(file).rows.size, 0);
 });
 
+test('receipt capacity rejects growth without evicting active, ambiguous or terminal records', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'synthetic-task-watch-cap-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'watches.json');
+  const store = new TaskWatchStore(file, { maxRecords: 3 });
+  const base = { clientId: 'synthetic-owner', conversationId: 'synthetic-conversation', preview: false };
+  for (const status of ['unconfirmed', 'running', 'rejected']) store.set({ ...base, id: status, status });
+  assert.equal(store.hasRoom(), false);
+  assert.throws(() => store.set({ ...base, id: 'extra', status: 'queued' }), /task_storage_full/);
+  store.set({ ...store.rows.get('running'), cancelRequested: true });
+  const restored = new TaskWatchStore(file, { maxRecords: 2 });
+  assert.equal(restored.rows.size, 3);
+  assert.equal(restored.hasRoom(), false);
+  assert.equal(restored.rows.get('running').cancelRequested, true);
+  restored.set({ ...restored.rows.get('running'), status: 'cancelled' });
+  assert.deepEqual([...restored.rows.keys()], ['unconfirmed', 'running', 'rejected']);
+  assert.throws(() => restored.set({ ...base, id: 'extra', status: 'queued' }), /task_storage_full/);
+});
+
 test('accepted queued task reattaches to the same id after restart, even after pending TTL', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'synthetic-queue-resume-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

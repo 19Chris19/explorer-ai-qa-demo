@@ -42,6 +42,17 @@ Active cancellation now returns 202 pending unless a Provider terminal is confir
 clients must keep observing the original task instead of treating DELETE acceptance
 as a terminal execution result.
 
+## Final Operational Follow-Up
+User requested a bounded receipt store, without additional features. Add a fixed
+20,000-record admission cap; reject new task/queue work before POST, recheck at
+queued dispatch, and keep updates/recovery available for existing records. Load
+older over-cap stores without discarding anything, but prohibit further growth.
+No eviction, live configuration, or UI changes. Two regressions cover persistent
+capacity/update behavior and both HTTP admission paths with zero Provider POSTs.
+Verification: focused recovery/store suite 10/10; full suite 230 tests (228 pass,
+2 existing skips, 0 failures); build and diff checks pass. Root governance again
+reports 0 failures and the same 3 existing warnings. Standalone checker absent.
+
 ## Rollback
 Revert the implementation commit only after draining work. Preserve recovery files;
 older code must not be allowed to resubmit unresolved intents.

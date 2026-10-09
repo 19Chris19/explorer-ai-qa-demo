@@ -4,12 +4,13 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { setTimeout as delay } from 'node:timers/promises';
+import { TASK_WATCH_MAX_RECORDS } from '../task-watch-store.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 async function until(check) {
@@ -17,7 +18,7 @@ async function until(check) {
   assert.fail('synthetic condition did not settle');
 }
 
-async function fixture(t) {
+async function fixture(t, { watchRows } = {}) {
   const state = { postMode: 'ok', lookupMode: 'ok', deleteMode: 'ok', snapshotMode: 'ok', eventsMode: 'hang', status: 'queued', posts: 0, deletes: 0, snapshots: 0, tasks: new Map(), held: [] };
   const upstream = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://synthetic');
@@ -71,6 +72,7 @@ async function fixture(t) {
   const free = createServer(); free.listen(0, '127.0.0.1'); await once(free, 'listening');
   const port = free.address().port; await new Promise(resolve => free.close(resolve));
   const runtime = mkdtempSync(join(tmpdir(), 'task-recovery-'));
+  if (watchRows) writeFileSync(join(runtime, 'task-watch.json'), JSON.stringify(watchRows), { mode: 0o600 });
   const base = `http://127.0.0.1:${port}`;
   let child, headers;
   const stop = async () => { if (child) { const exit = once(child, 'exit'); child.kill('SIGKILL'); await exit; child = null; } };
@@ -197,4 +199,20 @@ test('definitive direct rejection releases its lane and retains a non-replay rec
   assert.equal((await f.request('queue', 'POST', next)).status, 202);
   await until(() => f.state.posts === 2);
   await until(() => f.rows('queued-turns.json').length === 0);
+});
+
+test('full receipt store rejects both admission routes before any Provider POST', async t => {
+  const watchRows = Array.from({ length: TASK_WATCH_MAX_RECORDS }, (_, n) => ({
+    id: `synthetic-${n}`, clientId: 'synthetic-owner', conversationId: 'synthetic-conversation', status: 'rejected', preview: false,
+  }));
+  const f = await fixture(t, { watchRows });
+  const input = await f.input();
+  for (const route of ['tasks', 'queue']) {
+    const response = await f.request(route, 'POST', input);
+    assert.equal(response.status, 429);
+    assert.equal((await response.json()).code, 'task_storage_full');
+  }
+  assert.equal(f.state.posts, 0);
+  assert.equal(f.rows('task-watch.json').length, TASK_WATCH_MAX_RECORDS);
+  assert.equal(f.rows('queued-turns.json').length, 0);
 });

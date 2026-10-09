@@ -350,6 +350,7 @@ async function taskRoute(req, res, pathname, params) {
       return;
     }
     if (turnQueue.findRequest(clientId, input.requestId)) { sendJson(res, 409, { error: '原请求已在待发队列中。', code: 'task_request_conflict' }); return; }
+    if (!taskWatchStore.hasRoom()) { sendJson(res, 429, { error: '任务记录已满，问题尚未接收。', code: 'task_storage_full' }); return; }
     const visitor = previewVisitor(req);
     if (visitor && !previewAdmission.hasRoom(pendingPublicCount())) { sendJson(res, 429, { error: '待发队列已满，问题尚未接收。', code: 'queue_full' }); return; }
     if (visitor && !previewAdmission.admit(visitor, input.requestId)) { sendJson(res, 429, { error: '提交过于频繁，问题尚未接收。', code: 'submission_rate_limited' }); return; }
@@ -513,6 +514,9 @@ async function queueRoute(req, res, pathname) {
   if (!repeated && taskWatchStore.findRequest(clientId, input.requestId)) {
     sendJson(res, 409, { error: '原请求已被接收，请查询原任务。', code: 'task_request_conflict' }); return;
   }
+  if (!repeated && !taskWatchStore.hasRoom()) {
+    sendJson(res, 429, { error: '任务记录已满，问题尚未接收。', code: 'task_storage_full' }); return;
+  }
   if (visitor && !repeated && !previewAdmission.hasRoom(pendingPublicCount())) {
     sendJson(res, 429, { error: '公开预览待发问题已满，请稍后再试。' }); return;
   }
@@ -547,6 +551,7 @@ async function dispatchQueuedTurn(job, emit, signal) {
     if (job.sourceIntent === 'web' && !await supportsWebIntent()) throw new Error('web_intent_unavailable');
     // No asynchronous gap between this check, durable intent, and dispatch.
     signal.throwIfAborted();
+    if (!taskWatchStore.hasRoom()) throw new Error('task_storage_full');
     turnQueue.markSubmitting(job);
     row = submissionIntent(job.clientId, job, job.preview, job.id);
     await postTaskOnce(row, job);

@@ -2,10 +2,14 @@ import { mkdirSync, openSync, closeSync, fsyncSync, readFileSync, writeFileSync,
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+export const TASK_WATCH_MAX_RECORDS = 20000;
+
 // Only routing metadata is retained here; Provider owns answers and task execution.
 export class TaskWatchStore {
-  constructor(file) {
+  constructor(file, { maxRecords = TASK_WATCH_MAX_RECORDS } = {}) {
+    if (!Number.isSafeInteger(maxRecords) || maxRecords < 1) throw new Error('invalid_task_watch_limit');
     this.file = file;
+    this.maxRecords = maxRecords;
     let rows;
     try { rows = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; rows = []; }
     if (!Array.isArray(rows) || rows.some(row => !row || !['id', 'clientId', 'conversationId', 'status'].every(key => typeof row[key] === 'string')
@@ -25,7 +29,13 @@ export class TaskWatchStore {
     try { renameSync(temporary, this.file); const dir = openSync(dirname(this.file), 'r'); try { fsyncSync(dir); } finally { closeSync(dir); } }
     finally { rmSync(temporary, { force: true }); }
   }
-  set(row) { const old = this.rows.get(row.id); this.rows.set(row.id, row); try { this.save(); } catch (error) { if (old) this.rows.set(row.id, old); else this.rows.delete(row.id); throw error; } }
+  hasRoom() { return this.rows.size < this.maxRecords; }
+  set(row) {
+    const old = this.rows.get(row.id);
+    if (!old && !this.hasRoom()) throw new Error('task_storage_full');
+    this.rows.set(row.id, row);
+    try { this.save(); } catch (error) { if (old) this.rows.set(row.id, old); else this.rows.delete(row.id); throw error; }
+  }
   delete(id) { const old = this.rows.get(id); if (!old) return; this.rows.delete(id); try { this.save(); } catch (error) { this.rows.set(id, old); throw error; } }
   findRequest(clientId, requestId) { return [...this.rows.values()].find(row => row.clientId === clientId && row.requestId === requestId); }
   findTask(clientId, taskId) { return [...this.rows.values()].find(row => row.clientId === clientId && (row.taskId || row.id) === taskId); }
