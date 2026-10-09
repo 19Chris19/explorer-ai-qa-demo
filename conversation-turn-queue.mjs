@@ -9,7 +9,7 @@ const maxBufferedBytes = 2 * 1024 * 1024;
 
 const ownerOf = clientId => createHash('sha256').update(clientId).digest('hex');
 const laneOf = (owner, conversationId) => `${owner}:${conversationId}`;
-const snapshot = job => ({ id: job.id, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt, ...(job.taskId ? { taskId: job.taskId } : {}) });
+const snapshot = job => ({ id: job.id, requestId: job.requestId, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt, ...(job.taskId ? { taskId: job.taskId } : {}) });
 const statusEvent = (status, job) => `event: queue.status\ndata: ${JSON.stringify({ status, ...(status === 'running' ? { question: job.question, ...(job.taskId ? { taskId: job.taskId } : {}) } : {}) })}\n\n`;
 
 function validatePreservedRows(rows) {

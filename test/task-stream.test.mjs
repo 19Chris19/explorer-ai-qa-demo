@@ -142,6 +142,22 @@ test('foreign or malformed rejection receipts cannot clear an unresolved identit
   }
 });
 
+test('foreign queue or cancellation receipts cannot link or clear another request', async () => {
+  const record = { requestId: task.requestId, conversationId: task.conversationId, queue: true };
+  for (const data of [
+    { receipt: { ...record, requestId: 'synthetic-other', status: 'cancelled' } },
+    { receipt: { ...record, conversationId: 'synthetic-other', status: 'cancelled' } },
+    { job: { ...record, id: 'synthetic-job', requestId: 'synthetic-other', status: 'paused' } },
+    { job: { ...record, id: 'synthetic-job', conversationId: 'synthetic-other', status: 'queued' } },
+    { job: { ...record, id: 'synthetic-job', status: 'cancelled' } },
+  ]) {
+    const store = createTaskStore(); store.remember(record);
+    const client = createTaskClient({ store, fetch: async () => json({ tasks: [], ...data }) });
+    await assert.rejects(client.lookup(record), /invalid_receipt/);
+    assert.deepEqual(store.list(), [record]);
+  }
+});
+
 test('definitive POST 409 conflicts reject without looking up or adopting the original task', async () => {
   for (const queue of [false, true]) {
     const calls = [];

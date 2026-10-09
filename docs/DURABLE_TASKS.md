@@ -63,6 +63,15 @@ Provider 是任务/终态/正文的唯一执行依据。网站私有 task-watch.
   terminal result. Cancellation intent survives restart and retries DELETE/GET.
   HTTP 200 `{task}` means Provider confirmed terminal, which may be success if
   completion won the race. It is not proof that IMA stopped remote generation.
+- Queue snapshots include requestId. RequestId-filtered GET can return
+  `{tasks: [], job}` while a local draft is queued, paused or awaiting its task
+  receipt. Browser recovery associates jobId without saving question content;
+  paused drafts remain editable/deletable after a lost acceptance response.
+  Explicit deletion before submission persists a cancelled routing receipt
+  before removing the draft. Startup applies that receipt to any stale draft;
+  GET returns only requestId, conversationId and status=cancelled. Response-loss
+  and refresh recovery clear the matching queue identity without POST or DELETE.
+  Submitted-task cancellation still waits for Provider terminal confirmation.
 - Stream/JSON/snapshot/lookup failures do not terminalize execution. An `error`
   frame is forwarded once; `task.status` or the task snapshot determines failed,
   cancelled or indeterminate. Retained matching history receipts still establish

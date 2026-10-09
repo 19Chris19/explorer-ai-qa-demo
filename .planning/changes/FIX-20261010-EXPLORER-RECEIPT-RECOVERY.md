@@ -43,6 +43,13 @@ recovery by requestId, and safe preview HTTP 422 semantics before parent review.
   0 failures / 3 existing warnings.
 - No runtime or release verification is claimed; parent owns integration, builds
   and rollout.
+- Queue red-first: 3/3 new acceptance/pause/delete/refresh regressions failed.
+  After implementation 3/3 passed and the expanded related suite passed 64/64.
+- Additional crash-window test failed with a resurrected paused draft; startup
+  reconciliation now applies persisted local cancellation before queue recovery.
+  Expanded queue regression suite passed 67/67; final delayed rejection,
+  no-replay and crash-window checks passed 3/3. Whitespace clean; external root
+  governance 0 failures / 3 existing warnings.
 
 ## Rollout And Rollback
 
