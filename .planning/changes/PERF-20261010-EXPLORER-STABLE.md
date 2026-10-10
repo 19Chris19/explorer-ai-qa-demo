@@ -2,7 +2,7 @@
 
 ## Goal
 Measure initial load, idle work and streamed Markdown; fix demonstrated overhead
-before publishing website v0.3.0 paired with Provider v0.5.0 as stable defaults.
+before publishing website v0.3.0 paired with Provider v0.5.1 as stable defaults.
 Preserve the RC tags, existing data and runtime services. No real IMA probes.
 
 ## Scope

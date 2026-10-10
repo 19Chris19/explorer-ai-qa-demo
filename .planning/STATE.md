@@ -3,7 +3,7 @@
 ## Stable publication preparation, 2026-10-10
 
 Branch codex/PERF-20261010-EXPLORER-STABLE targets v0.3.0 paired with Provider
-v0.5.0. New stable tags retain the original RC tags. Local full suite: 284 pass,
+v0.5.1 (final guide-consistency patch; preparation v0.5.0 tag retained). New stable tags retain the original RC tags. Local full suite: 284 pass,
 2 optional skip, 0 fail; static gzip/revalidation and frame-coalesced painting
 are scoped optimizations. Resource/browser evidence and limits are recorded in
 docs/FRONTEND_PERFORMANCE_20261010.md. CI, native multiarch images and attached
