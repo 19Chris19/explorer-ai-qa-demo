@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { failure, validResponseType } from './failure.mjs';
 
 export const maxDuration = 300;
 
@@ -8,6 +9,7 @@ const assets = new Set(['', 'styles.css', 'chat.css', 'icons.svg', 'brand-orbit.
   'composer-shape.mjs', 'composer-controls.mjs',
   'answer-copy.mjs',
   'selection-copy.mjs',
+  'task-stream.mjs',
   'host-bridge.mjs',
   'main-shell.css', 'site/logo.png', 'site/dm-sans-latin.woff2',
   ...['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line'].map(icon => `site/${icon}.svg`),
@@ -20,6 +22,9 @@ function allowed(path, method) {
   if (path === 'api/qa/archive/conversations' || /^api\/qa\/archive\/conversations\/archive(?::|%3A)[a-zA-Z0-9-]{1,100}$/iu.test(path)) return method === 'GET';
   if (/^api\/qa\/conversations\/[a-zA-Z0-9-]+$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === 'api/qa/ask') return method === 'POST';
+  if (path === 'api/qa/tasks') return ['GET', 'POST'].includes(method);
+  if (/^api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}\/events$/u.test(path)) return method === 'GET';
+  if (/^api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}$/u.test(path)) return ['GET', 'DELETE'].includes(method);
   if (path === 'api/qa/queue') return ['GET', 'POST'].includes(method);
   if (/^api\/qa\/queue\/[a-f0-9-]{36}\/events$/iu.test(path)) return method === 'GET';
   if (/^api\/qa\/queue\/[a-f0-9-]{36}$/iu.test(path)) return ['GET', 'PATCH', 'DELETE'].includes(method);
@@ -29,20 +34,20 @@ function allowed(path, method) {
 export async function proxy(request) {
   const key = process.env.PREVIEW_ORIGIN_KEY || '';
   const rawOrigin = process.env.PREVIEW_ORIGIN_URL || '';
-  if (key.length < 32) return new Response('Preview unavailable', { status: 503 });
+  if (key.length < 32) return failure(request);
   let origin;
   try { origin = new URL(rawOrigin); }
-  catch { return new Response('Preview unavailable', { status: 503 }); }
-  if (origin.protocol !== 'https:' || origin.pathname !== '/' || origin.search || origin.hash) {
-    return new Response('Preview unavailable', { status: 503 });
+  catch { return failure(request); }
+  if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) {
+    return failure(request);
   }
   const incoming = new URL(request.url);
   const path = incoming.searchParams.get('path');
   if (path === null || path.startsWith('/') || path.includes('\\') || path.includes('..') || !allowed(path, request.method)) {
-    return new Response('Not found', { status: 404 });
+    return failure(request, 404);
   }
   if (!['GET', 'HEAD'].includes(request.method) && request.headers.get('origin') !== incoming.origin) {
-    return new Response('Invalid request origin', { status: 403 });
+    return failure(request, 403);
   }
   incoming.searchParams.delete('path');
   const target = new URL(`/${path}${incoming.search}`, origin);
@@ -66,14 +71,23 @@ export async function proxy(request) {
       redirect: 'manual',
       cache: 'no-store',
     });
+    const contentType = upstream.headers.get('content-type');
+    const invalidUpstream = upstream.headers.has('ngrok-error-code') || !validResponseType(path, contentType);
+    if (!upstream.ok || invalidUpstream) {
+      // Only allowlisted JSON API errors may carry safe task machine semantics.
+      const apiJsonError = !invalidUpstream && path.startsWith('api/')
+        && (contentType || '').split(';')[0].trim().toLowerCase() === 'application/json';
+      await upstream.body?.cancel();
+      return failure(request, invalidUpstream ? 503 : upstream.status, upstream.headers.get('retry-after'), { apiJsonError });
+    }
     const responseHeaders = new Headers({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' });
     for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
-    return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+    return new Response(request.method === 'HEAD' ? null : upstream.body, { status: upstream.status, headers: responseHeaders });
   } catch {
-    return new Response('Air preview is temporarily unavailable', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    return failure(request);
   }
 }
 

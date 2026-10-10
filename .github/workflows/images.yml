@@ -41,7 +41,7 @@ jobs:
           IS_PRIVATE: ${{ github.event.repository.private }}
         run: |
           test "$IS_PRIVATE" = true
-          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          node --input-type=module -e 'import {releaseVersionValid} from "./deploy/bundle.mjs"; if(!process.env.VERSION.startsWith("v") || !releaseVersionValid(process.env.VERSION.slice(1))) throw Error("invalid_release_tag")'
           test "$VERSION" = "v$(node -p 'require("./package.json").version')"
           git merge-base --is-ancestor HEAD origin/main
           test "$(git rev-parse HEAD)" = "$(git rev-parse "$VERSION^{commit}")"

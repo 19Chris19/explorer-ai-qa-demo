@@ -25,7 +25,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
   const fetchMock = async (url, options = {}) => {
     requests.push(url);
     if (options.method === 'POST') submissions.push({ url, body: options.body });
-    if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, capacity: 1, webIntentSupported: true });
+    if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, durableTasksSupported: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(questions);
     if (url === '/api/qa/archive/conversations') {
       if (archiveUnavailable) throw new Error('Synthetic archive unavailable');
@@ -45,7 +45,8 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
       { role: 'assistant', content: '合成回答', process: [{ kind: 'status', text: '合成检索进度' }], timing: { elapsed_ms: 1200, queue_wait_ms: 400 } },
     ] });
     if (url.startsWith('/api/qa/queue?')) return json({ queue: [] });
-    if (url === '/api/qa/ask') return { ok: false, json: async () => ({ error: '合成接入失败' }) };
+    if (url.startsWith('/api/qa/tasks?')) return json({ tasks: [] });
+    if (url === '/api/qa/tasks') return { ok: false, status: 400, json: async () => ({ error: '合成接入失败' }) };
     throw new Error(`Unexpected request: ${url}`);
   };
   const globals = ['window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'fetch'];
@@ -63,6 +64,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     copyFileSync(join(root, 'public/answer-copy.mjs'), join(moduleDir, 'answer-copy.mjs'));
     copyFileSync(join(root, 'public/selection-copy.mjs'), join(moduleDir, 'selection-copy.mjs'));
     copyFileSync(join(root, 'public/host-bridge.mjs'), join(moduleDir, 'host-bridge.mjs'));
+    copyFileSync(join(root, 'public/task-stream.mjs'), join(moduleDir, 'task-stream.mjs'));
     Object.assign(globalThis, {
       window, document: window.document, localStorage: window.localStorage, sessionStorage: window.sessionStorage,
       ResizeObserver: class { observe() {} disconnect() {} },
@@ -136,9 +138,10 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     draft.value = '连接失败也保留这条合成草稿';
     draft.dispatchEvent(new window.Event('input', { bubbles: true }));
     window.document.querySelector('#askForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await until(() => window.document.querySelector('.message-error'));
+    await until(() => window.document.querySelector('#requestStatus').textContent.includes('服务暂时'));
     assert.equal(draft.value, '连接失败也保留这条合成草稿');
-    assert.equal(requests.filter(url => url === '/api/qa/ask').length, 1);
+    assert.equal(requests.filter(url => url === '/api/qa/tasks').length, 1);
+    assert.equal(requests.filter(url => url === '/api/qa/ask').length, 0);
 
     const archived = [...window.document.querySelectorAll('.conversation-open')].find(button => button.textContent.includes('合成迁移历史'));
     assert.equal(window.document.querySelector('.conversation-open').textContent, '有消息的会话');
@@ -156,12 +159,12 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     assert.equal(requests.some(url => url.includes('/conversations/archive') && !url.includes('/archive/conversations/')), false);
     draft.value = '合成归档后的新问题'; draft.dispatchEvent(new window.Event('input', { bubbles: true }));
     window.document.querySelector('#askForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await until(() => submissions.filter(item => item.url === '/api/qa/ask').length === 2);
+    await until(() => submissions.filter(item => item.url === '/api/qa/tasks').length === 2);
     assert.equal(JSON.parse(submissions.at(-1).body).conversationId, 'synthetic-fresh');
     assert.equal(submissions.at(-2).url, '/api/qa/conversations');
     assert.equal(submissions.some(item => item.body?.includes('archive:')), false);
-    assert.equal(window.document.querySelector('.chat-thread').textContent.includes('合成归档回答'), false);
-    await until(() => window.document.querySelector('.message-error'));
+    assert.equal(Boolean(window.document.querySelector('.chat-thread')?.textContent.includes('合成归档回答')), false);
+    await until(() => window.document.querySelector('#requestStatus').textContent.includes('服务暂时'));
     archiveUnavailable = true;
     [...window.document.querySelectorAll('.conversation-open')].find(button => button.textContent === '空会话').click();
     await until(() => window.document.querySelector('#conversationList').textContent.includes('部分历史记录加载失败'));

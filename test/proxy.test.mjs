@@ -74,7 +74,9 @@ test('server keeps Provider A credentials private and streams two turns under on
     }
     const health = await (await fetch(`http://127.0.0.1:${frontendPort}/api/qa/health`)).json();
     assert.equal(health.connected, true);
-    assert.equal(health.ready, true);
+    // This fixture intentionally serves only the legacy keyed-SSE API.
+    assert.equal(health.ready, false);
+    assert.equal(health.durableTasksSupported, false);
     assert.equal(health.contractSupported, true);
     assert.equal(health.capacity, 2);
     assert.equal(health.webIntentSupported, true);
@@ -164,10 +166,10 @@ test('server keeps Provider A credentials private and streams two turns under on
       method: 'POST', headers: previewHeaders,
       body: JSON.stringify({ question: '另一会话同步问', conversationId: 'demo-3', requestId: randomUUID() }),
     });
-    assert.equal(simultaneous.status, 429);
-    assert.match((await simultaneous.json()).error, /正在回答/u);
+    assert.equal(simultaneous.status, 200);
+    assert.match(await simultaneous.text(), /event: done/u);
     assert.match(await slow.text(), /event: done/u);
-    assert.equal(providerAsks.filter(item => item.question === '另一会话同步问').length, 0);
+    assert.equal(providerAsks.filter(item => item.question === '另一会话同步问').length, 1);
   } finally {
     child.kill(); fake.close(); rmSync(runtimeDir, { recursive: true, force: true });
   }

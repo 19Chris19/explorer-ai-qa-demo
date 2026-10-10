@@ -1,0 +1,40 @@
+# Durable paired website release preparation
+
+User requests two GitHub repositories, Air services and public online preview
+to receive the verified long-answer/reconnect changes through the two project
+release skills. Independent installation must retain its own data/Provider.
+
+The deployment bundle and image workflow now accept strict numbered RC tags.
+Stable website bundles cannot depend on prerelease Provider tags. A manifest
+declares stable/prerelease channel and exact paired image evidence; it never
+claims real IMA success from image startup. Node and Shell parser tests cover
+fixed pairs, executable/floating versions and invalid prerelease numbers.
+
+Recommended gray pair: website v0.3.0-rc.1 with Provider v0.5.0-rc.1. Version
+selection, image acceptance, PR CI, Vercel preview and reviewed local skill
+drift are checked before traffic switching. Provider and website are distinct
+release owners. This record is preparation, not proof of publication.
+
+Preserve private configuration, signing secrets, visitor data and pending work.
+Use immutable website artifacts for 4317/4318 and a fixed image for Docker;
+one writer per runtime. Do not restart the bot or dormant legacy Provider.
+The public proxy merge is a release action. Rollback is compatible code only,
+after draining; never overwrite new histories with a backup.
+
+Review also found the legacy Docker CI fixture advertises only keyed SSE, not
+durable tasks. Container CI now pulls the fixed paired published Provider image
+and runs its real task implementation with a synthetic client in the egress-
+blocked Compose network. BFF, Nginx, observer disconnect/replay, exact history,
+explicit cancellation and dispatched-task restart are exercised. No account
+directory or IMA client is constructed. Website CI must wait for its Provider
+tag/image prerequisite; it may not silently substitute an older image.
+
+Final regression initially caught two obsolete test expectations: a hard-coded
+Provider v0.4.2 and the retired legacy CI image. Tests now compare onboarding
+metadata to the reviewed bundle and assert fixed-image selection before Compose.
+The same credential-preservation and override-isolation assertions remain.
+
+Final local tests/build, 241-file release scan, six-minute synthetic chain and
+platform image checks: docs/RELEASE_ACCEPTANCE_20261010.md. Draft PR #8 has green
+tests/build and an unaccepted protected preview. Container CI awaits fixed
+Provider RC image; no merge or live cutover.

@@ -1,5 +1,15 @@
 # 知天下 Agent 部署
 
+## 本分支的任务协议候选
+
+2026-10-10：本分支准备网站 **v0.3.0-rc.1** 与 Provider **v0.5.0-rc.1** 的
+`durable_qa_tasks_v1` 灰度配对。默认安装仍选择稳定 v0.2.1 / v0.4.2 的各自 tag
+与文档；受邀 RC 必须显式选择并先确认两仓预发布和镜像清单已通过。
+本分支命令从 `deploy/bundle.env` 读取 RC 配对，不属于旧稳定版指令。
+检查能力字段；缺失就停止，不能自动降级直连 SSE。
+详见 [任务边界与验收](DURABLE_TASKS.md) 和 [预发布升级](PRERELEASE_UPGRADES.md)。
+部署说明本身不是修改现有 Air 服务或账号的授权。
+
 ## 状态和关系
 
 只读迁移历史与 Air host gateway 为未发布候选功能，见
@@ -9,7 +19,7 @@
 运行版本，本文不声明 3117 已迁移。账号统一前的网站私有入口关闭与排空操作见
 [维护排空](MAINTENANCE_DRAIN.md)，同样仅为候选能力，不自动修改现有安装。
 
-**v0.2.1**依赖已发布的 **Provider A v0.4.2**。网站自身须以正式 Release 和镜像清单为准；没有网站 Release 时不要部署浮动 main。现有网站 v0.2.0 与 Provider v0.4.1 不会自动更新。Agent 在正式部署时必须先查两仓已发布版本和镜像权限。
+**稳定 v0.2.1 / Provider v0.4.2 已发布；本分支固定 v0.3.0-rc.1 / v0.5.0-rc.1。** 两仓须有对应 Release 和镜像清单，不能部署浮动 main。已有安装不会自动更新。Agent 在部署前必须核对实际发布状态、配套版本和镜像权限，明确报告 RC 风险。
 
 ```text
 浏览器 → 同源 Nginx → 知天下 BFF → 私有容器网络 Provider A → IMA
@@ -51,9 +61,9 @@ Windows:
 Shell/PowerShell 包装自动取得固定 Provider tag 的源码，引导器下载用户级 Node 和版本匹配的专用 Chromium。不会改日常浏览器、全局 Node 或已有 Docker 服务；不绕过 Windows 执行策略。Linux server 模式不安装桌面浏览器。
 
 发布模式从公开仓库 `https://github.com/19Chris19/ima-qa-web-agent.git` 的
-`v0.4.2` tag 取得工具，默认镜像为
-`ghcr.io/19chris19/ima-qa-web-agent:v0.4.2` 与
-`ghcr.io/19chris19/explorer-ai-qa-demo:v0.2.1`；不跟随 main/latest。
+`deploy/bundle.env` 的 Provider tag 取得工具；本分支默认镜像为
+`ghcr.io/19chris19/ima-qa-web-agent:v0.5.0-rc.1` 与
+`ghcr.io/19chris19/explorer-ai-qa-demo:v0.3.0-rc.1`；不跟随 main/latest。
 执行缓存工具前核对 origin、tag 对应提交与干净工作树；不匹配时停止，不能删除
 旧安装数据来修复缓存。显式镜像覆盖也必须通过配套版本标签校验，随后记录摘要。
 版本标签是配套检查，不是签名或来源认证，候选源码与镜像仍须人工审查。
@@ -63,8 +73,8 @@ Shell/PowerShell 包装自动取得固定 Provider tag 的源码，引导器下�
 正式安装使用固定 tag 和配套镜像，不需要指定本地候选源码。旧 `deploy.sh init --kb` 是高级兼容入口，**不包含新扫码准备**；新安装走 onboard。
 
 `STATUS=released` 启用固定公开 Provider tag 的来源校验，不代表网站 Release
-已经发布或真实扫码已经验收。两边镜像的版本标签必须分别为 `v0.4.2` 和
-`v0.2.1`；最终安装证据以各自 Release 附件为准。
+已经发布、已稳定或真实扫码已经验收。两边镜像的版本标签必须分别匹配
+`deploy/bundle.env`；最终安装证据以各自 Release 附件为准。
 
 ## 扫码、人机交接
 

@@ -31,13 +31,15 @@ export async function openUi({ fetchImpl, setup, conversationId = '' } = {}) {
     requests.push({ url, options });
     const custom = await fetchImpl?.(url, options, window);
     if (custom) return custom;
-    if (url === '/api/qa/health') return json({ connected: true, configured: true, authenticated: true, contractSupported: true, ready: true, capacity: 1, webIntentSupported: true });
+    if (url === '/api/qa/health') return json({ connected: true, configured: true, authenticated: true, contractSupported: true, durableTasksSupported: true, ready: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(Array.from({ length: 50 }, (_, i) => ({ id: `q${i}`, zh: `合成问题 ${i}`, en: `Synthetic question ${i}` })));
     if (url === '/api/qa/conversations') return json({ conversations: [] });
     if (url.startsWith('/api/qa/queue?')) return json({ queue: [] });
+    if (url.startsWith('/api/qa/tasks?')) return json({ tasks: [] });
     throw new Error(`Unexpected synthetic request: ${url}`);
   };
   const close = () => {
+    window.dispatchEvent(new window.Event('pagehide'));
     dom.window.close();
     for (const [key, descriptor] of saved) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);

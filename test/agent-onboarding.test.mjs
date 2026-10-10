@@ -46,7 +46,7 @@ test('synthetic double-service setup prepares the desktop helper before starting
     assert.ok(!JSON.stringify(events).includes(before.match(/IMA_QA_ADMIN_TOKEN=(.*)/)[1]));
     assert.equal(events.at(-1).realQaVerified, false);
     const metadata = JSON.parse(readFileSync(join(root, '.docker-lab/deployment.json')));
-    assert.equal(metadata.bundle.providerTag, 'v0.4.2');
+    assert.equal(metadata.bundle.providerTag, readBundle().PROVIDER_TAG);
     assert.equal(metadata.bundle.topology, 'dedicated-provider');
     await onboard(root, 'resume', [], deps); assert.equal(readFileSync(file, 'utf8'), before);
     await onboard(root, 'check', [], deps);

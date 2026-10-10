@@ -10,13 +10,13 @@ test('website release selects one Provider version and never a floating latest p
   const bundle = readBundle();
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
   assert.equal(bundle.WEBSITE_VERSION, pkg.version);
-  assert.equal(bundle.PROVIDER_TAG, 'v0.4.2');
+  assert.equal(bundle.PROVIDER_TAG, 'v0.5.0-rc.1');
   assert.throws(() => selectBundleImages({ ...bundle, STATUS: 'candidate' }, {}), /candidate_requires_explicit_images/);
   assert.throws(() => selectBundleImages({ ...bundle, STATUS: 'candidate' }, { PROVIDER_IMAGE: 'synthetic/provider:reviewed' }), /candidate_requires_explicit_images/);
   assert.deepEqual(selectBundleImages(bundle, { PROVIDER_IMAGE: 'synthetic/provider:reviewed', EXPLORER_IMAGE: 'synthetic/website:reviewed' }),
     ['synthetic/provider:reviewed', 'synthetic/website:reviewed']);
   assert.deepEqual(selectBundleImages({ ...bundle, STATUS: 'released' }, {}),
-    ['ghcr.io/19chris19/ima-qa-web-agent:v0.4.2', `ghcr.io/19chris19/explorer-ai-qa-demo:v${pkg.version}`]);
+    [`ghcr.io/19chris19/ima-qa-web-agent:${bundle.PROVIDER_TAG}`, `ghcr.io/19chris19/explorer-ai-qa-demo:v${pkg.version}`]);
 });
 
 test('bundle parsing rejects duplicate fields and executable or floating versions', () => {
@@ -24,8 +24,8 @@ test('bundle parsing rejects duplicate fields and executable or floating version
   const file = join(dir, 'bundle.env');
   const valid = readFileSync(new URL('../deploy/bundle.env', import.meta.url), 'utf8');
   try {
-    for (const content of [valid + 'STATUS=released\n', valid.replace('v0.4.2', 'latest'),
-      valid + 'UNEXPECTED=value\n', valid.replace('v0.4.2', '$(echo bad)')]) {
+    for (const content of [valid + 'STATUS=released\n', valid.replace(readBundle().PROVIDER_TAG, 'latest'),
+      valid + 'UNEXPECTED=value\n', valid.replace(readBundle().PROVIDER_TAG, '$(echo bad)')]) {
       writeFileSync(file, content);
       assert.throws(() => readBundle(file), /invalid_deployment_bundle/);
     }

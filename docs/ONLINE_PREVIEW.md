@@ -4,8 +4,11 @@ This is a public URL to a real shared account pool, not a production hosting
 or access-control service. GitHub repository privacy does not restrict URL
 visitors. Air sleep, network loss, tunnel quota or a stopped process will make
 the preview unavailable. No daily user quota is promised; technical controls
-allow at most one in-flight public ask, eight waiting turns and ten new
-submissions per visitor per minute. A determined unauthenticated visitor can
+retain eight pending public turns and ten new submissions per visitor per
+minute. The durable candidate removes the additional one-execution public gate;
+accepted tasks compete for Provider capacity alongside the bot. These candidate
+changes are not evidence that the currently running preview was upgraded.
+A determined unauthenticated visitor can
 still consume IMA capacity. Do not publish the URL without accepting that risk.
 
 ## Topology
@@ -18,9 +21,13 @@ browser -> Vercel Node function -> fixed HTTPS ngrok domain
 
 Only the gateway key and ngrok address belong in Vercel environment variables.
 Do not put Provider A ordinary, internal or admin tokens there. No Vercel
-external rewrite directly to Air is permitted: the 190-second ask can exceed
-the external proxy duration limit. The Node Function is configured for 300
-seconds and streams the response body without buffering or caching.
+external rewrite directly to Air is permitted. The Node Function is configured
+for 300 seconds; each read-only event subscription rotates at 240 seconds and
+emits a transport heartbeat about every 15 seconds. The Provider task continues
+across rotation or a disconnected viewer. Responses are not buffered or cached.
+The new task path has no 180/190-second total execution cutoff. A lost submit
+response is reconciled by its original request identity, never by reasking IMA.
+See [the durable contract](DURABLE_TASKS.md) and [dated acceptance evidence](DURABLE_TASK_ACCEPTANCE.md).
 
 ## Private setup
 
@@ -44,6 +51,30 @@ seconds and streams the response body without buffering or caching.
    question, answer, source, token or session ID.
 
 ## Revoke and recover
+
+### Visitor-facing failure boundary
+
+The Vercel function replaces non-success upstream responses, redirect responses,
+ngrok error headers and unexpected asset/API content types with controlled
+responses. Page navigation receives a self-contained Chinese recovery page;
+API clients receive a safe JSON message. Vendor HTML, internal hosts and error
+details are not forwarded. Successful SSE remains streaming and unchanged.
+The browser also maps caught request and stream errors to curated messages.
+Question submissions are never automatically repeated. Read-only task queries
+and subscriptions reconnect with bounded backoff; explicit stop uses the
+persisted cancellation intent. An unavailable observation connection is shown
+as reconnecting, not as a completed or failed IMA answer. Visitors can reopen
+the page and resume a known task from recent conversations.
+
+This does not repair tunnel transport or replace browser-generated DNS/TLS errors
+when the request cannot reach Vercel. Do not claim continuous availability.
+
+2026-10-09 investigation: local records near 09:30 and 09:40 Asia/Shanghai showed
+remote EOF, connection reset, reconnect failure and heartbeat timeout. The user
+was actively using the machine. Evidence identifies tunnel transport disruption,
+not an account failure or proof of sleep. It cannot distinguish an intermediate
+network reset from the remote service closing the connection. No raw logs,
+endpoint identifiers, credentials or conversations belong in this repository.
 
 Stop the tunnel first; this immediately disables public access while local
 4317/3117 remain available. Rotate the gateway key in both locations if it is
