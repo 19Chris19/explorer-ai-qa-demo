@@ -1,25 +1,24 @@
 # 知天下 Agent 部署
 
-## 本分支的任务协议候选
+## 当前稳定版本与任务协议
 
-2026-10-10：本分支准备网站 **v0.3.0-rc.1** 与 Provider **v0.5.0-rc.1** 的
-`durable_qa_tasks_v1` 灰度配对。默认安装仍选择稳定 v0.2.1 / v0.4.2 的各自 tag
-与文档；受邀 RC 必须显式选择并先确认两仓预发布和镜像清单已通过。
-本分支命令从 `deploy/bundle.env` 读取 RC 配对，不属于旧稳定版指令。
+2026-10-10：本次稳定发布为网站 **v0.3.0** 与 Provider **v0.5.0** 的
+`durable_qa_tasks_v1` 配对。Agent 先核对 GitHub 非预发布 Release 及附件；若
+尚未发布，停止本次目标安装，不把 main 当作已发布版本。
+本版本命令从 `deploy/bundle.env` 读取稳定配对，旧 RC tag 保留为历史测试版。
 检查能力字段；缺失就停止，不能自动降级直连 SSE。
 详见 [任务边界与验收](DURABLE_TASKS.md) 和 [预发布升级](PRERELEASE_UPGRADES.md)。
 部署说明本身不是修改现有 Air 服务或账号的授权。
 
 ## 状态和关系
 
-只读迁移历史与 Air host gateway 为未发布候选功能，见
-[迁移历史协议](MIGRATION_HISTORY.md)。此功能只用合成数据验收；不要导入运行目录、
-凭证或真实问题。实际导出及运行中 3117 的 additional-Bot 协议审计，须由安装维护者
-在明确授权的维护窗口执行；在审计与批准前不得切换线上服务。候选源码不代表当前
-运行版本，本文不声明 3117 已迁移。账号统一前的网站私有入口关闭与排空操作见
-[维护排空](MAINTENANCE_DRAIN.md)，同样仅为候选能力，不自动修改现有安装。
+只读迁移历史与 Air host gateway 属于已有安装的高级维护能力，见
+[迁移历史协议](MIGRATION_HISTORY.md)，不是新用户独立安装必做步骤。
+实际导出、机器人扩展审计和服务切换须在单独授权的维护窗口执行；不要复制 Air
+账号或运行数据。历史本机迁移记录不等于新部署已迁移或已完成真实问答。
+[维护排空](MAINTENANCE_DRAIN.md)需逐实例配置，不自动修改现有安装。
 
-**稳定 v0.2.1 / Provider v0.4.2 已发布；本分支固定 v0.3.0-rc.1 / v0.5.0-rc.1。** 两仓须有对应 Release 和镜像清单，不能部署浮动 main。已有安装不会自动更新。Agent 在部署前必须核对实际发布状态、配套版本和镜像权限，明确报告 RC 风险。
+**本版本固定 v0.3.0 / Provider v0.5.0。** 两仓须有对应稳定 Release 和镜像清单，不能部署浮动 main。已有安装不会自动更新。Agent 必须核对配套版本、镜像权限及各平台尚未验收项。
 
 ```text
 浏览器 → 同源 Nginx → 知天下 BFF → 私有容器网络 Provider A → IMA
@@ -62,8 +61,8 @@ Shell/PowerShell 包装自动取得固定 Provider tag 的源码，引导器下�
 
 发布模式从公开仓库 `https://github.com/19Chris19/ima-qa-web-agent.git` 的
 `deploy/bundle.env` 的 Provider tag 取得工具；本分支默认镜像为
-`ghcr.io/19chris19/ima-qa-web-agent:v0.5.0-rc.1` 与
-`ghcr.io/19chris19/explorer-ai-qa-demo:v0.3.0-rc.1`；不跟随 main/latest。
+`ghcr.io/19chris19/ima-qa-web-agent:v0.5.0` 与
+`ghcr.io/19chris19/explorer-ai-qa-demo:v0.3.0`；不跟随 main/latest。
 执行缓存工具前核对 origin、tag 对应提交与干净工作树；不匹配时停止，不能删除
 旧安装数据来修复缓存。显式镜像覆盖也必须通过配套版本标签校验，随后记录摘要。
 版本标签是配套检查，不是签名或来源认证，候选源码与镜像仍须人工审查。
