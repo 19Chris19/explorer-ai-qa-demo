@@ -1,9 +1,11 @@
 // Loopback-only browser fixture. No Provider client, credentials, or real QA calls.
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createStaticResponder } from '../static-assets.mjs';
 
 const root = new URL('../', import.meta.url);
+const serveStatic = createStaticResponder(fileURLToPath(root));
 const conversations = new Map();
 const tasks = new Map();
 const counters = { submissions: 0, subscriptions: 0, cancellations: 0 };
@@ -75,10 +77,8 @@ const server = createServer(async (req, res) => {
       '/vendor/marked.umd.js': 'node_modules/marked/lib/marked.umd.js', '/vendor/purify.min.js': 'node_modules/dompurify/dist/purify.min.js' };
     const file = special[path] || `public${path === '/' ? '/index.html' : path}`;
     if (file.includes('..')) return send(res, {}, 404);
-    const body = await readFile(new URL(file, root));
-    res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.mjs': 'application/javascript', '.js': 'application/javascript',
-      '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2' }[extname(file)] || 'application/octet-stream' });
-    res.end(body);
+    serveStatic(req, res, file, { '.html': 'text/html', '.mjs': 'application/javascript', '.js': 'application/javascript',
+      '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2' }[extname(file)] || 'application/octet-stream');
   } catch { send(res, {}, 404); }
 });
 server.listen(0, '127.0.0.1', () => console.log(`Synthetic task UI: http://127.0.0.1:${server.address().port}`));

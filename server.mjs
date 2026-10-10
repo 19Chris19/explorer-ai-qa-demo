@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,8 +13,10 @@ import { loadHistoryArchive } from './history-archive.mjs';
 import { MaintenanceGate } from './maintenance-gate.mjs';
 import { cancelTaskAttempt, followTask, lookupSubmittedTask, recoverSubmittedTask, relayTaskEvents, taskTerminalError, terminalTask } from './durable-task-bridge.mjs';
 import { TaskWatchStore } from './task-watch-store.mjs';
+import { createStaticResponder } from './static-assets.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
+const serveStatic = createStaticResponder(root);
 const env = readPrivateEnv(join(root, '.env.local'));
 const port = Number(process.env.PORT || env.PORT || 4317);
 const listenHost = process.env.DEMO_LISTEN_HOST || env.DEMO_LISTEN_HOST || '127.0.0.1';
@@ -47,6 +49,7 @@ if (maintenance.enabled) {
   process.once('SIGINT', () => process.exit(0));
 }
 let lastRealSuccessAt = '';
+const vendorFile = (bundled, dependency) => existsSync(join(root, bundled)) ? bundled : dependency;
 const staticFiles = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
   ['/admin', ['public/admin.html', 'text/html; charset=utf-8']],
@@ -73,8 +76,8 @@ const staticFiles = new Map([
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/task-stream.mjs', ['public/task-stream.mjs', 'text/javascript; charset=utf-8']],
   ['/answer-markdown.js', ['public/answer-markdown.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/marked.umd.js', ['public/vendor/marked.umd.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/purify.min.js', ['public/vendor/purify.min.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/marked.umd.js', [vendorFile('public/vendor/marked.umd.js', 'node_modules/marked/lib/marked.umd.js'), 'text/javascript; charset=utf-8']],
+  ['/vendor/purify.min.js', [vendorFile('public/vendor/purify.min.js', 'node_modules/dompurify/dist/purify.min.js'), 'text/javascript; charset=utf-8']],
   ['/admin.js', ['public/admin.js', 'text/javascript; charset=utf-8']],
 ]);
 
@@ -101,17 +104,20 @@ const server = createServer(async (req, res) => {
       }
     }
     if (disableAdmin && ['/admin', '/admin.js'].includes(pathname)) { sendJson(res, 404, { error: 'Not found' }); return; }
-    if (req.method === 'GET' && staticFiles.has(pathname)) {
+    if (['GET', 'HEAD'].includes(req.method) && staticFiles.has(pathname)) {
       const [file, type] = staticFiles.get(pathname);
-      res.writeHead(200, { 'Content-Type': type });
       if (pathname === '/') {
+        res.writeHead(200, { 'Content-Type': type });
         let html = readFileSync(join(root, file), 'utf8');
         if (disableAdmin) html = html.replace(/<a class="admin-link"[^>]*>.*?<\/a>/su, '');
         if (embedded) html = html.replace('class="app-page"', 'class="app-page qa-embedded"');
         if (assetPrefix) html = html.replaceAll('href="/', `href="${assetPrefix}/`).replaceAll('src="/', `src="${assetPrefix}/`);
-        res.end(html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`)
+        res.end(req.method === 'HEAD' ? undefined : html.replace('name="qa-asset-prefix" content=""', `name="qa-asset-prefix" content="${assetPrefix}"`)
           .replace('name="qa-storage-namespace" content=""', `name="qa-storage-namespace" content="${storageNamespace(paths)}"`));
-      } else res.end(readFileSync(join(root, file)));
+      } else if (pathname === '/admin') {
+        res.writeHead(200, { 'Content-Type': type });
+        res.end(req.method === 'HEAD' ? undefined : readFileSync(join(root, file)));
+      } else serveStatic(req, res, file, type);
       return;
     }
     if (pathname === '/api/qa/health' && req.method === 'GET') {

@@ -4,6 +4,31 @@ const validId = value => typeof value === 'string' && /^[A-Za-z0-9_:.-]{1,200}$/
 export const isTerminalTask = task => terminalStates.has(task?.status);
 const fault = (code, status) => Object.assign(new Error(code), { code, status });
 
+// Replay still consumes every event; only painting its accumulated value is batched.
+export function createFrameUpdater(render, {
+  schedule = globalThis.requestAnimationFrame.bind(globalThis),
+  cancel = globalThis.cancelAnimationFrame.bind(globalThis),
+} = {}) {
+  let frame = null; let pending; let dirty = false; let disposed = false;
+  const flush = () => {
+    if (frame !== null) cancel(frame);
+    frame = null;
+    if (!dirty || disposed) return;
+    dirty = false;
+    render(pending);
+    pending = undefined;
+  };
+  return {
+    schedule(value) {
+      if (disposed) return;
+      pending = value; dirty = true;
+      if (frame === null) frame = schedule(flush);
+    },
+    flush,
+    dispose() { disposed = true; dirty = false; pending = undefined; if (frame !== null) cancel(frame); frame = null; },
+  };
+}
+
 export function createTaskStore(storage, key) {
   let rows = [];
   const clean = row => row && validId(row.conversationId) && (validId(row.requestId) || validId(row.id))

@@ -1,12 +1,13 @@
 {
   "name": "explorer-ai-qa-demo",
-  "version": "0.3.0-rc.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "docker:start": "node scripts/docker-start.mjs",
     "docker:resume": "node scripts/docker-resume.mjs",
     "check:release": "node scripts/check-release.mjs",
+    "check:performance": "node scripts/check-performance.mjs",
     "configure:local": "node scripts/configure-local-provider.mjs",
     "check:integration": "node scripts/check-integration.mjs",
     "verify:real": "node scripts/verify-native-demo.mjs",

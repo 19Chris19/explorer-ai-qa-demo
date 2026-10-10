@@ -59,6 +59,7 @@ test('server keeps Provider A credentials private and streams two turns under on
     await waitFor(`http://127.0.0.1:${frontendPort}/api/qa/health`);
     const page = await fetch(`http://127.0.0.1:${frontendPort}/`);
     assert.equal(page.status, 200);
+    assert.equal(page.headers.get('cache-control'), 'no-store');
     const html = await page.text();
     assert.equal(html.includes('test-only-token'), false);
     assert.equal(html.includes('class="admin-link"'), false);
