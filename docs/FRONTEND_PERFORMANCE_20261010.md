@@ -27,8 +27,10 @@ icons, Markdown parser and sanitizer; exclude the separate admin surface.
 | Largest file, app.js | 71,842 bytes | 100 KiB |
 | Logo PNG | 44,779 bytes | Included above |
 
-The gzip total is an estimate, not bytes guaranteed on every proxy route; HTML
-remains no-store and is not compressed by the local static helper. One browser
+The gzip total is an estimate, not bytes guaranteed on every proxy route; the BFF
+keeps HTML no-store and bypasses static compression for HTML. The isolated browser
+fixture also compresses its fixed HTML, unlike the dynamic BFF; its load timings
+are therefore not an exact production-path benchmark. One browser
 navigation recorded 143,353 encoded resource bytes (28 entries, including small
 API responses). Resource Timing totals exclude navigation/HTTP headers and are
 not a complete wire-traffic measurement. Node/Docker dependencies and image size
