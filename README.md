@@ -1,9 +1,10 @@
 # 知天下 AI 问答网站
 
-> 当前分支为 **v0.3.0-rc.1** [长回答任务与断线续接预发布候选](./docs/DURABLE_TASKS.md)，固定配套 **Provider v0.5.0-rc.1**。
+> 已发布 **[v0.3.0-rc.1 长回答任务与断线续接灰度版](https://github.com/19Chris19/explorer-ai-qa-demo/releases/tag/v0.3.0-rc.1)**，固定配套 **Provider v0.5.0-rc.1**。
 > 新网页要求 Provider 明确声明 `durable_qa_tasks_v1`，不回退到旧版直连 SSE。
 > 已发布稳定基线为网站 v0.2.1 / Provider v0.4.2；受邀灰度升级见[预发布说明](./docs/PRERELEASE_UPGRADES.md)，不自动追随 main 或 RC。
 > 合成验收、发布版本、运行服务必须分别确认，不能直接用旧镜像搭配本分支网页。
+> 当前 Air / Docker / 在线入口与健康抖动见[最新验收记录](./docs/RELEASE_ACCEPTANCE_20261010.md)；本次发布未额外进行真实 IMA 问答。
 
 本仓库交付品牌问答页和同源网站后端（BFF），通过独立的 Provider A 服务使用腾讯 IMA 知识库。**部署知天下只从本仓库进入：安装工具准备匹配的 Provider A，不需要你手工拼接两个项目，也不依赖维护者的 Air。**
 
@@ -24,7 +25,7 @@
 
 这是新安装的唯一推荐入口。预设“3DGS 知识答疑”分享链接，也支持显式配置其他官方分享链接。先准备私有仓库和私有镜像拉取权限、Docker 与 Git，再交给 Agent；需要扫码、手机确认或加入知识库时由人完成。
 
-**稳定版 v0.2.1 固定依赖已发布的 Provider v0.4.2；本分支 v0.3.0-rc.1 固定依赖 Provider v0.5.0-rc.1。** 新安装默认稳定版，受邀灰度测试须显式选择配套预发布，并确认两边 Release 和不可变镜像清单已通过。请勿把 main 或仅有 tag 的候选当作完整发布，不混改旧安装。
+**稳定版 v0.2.1 固定依赖已发布的 Provider v0.4.2；灰度版 v0.3.0-rc.1 固定依赖已发布的 Provider v0.5.0-rc.1。** 新安装默认稳定版，受邀灰度测试须显式选择配套预发布，并核对两边 Release 的不可变镜像清单。请勿把 main 或仅有 tag 的候选当作完整发布，不混改旧安装。
 
 完整流程见 [Agent 部署说明](./docs/AGENT_DEPLOYMENT.md)。[配套清单](./deploy/bundle.env)统一选择版本；[版本与候选门槛](./docs/DEPLOYMENT_MODEL.md)解释镜像摘要、独立部署和发布顺序。
 
