@@ -10,7 +10,7 @@ import { composerControlState, providerAccessState } from './composer-controls.m
 import { createAnswerCopy } from './answer-copy.mjs';
 import { createSelectionCopy } from './selection-copy.mjs';
 import { createHostBridge } from './host-bridge.mjs';
-import { createTaskClient, createTaskStore, isTerminalTask } from './task-stream.mjs';
+import { createTaskClient, createTaskStore, isTerminalTask, createFrameUpdater } from './task-stream.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
@@ -888,7 +888,7 @@ function renderAnswerLifecycle(lifecycle, timing) {
   const label = lifecycle.querySelector('.answer-lifecycle-label');
   const details = lifecycle.querySelector('.answer-lifecycle-details');
   if (label.textContent !== view.label) label.textContent = view.label;
-  details.textContent = view.details;
+  if (details.textContent !== view.details) details.textContent = view.details;
   lifecycle.classList.toggle('is-settled', view.settled);
 }
 
@@ -896,7 +896,7 @@ function startAnswerLifecycle(lifecycle, timing) {
   renderAnswerLifecycle(lifecycle, elapsedLifecycleTiming(timing));
   return setInterval(() => {
     renderAnswerLifecycle(lifecycle, elapsedLifecycleTiming(timing));
-  }, 250);
+  }, 1000);
 }
 
 function settleAnswerLifecycle(lifecycle, ticker, timing, outcome) {
@@ -1324,6 +1324,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     }
     if (state.followLatest) scrollBottom();
   };
+  const frameUpdate = createFrameUpdater(update);
   try {
     if (!task) task = await taskClient.resolve(pending.record, { signal: controller.signal, onConnection: connectionNotice });
     if (!current()) return;
@@ -1340,7 +1341,8 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     updateWebIntentControl();
     status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
     if (task.status === 'queued') beginTurn();
-    const view = await taskClient.subscribe(task, { signal: controller.signal, onUpdate: update, onConnection: connectionNotice });
+    const view = await taskClient.subscribe(task, { signal: controller.signal, onUpdate: frameUpdate.schedule, onConnection: connectionNotice });
+    frameUpdate.flush();
     if (!current()) return;
     if (view.eventsExpired) {
       const reference = view.task.history;
@@ -1387,6 +1389,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     }
     await loadConversations();
   } catch (error) {
+    frameUpdate.flush();
     if (!current()) return;
     if (error.code === 'submission_queued') {
       queuedReceipt = true;
@@ -1401,6 +1404,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       answerCopies.get(reply)?.control.setReady(Boolean(lastView?.text.trim()), { partial: true });
     }
   } finally {
+    frameUpdate.dispose();
     if (lifecycleTicker) clearInterval(lifecycleTicker);
     if (current()) {
       state.controller = null; state.activeTask = null; state.activeQueuedId = '';
