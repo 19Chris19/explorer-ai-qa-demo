@@ -1,4 +1,16 @@
-# Durable website candidate handoff
+# Durable website handoff
+
+## Current publication checkpoint
+
+2026-10-10: v0.3.0-rc.1 / Provider v0.5.0-rc.1 published after PR #8 / #14 and
+paired multiarch/manifest acceptance. Air 4317, 4318, Docker 4417 and Vercel now
+use the fixed pair; original data and five-account pool preserved, robot and
+dormant Provider untouched. Skill 1.0.1 installed after approval. Actual protected
+Vercel/ngrok synthetic replay and desktop/mobile-browser checks passed. No new
+real question. Host load and intermittent health timeouts prevent a stable
+availability claim; keep RC. See docs/RELEASE_ACCEPTANCE_20261010.md.
+
+## Historical preparation and earlier preview
 
 2026-10-10: codex/OPS-20261010-EXPLORER-DURABLE-PREVIEW records an authorized
 4318 preview rollout; the durable candidate remains unpublished.
