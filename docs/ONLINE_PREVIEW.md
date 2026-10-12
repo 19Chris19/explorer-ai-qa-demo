@@ -1,27 +1,49 @@
-# Air-backed online preview
+# Host-backed online preview
 
 This is a public URL to a real shared account pool, not a production hosting
 or access-control service. GitHub repository privacy does not restrict URL
-visitors. Air sleep, network loss, tunnel quota or a stopped process will make
+visitors. Host sleep, network loss, tunnel quota or a stopped process will make
 the preview unavailable. No daily user quota is promised; technical controls
 retain eight pending public turns and ten new submissions per visitor per
-minute. The durable candidate removes the additional one-execution public gate;
-accepted tasks compete for Provider capacity alongside the bot. These candidate
-changes are not evidence that the currently running preview was upgraded.
+minute. Accepted durable tasks share Provider capacity with other enabled clients;
+these technical limits are not billing, permanent user quotas or a production SLA.
+Current-host acceptance is recorded separately below.
 A determined unauthenticated visitor can
 still consume IMA capacity. Do not publish the URL without accepting that risk.
+
+## Current host and acceptance (2026-10-12)
+
+The existing preview has moved from Air to M1 Max using the fixed migration
+bundle, preserved gateway key, website signing key and persisted state. Air's
+old Provider, website and tunnel remain stopped; its robot has not yet been
+connected to the new Provider. No Vercel environment change or redeployment was
+needed because the original fixed tunnel origin was restored on the new host.
+
+A real first question and same-conversation follow-up passed through Vercel,
+including streaming, one success terminal per turn, context and history reload.
+Homepage/assets, visitor isolation, blocked management routes and cross-origin
+submission rejection also passed. This test used the maintainer's existing
+network proxy; other devices and networks remain unverified. Long public answers,
+real disconnect/cancel/queue behavior, concurrency and long uptime were not fully
+re-accepted in this window. See [migration evidence](HOST_MIGRATION_20261012.md)
+and the [colleague guide](EXPERIENCE_AND_DEPLOYMENT_GUIDE.md).
+
+The receiving host has login-start/restart supervision for the Provider, website,
+private relay, preview gateway, tunnel and local monitor. Cold boot before user
+login, logout/reboot, power loss and off-machine alerts remain unverified or
+unconfigured. This is still a preview, not an availability guarantee.
 
 ## Topology
 
 ```text
 browser -> Vercel Node function -> fixed HTTPS ngrok domain
-        -> Air preview gateway (loopback) -> website BFF :4317
+        -> M1 Max preview gateway (loopback) -> website BFF :4317
         -> Provider A :3117 -> IMA
 ```
 
 Only the gateway key and ngrok address belong in Vercel environment variables.
 Do not put Provider A ordinary, internal or admin tokens there. No Vercel
-external rewrite directly to Air is permitted. The Node Function is configured
+external rewrite directly to the host is permitted. The Node Function is configured
 for 300 seconds; each read-only event subscription rotates at 240 seconds and
 emits a transport heartbeat about every 15 seconds. The Provider task continues
 across rotation or a disconnected viewer. Responses are not buffered or cached.
@@ -31,11 +53,16 @@ See [the durable contract](DURABLE_TASKS.md) and [dated acceptance evidence](DUR
 
 ## Private setup
 
-1. Keep Provider A and the website BFF on the Air, with separate persisted
-   directories. Run `npm run check:integration` on the Air before opening a
-   tunnel. A healthy HTTP process alone is not a real answer acceptance.
-2. Generate one random gateway key of at least 32 characters in a private
-   secret store. Set `PREVIEW_GATEWAY_KEY` only in the local gateway's private
+1. Keep Provider A and the website BFF on the authorized host, with separate
+   persisted directories. For migration, first follow the fixed bundle and
+   [migration checklist](HOST_MIGRATION_20261012.md): drain/stop the old owners,
+   preserve signing/encryption keys and obtain cutover authorization before
+   starting a new refresh/dispatch owner. Check integration on the target before
+   opening a tunnel. A healthy HTTP process alone is not real QA acceptance.
+2. For a new installation, generate one random gateway key of at least 32
+   characters in a private secret store. For this migration, preserve the
+   existing gateway key and Vercel pairing; do not regenerate it. Set
+   `PREVIEW_GATEWAY_KEY` only in the local gateway's private
    launch environment. Start `node preview-gateway.mjs` on loopback port 4327.
 3. Reserve a fixed HTTPS ngrok domain and tunnel only to `127.0.0.1:4327`.
    Never tunnel directly to 4317 or 3117. Verify `/admin` and `/internal/`
@@ -47,7 +74,9 @@ See [the durable contract](DURABLE_TASKS.md) and [dated acceptance evidence](DUR
    one stable Vercel URL. Do not enable an external-origin rewrite.
 5. Verify the first SSE chunk and exactly one `done` for one non-private test
    question and one follow-up. Check history on refresh, cancellation, and
-   that unavailable Air returns 503. Record only status and timing, never
+   that an unavailable host returns a controlled failure. These are separate
+   acceptance checks; do not infer cancel/outage recovery from a successful
+   question. Record only status and timing, never
    question, answer, source, token or session ID.
 
 ## Revoke and recover
@@ -85,3 +114,4 @@ The preview route allowlist is intentionally narrow. `/admin`, `/admin.js`,
 `/internal/` and unknown paths are never forwarded. The local admin prototype
 is also disabled in the Linux container. The visitor cookie is HttpOnly,
 SameSite=Lax and Secure on public preview requests.
+
