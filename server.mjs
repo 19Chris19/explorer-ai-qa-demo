@@ -1,3 +1,4 @@
+import chatPresentation from './chat-presentation.cjs';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -54,6 +55,8 @@ const staticFiles = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
   ['/admin', ['public/admin.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['public/styles.css', 'text/css; charset=utf-8']],
+  ['/chat-presentation.js', ['public/chat-presentation.js', 'text/javascript; charset=utf-8']],
+  ['/chat-presentation.css', ['public/chat-presentation.css', 'text/css; charset=utf-8']],
   ['/chat.css', ['public/chat.css', 'text/css; charset=utf-8']],
   ['/main-shell.css', ['public/main-shell.css', 'text/css; charset=utf-8']],
   ['/site/logo.png', ['public/site/logo.png', 'image/png']],
@@ -139,7 +142,7 @@ const server = createServer(async (req, res) => {
       let id;
       try { id = decodeURIComponent(pathname.slice('/api/qa/archive/conversations/'.length)); } catch {}
       const data = typeof id === 'string' && /^archive:[a-zA-Z0-9-]{1,100}$/u.test(id) ? historyArchive.detail(id, clientId) : null;
-      sendJson(res, data ? 200 : 404, data || { error: 'Not found' }); return;
+      sendJson(res, data ? 200 : 404, data ? (url.searchParams.get('presentation') === 'chat_v1' ? chatPresentation.projectHistory(data) : data) : { error: 'Not found' }); return;
     }
     if (pathname === '/api/qa/queue' || /^\/api\/qa\/queue\/[a-f0-9-]{36}(?:\/events)?$/iu.test(pathname)) {
       if (!provider.configured) { sendJson(res, 503, { error: 'Provider A 问答接入尚未完成配置' }); return; }
@@ -330,6 +333,8 @@ async function postTaskOnce(row, input) {
 
 async function taskRoute(req, res, pathname, params) {
   const clientId = getClientId(req, res);
+  const presentation = params.get('presentation');
+  if (presentation !== null && presentation !== 'chat_v1') { sendJson(res, 400, { error: 'Invalid presentation' }); return; }
   const rootRoute = pathname === '/api/qa/tasks';
   const events = pathname.endsWith('/events');
   if (!(rootRoute ? ['GET', 'POST'] : events ? ['GET'] : ['GET', 'DELETE']).includes(req.method)) {
@@ -376,7 +381,7 @@ async function taskRoute(req, res, pathname, params) {
   if (events) {
     const after = params.get('after') || '0';
     if (!/^\d{1,15}$/u.test(after) || !Number.isSafeInteger(Number(after))) { sendJson(res, 400, { error: 'Invalid event cursor' }); return; }
-    await relayTaskEvents(provider, { req, res, route: route + '?after=' + after, clientId });
+    await relayTaskEvents(provider, { req, res, route: route + '?after=' + after + (presentation ? '&presentation=chat_v1' : ''), clientId, presentation });
     return;
   }
   if (req.method === 'DELETE') {
@@ -429,15 +434,18 @@ async function taskRoute(req, res, pathname, params) {
       }
       query.set('requestKey', requestKey(clientId, requestId));
     }
+    if (presentation) query.set('presentation', presentation);
     route += '?' + query;
   }
+  if (!rootRoute && presentation) route += '?presentation=chat_v1';
   const upstream = await provider.request({ route, method: 'GET', clientId, signal: AbortSignal.timeout(60000) });
   if (!upstream.ok) {
     await upstream.body?.cancel();
     sendJson(res, [400, 403, 404, 409, 410, 429].includes(upstream.status) ? upstream.status : 503, { error: '当前操作未能确认，请检查原任务状态。', code: 'task_request_unconfirmed' });
     return;
   }
-  sendJson(res, upstream.status, await upstream.json());
+  const data = await upstream.json();
+  sendJson(res, upstream.status, presentation === 'chat_v1' ? chatPresentation.projectSnapshot(data) : data);
 }
 
 function watchDirectTask(row) {
@@ -611,6 +619,8 @@ async function dispatchQueuedTurn(job, emit, signal) {
 }
 
 async function proxy(req, res, route) {
+  const presentation = new URL(req.url, 'http://localhost').searchParams.get('presentation');
+  if (presentation !== null && presentation !== 'chat_v1') { sendJson(res, 400, { error: 'Invalid presentation' }); return; }
   let body;
   let requestId;
   let sourceIntent = '';
@@ -693,7 +703,7 @@ async function proxy(req, res, route) {
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
   if (res.destroyed) controller.abort();
   try {
-    const upstream = await provider.request({ route, method: req.method, clientId, body, requestId, sourceIntent, signal: controller.signal });
+    const upstream = await provider.request({ route: req.method === 'GET' && presentation ? route + '?presentation=chat_v1' : route, method: req.method, clientId, body, requestId, sourceIntent, signal: controller.signal });
     const contentType = upstream.headers.get('content-type') || '';
     if (route === '/api/ask' && upstream.ok && contentType.includes('text/event-stream')) {
       const observer = createStreamObserver();
@@ -737,7 +747,7 @@ async function proxy(req, res, route) {
     if (upstream.ok && route.startsWith('/api/conversations/') && req.method === 'DELETE') {
       nativeSessions.forget(route.slice('/api/conversations/'.length), clientId);
     }
-    sendJson(res, upstream.status, data);
+    sendJson(res, upstream.status, presentation === 'chat_v1' && Array.isArray(data.messages) ? chatPresentation.projectHistory(data) : data);
   } finally {
     clearTimeout(timeout);
     controller.abort();

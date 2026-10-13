@@ -36,7 +36,7 @@ await expectStatus(`${upstream}/internal/provider-a/capacity`, 401, { headers: {
 await expectStatus(`${upstream}/api/conversations`, 401, { headers: { Authorization: `Bearer ${env.IMA_QA_ADMIN_TOKEN}` } });
 await expectStatus(`${base}/`, 200);
 for (const path of ['/admin', '/admin.js', '/admin.html', '/internal/provider-a/capacity', '/.env.local', '/server.mjs', '/unknown']) await expectStatus(`${base}${path}`, 404);
-for (const path of ['/app.js', '/chat.css', '/icons.svg', '/brand-orbit.png', '/questions.json', '/question-rotation.mjs', '/source-evidence.mjs', '/turn-lifecycle.mjs', '/answer-process.mjs', '/prompt-sparks.mjs', '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs', '/composer-controls.mjs', '/answer-copy.mjs', '/selection-copy.mjs', '/vendor/marked.umd.js', '/vendor/purify.min.js']) await expectStatus(`${base}${path}`, 200);
+for (const path of ['/app.js', '/chat.css', '/chat-presentation.js', '/chat-presentation.css', '/icons.svg', '/brand-orbit.png', '/questions.json', '/question-rotation.mjs', '/source-evidence.mjs', '/turn-lifecycle.mjs', '/answer-process.mjs', '/prompt-sparks.mjs', '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs', '/composer-controls.mjs', '/answer-copy.mjs', '/selection-copy.mjs', '/vendor/marked.umd.js', '/vendor/purify.min.js']) await expectStatus(`${base}${path}`, 200);
 const checkpoint = `.docker-lab/${synthetic ? 'synthetic' : live ? 'live' : 'empty'}-checkpoint.json`;
 let session;
 if (restore) session = JSON.parse(readFileSync(checkpoint, 'utf8'));

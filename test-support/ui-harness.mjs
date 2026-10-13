@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function until(predicate) {
@@ -13,10 +15,10 @@ export async function until(predicate) {
   throw new Error('Synthetic UI did not reach the expected state');
 }
 
-export async function openUi({ fetchImpl, setup, conversationId = '' } = {}) {
+export async function openUi({ fetchImpl, setup, conversationId = '', presentation = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'explorer-ui-'));
   const dom = new JSDOM(readFileSync(join(root, 'public/index.html'), 'utf8'), {
-    url: 'http://127.0.0.1:4318/', pretendToBeVisual: true,
+    url: 'http://127.0.0.1:4318/', pretendToBeVisual: true, runScripts: 'outside-only',
   });
   const { window } = dom;
   window.matchMedia = () => ({ matches: true });
@@ -24,11 +26,13 @@ export async function openUi({ fetchImpl, setup, conversationId = '' } = {}) {
   if (conversationId) window.sessionStorage.setItem('qa-native-conversation-id', conversationId);
   setup?.(window);
   const requests = [];
-  const globals = ['window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'fetch'];
+  const globals = ['window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'fetch', 'ChatPresentation', 'ImaAnswerMarkdown'];
   const saved = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const json = data => ({ ok: true, json: async () => data });
   const fetchMock = async (url, options) => {
     requests.push({ url, options });
+    const parsed = new URL(url, window.location.href); parsed.searchParams.delete('presentation');
+    url = parsed.pathname + (parsed.searchParams.size ? '?' + parsed.searchParams : '');
     const custom = await fetchImpl?.(url, options, window);
     if (custom) return custom;
     if (url === '/api/qa/health') return json({ connected: true, configured: true, authenticated: true, contractSupported: true, durableTasksSupported: true, ready: true, capacity: 1, webIntentSupported: true });
@@ -57,6 +61,11 @@ export async function openUi({ fetchImpl, setup, conversationId = '' } = {}) {
       requestAnimationFrame: fn => window.setTimeout(fn, 0), cancelAnimationFrame: id => window.clearTimeout(id), fetch: fetchMock,
       getComputedStyle: window.getComputedStyle.bind(window),
     });
+    if (presentation) {
+      for (const file of [join(require.resolve('marked'), '../marked.umd.js'), require.resolve('dompurify/dist/purify.min.js'),
+        join(root, 'public/chat-presentation.js'), join(root, 'public/answer-markdown.js')]) window.eval(readFileSync(file, 'utf8'));
+      globalThis.ChatPresentation = window.ChatPresentation; globalThis.ImaAnswerMarkdown = window.ImaAnswerMarkdown;
+    }
     await import(pathToFileURL(join(dir, 'app.mjs')).href);
     await until(() => window.document.querySelector('.suggestion-question'));
     return { window, document: window.document, requests, close };

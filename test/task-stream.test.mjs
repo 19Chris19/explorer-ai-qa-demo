@@ -49,7 +49,7 @@ test('stream rotation and network loss reconnect with GET to the same task and r
     onUpdate: view => views.push(view.text), onConnection: phase => connections.push(phase) });
   assert.equal(result.text, 'ABC');
   assert.ok(views.every(text => ['', 'A', 'AB', 'ABC'].includes(text)));
-  assert.ok(calls.some(call => call.url.endsWith('/events?after=2')));
+  assert.ok(calls.some(call => call.url.endsWith('/events?after=2&presentation=chat_v1')));
   assert.ok(calls.every(call => call.method === 'GET' && call.url.includes(task.id)));
   assert.ok(connections.includes('reconnecting'));
 });
@@ -198,7 +198,7 @@ test('expired terminal events return history recovery metadata without streaming
   assert.equal(result.eventsExpired, true);
   assert.deepEqual(result.task.history, history);
   assert.equal(updates.length, 0);
-  assert.deepEqual(calls, [`/api/qa/tasks/${task.id}`]);
+  assert.deepEqual(calls, [`/api/qa/tasks/${task.id}?presentation=chat_v1`]);
 });
 
 test('events expiring between snapshot and subscription recover from a fresh snapshot', async () => {

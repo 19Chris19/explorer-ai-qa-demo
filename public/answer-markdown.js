@@ -4,7 +4,7 @@
   const allowedTags = [
     'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'del',
     'blockquote', 'ul', 'ol', 'li', 'pre', 'code', 'a', 'table', 'thead', 'tbody',
-    'tr', 'th', 'td', 'div', 'span', 'details', 'summary',
+    'tr', 'th', 'td', 'div', 'span', 'details', 'summary', 'sup', 'button',
   ];
 
   function escapeHtml(value) {
@@ -98,9 +98,21 @@
     const lines = input.split('\n');
     const parts = [];
     let plain = [];
+    let fence = '';
+    let mathBlock = false;
     const flush = () => { if (plain.length) parts.push({ type: 'markdown', text: plain.join('\n') }); plain = []; };
     for (let index = 0; index < lines.length;) {
       const line = lines[index];
+      const marker = /^\s{0,3}(`{3,}|~{3,})/u.exec(line)?.[1];
+      if (fence || marker || mathBlock || /^\s*\$\$\s*$/u.test(line)) {
+        plain.push(line);
+        if (marker) {
+          if (!fence) fence = marker;
+          else if (marker[0] === fence[0] && marker.length >= fence.length) fence = '';
+        }
+        if (!fence && /^\s*\$\$\s*$/u.test(line)) mathBlock = !mathBlock;
+        index += 1; continue;
+      }
       const next = lines[index + 1] || '';
       const brokenHeader = isBrokenTableHeader(line, next);
       const flatRow = !next && (line.match(/(?<!\\)\|/gu) || []).length >= 3 && line.length >= 80;
@@ -136,15 +148,21 @@
     const renderer = new marked.Renderer();
     renderer.html = ({ text }) => escapeHtml(text);
     renderer.image = () => '<span class="answer-unsupported-media">图片内容尚未接通</span>';
-    renderer.link = ({ href, title, tokens }) => {
+    renderer.link = (token) => {
+      const { href, title, tokens } = token;
+      if (options.presentation === 'chat_v1' && root.ChatPresentation) {
+        const citation = root.ChatPresentation.citation(token, options);
+        if (citation !== null) return citation;
+      }
       const label = marked.Parser.parseInline(tokens || [], { renderer });
-      const safe = safeHref(href);
+      const safe = options.presentation === 'chat_v1' && root.ChatPresentation ? root.ChatPresentation.webUrl(href) : safeHref(href);
       return safe
         ? `<a href="${escapeHtml(safe)}"${title ? ` title="${escapeHtml(title)}"` : ''} target="_blank" rel="noopener noreferrer">${label}</a>`
         : label;
     };
     const tokens = marked.lexer(source, { gfm: true, breaks: true });
-    if (options.hideCitations) {
+    if (options.presentation === 'chat_v1' && root.ChatPresentation) root.ChatPresentation.protectMath(tokens);
+    else if (options.hideCitations) {
       const known = new Set((options.sourceIndexes || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0));
       stripKnownCitations(tokens, known);
     }
@@ -162,7 +180,7 @@
     }).join('');
     const cleaned = purifier.sanitize(rendered, {
       ALLOWED_TAGS: allowedTags,
-      ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class', 'start', 'align'],
+      ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class', 'start', 'align', 'type', 'aria-label', 'aria-haspopup', 'aria-expanded', 'data-citation-key'],
     });
     const container = root.document.createElement('div');
     container.innerHTML = cleaned;
@@ -173,6 +191,8 @@
       table.replaceWith(wrap);
       wrap.append(table);
     }
+    for (const pre of container.querySelectorAll('pre')) pre.classList.add('answer-code');
+    if (options.presentation === 'chat_v1') root.ChatPresentation?.decorate(container, options);
     return container.innerHTML;
   }
 
@@ -182,9 +202,10 @@
     const next = [...template.content.children];
     const current = [...element.children];
     let stable = 0;
-    while (stable < current.length && stable < next.length && current[stable].outerHTML === next[stable].outerHTML) stable += 1;
+    while (stable < current.length && stable < next.length && (root.ChatPresentation?.stableHtml(current[stable]) || current[stable].outerHTML) === next[stable].outerHTML) stable += 1;
     for (let index = current.length - 1; index >= stable; index -= 1) current[index].remove();
     element.append(...next.slice(stable));
+    if (options.presentation === 'chat_v1') root.ChatPresentation?.bind(element, options);
   }
 
   root.ImaAnswerMarkdown = { formatAnswerHtml, updateAnswerElement, prepareLegacyAnswer, answerMarkdownForCopy };

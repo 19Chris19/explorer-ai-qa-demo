@@ -1,3 +1,4 @@
+import chatPresentation from './chat-presentation.cjs';
 import { openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
 import { isAbsolute } from 'node:path';
 
@@ -61,7 +62,7 @@ export function parseHistoryArchive(input) {
     if (turns > ARCHIVE_LIMITS.turns) fail();
     let previous = timestamp(row.createdAt);
     for (const turn of row.turns) {
-      const fields = ['question', 'answer', 'createdAt', 'sources', 'searchSummary', 'evidence'];
+      const fields = ['question', 'answer', 'createdAt', 'sources', 'searchSummary', 'evidence', 'citationMap', 'suggestions', 'process'];
       keys(turn, fields, ['question', 'answer', 'createdAt']);
       string(turn.question, 2000); string(turn.answer, 200000); date(turn.createdAt);
       const at = timestamp(turn.createdAt);
@@ -90,6 +91,7 @@ export function parseHistoryArchive(input) {
     }
     const record = structuredClone(row);
     for (const turn of record.turns) {
+      Object.assign(turn, chatPresentation.metadata(turn));
       if (turn.evidence && Object.hasOwn(turn.evidence, 'sourceIntent')) {
         turn.evidence.source_intent = turn.evidence.sourceIntent;
         delete turn.evidence.sourceIntent;
@@ -136,7 +138,7 @@ export function loadHistoryArchive(path = '') {
         conversation: summary(id, row), readOnly: true,
         messages: row.turns.flatMap(turn => [
           { role: 'user', content: turn.question, createdAt: turn.createdAt },
-          { role: 'assistant', content: turn.answer, createdAt: turn.createdAt, sources: structuredClone(turn.sources || []), searchSummary: turn.searchSummary ?? null, ...structuredClone(turn.evidence || {}) },
+          { role: 'assistant', content: turn.answer, createdAt: turn.createdAt, sources: structuredClone(turn.sources || []), searchSummary: turn.searchSummary ?? null, ...structuredClone(turn.evidence || {}), ...chatPresentation.metadata(turn) },
         ]),
       };
     },

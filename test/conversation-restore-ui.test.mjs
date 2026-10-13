@@ -24,6 +24,8 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
   let archiveUnavailable = false;
   const fetchMock = async (url, options = {}) => {
     requests.push(url);
+    const parsed = new URL(url, window.location.href); parsed.searchParams.delete('presentation');
+    url = parsed.pathname + (parsed.searchParams.size ? '?' + parsed.searchParams : '');
     if (options.method === 'POST') submissions.push({ url, body: options.body });
     if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, durableTasksSupported: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(questions);

@@ -5,6 +5,7 @@ RUN npm ci
 COPY public ./public
 COPY scripts ./scripts
 COPY *.mjs ./
+COPY chat-presentation.cjs ./
 COPY .env.example ./
 RUN npm run build
 
