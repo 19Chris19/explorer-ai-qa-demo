@@ -60,7 +60,7 @@ const state = {
   conversationId: sessionStorage.getItem(storageKey('qa-native-conversation-id')) || taskStore.list().at(-1)?.conversationId || '',
   legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false, access: 'checking',
   activeWebRequest: false, webRequestState: 'idle',
-  queuedJobs: [], queueSubmitting: false, preparing: false, activeQueuedId: '',
+  queuedJobs: [], queueSubmitting: false, preparing: false, submissionPhase: '', activeQueuedId: '',
   questionBank: [], questionRotation: null, currentSuggestions: null, carouselTimer: 0, carouselHover: false, carouselFocus: false, suggestionSelected: false, composing: false,
   followLatest: true,
   durableTasksSupported: false, activeTask: null, viewEpoch: 0, completedTasks: new Set(), queueTimer: 0,
@@ -88,7 +88,7 @@ const labels = {
     webEvidence: '已取得可验证网页来源 {count} 条', webNoEvidence: '已请求联网 · 未取得可验证网页来源', evidenceUnverified: '来源信息无法验证',
     webSources: '网页来源 {count} 条', micPreview: '预览语音动画（不录音）', micPreviewStop: '结束语音动画预览（不录音）', micPreviewHint: '仅动画预览，不录音',
     ready: '知识库问答可接收', verified: '知识库问答已验证', noCapacity: '账号容量暂不可用', noCredentials: '等待接入凭证', incompatible: '问答协议版本不兼容', offline: '服务暂不可用', checking: '正在检查连接',
-    jumpLatest: '回到最新', sendQuestion: '发送问题', stopAnswer: '停止回答', enqueueQuestion: '加入队列', queued: '排队中', paused: '上一轮未完成，已暂停', starting: '即将回答', editQueued: '编辑待发问题', deleteQueued: '删除待发问题', saveQueued: '保存修改', cancelEdit: '取消编辑',
+    jumpLatest: '回到最新', sendQuestion: '发送问题', preparingConversation: '正在准备会话…', sendingQuestion: '正在发送问题…', queueSubmitting: '正在加入队列…', stopAnswer: '停止回答', enqueueQuestion: '加入队列', queued: '排队中', paused: '上一轮未完成，已暂停', starting: '即将回答', editQueued: '编辑待发问题', deleteQueued: '删除待发问题', saveQueued: '保存修改', cancelEdit: '取消编辑',
     copyAnswer: '复制回答 Markdown', copyPartial: '复制已收到的部分回答', copied: '已复制', copyFailed: '复制失败，请选择下面的文字复制', closeCopyText: '关闭可复制文字',
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
     taskReconnecting: '连接暂时中断，正在恢复同一任务。已收到的内容会保留，无需重新提交。',
@@ -110,7 +110,7 @@ const labels = {
     webEvidence: 'Verified web sources: {count}', webNoEvidence: 'Web requested · no verifiable web sources found', evidenceUnverified: 'Source evidence could not be verified',
     webSources: 'Web sources: {count}', micPreview: 'Preview voice animation (no recording)', micPreviewStop: 'End voice animation preview (no recording)', micPreviewHint: 'Animation only; no recording',
     ready: 'Knowledge Q&A available', verified: 'Knowledge Q&A verified', noCapacity: 'No account capacity', noCredentials: 'Waiting for credentials', incompatible: 'Incompatible Q&A contract', offline: 'Service unavailable', checking: 'Checking connection',
-    jumpLatest: 'Jump to latest', sendQuestion: 'Send question', stopAnswer: 'Stop answer', enqueueQuestion: 'Queue next', queued: 'Queued', paused: 'Paused after an incomplete turn', starting: 'Starting next answer', editQueued: 'Edit queued question', deleteQueued: 'Remove queued question', saveQueued: 'Save changes', cancelEdit: 'Cancel editing',
+    jumpLatest: 'Jump to latest', sendQuestion: 'Send question', preparingConversation: 'Preparing conversation…', sendingQuestion: 'Sending question…', queueSubmitting: 'Adding to queue…', stopAnswer: 'Stop answer', enqueueQuestion: 'Queue next', queued: 'Queued', paused: 'Paused after an incomplete turn', starting: 'Starting next answer', editQueued: 'Edit queued question', deleteQueued: 'Remove queued question', saveQueued: 'Save changes', cancelEdit: 'Cancel editing',
     copyAnswer: 'Copy answer Markdown', copyPartial: 'Copy received partial answer', copied: 'Copied', copyFailed: 'Copy failed; select the text below to copy', closeCopyText: 'Close selectable text',
     copySelection: 'Copy selected text', selectionActions: 'Selected text actions', selectionCopyFailed: 'Copy failed; select the text below',
     taskReconnecting: 'Connection interrupted. Reconnecting to the same task; received text is kept. No need to resubmit.',
@@ -536,10 +536,15 @@ function busy(value) {
 
 function updateSendButton() {
   const { stopping, disabled, action } = composerControlState({ ...state, draft: question.value });
-  const label = t(action);
+  const submitting = Boolean(state.submissionPhase || state.queueSubmitting);
+  const label = t(state.submissionPhase || (state.queueSubmitting ? 'queueSubmitting' : action));
   sendButton.type = stopping ? 'button' : 'submit';
   sendButton.disabled = disabled;
   sendButton.classList.toggle('is-busy', stopping);
+  sendButton.classList.toggle('is-submitting', submitting);
+  sendButton.setAttribute('aria-busy', String(submitting));
+  form.setAttribute('aria-busy', String(submitting));
+  requestStatus.classList.toggle('is-pending', submitting);
   sendButton.setAttribute('aria-label', label);
   sendButton.title = disabled && state.access !== 'ready' ? t(state.access) : label;
 }
@@ -699,6 +704,7 @@ async function enqueueQuestion(text) {
   if (!state.conversationId) { status('正在准备会话，请稍后再发送。', true); return; }
   state.queueSubmitting = true;
   updateSendButton();
+  status(t('queueSubmitting'));
   try {
     const data = await taskClient.submit({ question: text, conversationId: state.conversationId,
       requestId: crypto.randomUUID(), ...(state.webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
@@ -1232,15 +1238,21 @@ async function ask(raw) {
   const text = raw.trim();
   if (!text || state.busy || state.preparing || !state.durableTasksSupported) return;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
+  if (!state.conversationId && archiveConversationId) { archiveConversationId = ''; welcome(); }
   state.preparing = true;
+  state.submissionPhase = state.conversationId ? 'sendingQuestion' : 'preparingConversation';
   updateSendButton();
+  status(t(state.submissionPhase));
+  let createdConversation = false;
   try {
     if (!state.conversationId) {
-      if (archiveConversationId) { archiveConversationId = ''; welcome(); }
       const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
       setConversation(data.conversation.conversationId);
-      await loadConversations();
+      createdConversation = true;
     }
+    state.submissionPhase = 'sendingQuestion';
+    updateSendButton();
+    status(t(state.submissionPhase));
     const input = { question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(),
       ...(state.webRequested ? { sourceIntent: 'web' } : {}) };
     try {
@@ -1250,8 +1262,9 @@ async function ask(raw) {
       if (error.code !== 'submission_unknown') throw error;
       void streamAnswer(null, null, { record: input, clearDraft: text });
     }
+    if (createdConversation) void loadConversations();
   } catch (error) { status(userError(error), true); }
-  finally { state.preparing = false; updateSendButton(); }
+  finally { state.preparing = false; state.submissionPhase = ''; updateSendButton(); }
 }
 
 async function streamAnswer(initialTask, job = null, pending = {}) {
@@ -1340,7 +1353,8 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (pending.clearDraft) state.webRequested = false;
     updateWebIntentControl();
     status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
-    if (task.status === 'queued') beginTurn();
+    // A task receipt is enough to show the turn; do not wait for the SSE handshake.
+    beginTurn();
     const view = await taskClient.subscribe(task, { signal: controller.signal, onUpdate: frameUpdate.schedule, onConnection: connectionNotice });
     frameUpdate.flush();
     if (!current()) return;
@@ -1440,3 +1454,4 @@ if (document.body.classList.contains('qa-embedded')) {
   hostBridge.ready();
   window.addEventListener('pagehide', () => hostBridge.dispose(), { once: true });
 }
+
