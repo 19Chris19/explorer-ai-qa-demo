@@ -1353,8 +1353,9 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (pending.clearDraft) state.webRequested = false;
     updateWebIntentControl();
     status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
-    // A task receipt is enough to show the turn; do not wait for the SSE handshake.
-    beginTurn();
+    // Fresh submissions can show the accepted turn before the first snapshot.
+    // Restored turns keep existing history until replay/history is verified.
+    if (task.status === 'queued' || (pending.clearDraft && !isTerminalTask(task))) beginTurn();
     const view = await taskClient.subscribe(task, { signal: controller.signal, onUpdate: frameUpdate.schedule, onConnection: connectionNotice });
     frameUpdate.flush();
     if (!current()) return;
