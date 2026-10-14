@@ -7,6 +7,17 @@ import { createProviderAClient } from '../provider-a-client.mjs';
 import { SessionModeStore } from '../session-mode-store.mjs';
 import { RequestLedger } from '../request-ledger.mjs';
 
+test('health release provenance is projected without unknown metadata and never changes readiness', async () => {
+  const release = { version: 'v0.6.0-rc.1', revision: 'a'.repeat(40), taskRecordFormat: 'jsonl_v2', private: 'not-public' };
+  const client = createProviderAClient({ baseUrl: 'http://127.0.0.1:3117', apiToken: 'synthetic-api', serviceToken: 'synthetic-service', knowledgeScopeRef: 'a'.repeat(64),
+    fetchImpl: async url => Response.json(url.endsWith('/healthz') ? { release } : url.endsWith('/capacity')
+      ? { schemaVersion: 1, policies: { knowledge_agent: { max_concurrent: 1 } }, features: { knowledge_agent_keyed_sse_v1: true, durable_qa_tasks_v1: true } } : {}) });
+  const status = await client.readiness();
+  assert.equal(status.ready, true);
+  assert.deepEqual(status.providerRelease, { version: release.version, revision: release.revision, taskRecordFormat: 'jsonl_v2' });
+  assert.doesNotMatch(JSON.stringify(status), /not-public/);
+});
+
 test('host gateway requires boolean opt-in and only the exact fixed origin is allowed', () => {
   const baseUrl = 'http://host.docker.internal:3117';
   for (const allowHostGateway of [undefined, false, 'true', 1]) assert.throws(() => createProviderAClient({ baseUrl, allowHostGateway }));

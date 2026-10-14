@@ -12,6 +12,11 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const health = await fetchImpl(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(3500), redirect: 'error' });
     if (!health.ok) throw new Error('provider_unreachable');
     const service = await health.json();
+    const advertised = service.release;
+    const providerRelease = advertised && typeof advertised === 'object' && !Array.isArray(advertised)
+      && /^v\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/u.test(advertised.version || '')
+      ? { version: advertised.version, revision: /^[a-f0-9]{40}$/u.test(advertised.revision || '') ? advertised.revision : null,
+        ...(advertised.taskRecordFormat === 'jsonl_v2' ? { taskRecordFormat: 'jsonl_v2' } : {}) } : undefined;
     if (!configured) return { connected: true, configured: false, authenticated: false, contractSupported: false, ready: false, capacity: 0, queued: service.queue?.queuedRequests ?? 0, webIntentSupported: false };
     const [ordinary, capacityResponse] = await Promise.all([
       fetchImpl(`${baseUrl}/api/conversations?limit=1`, {
@@ -37,6 +42,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const nativeCapacity = Number(capacity.policies?.knowledge_agent?.max_concurrent ?? capacity.policy_capacity?.knowledge_agent ?? 0);
     return {
       connected: true,
+      ...(providerRelease ? { providerRelease } : {}),
       configured: true,
       authenticated,
       contractSupported,
