@@ -119,3 +119,5 @@ v0.2.0 将已验收的 UI、主站适配与 BFF 同时交付为 Node 源码与 D
 
 问答引用、追问、表格工具及分步部署说明见 [问答展示升级](docs/CHAT_PRESENTATION_V1.md)。
 网页封面、手机来源底部面板及资源预算见 [来源预览说明](docs/SOURCE_PREVIEW.md)。封面获取由 Provider 统一限制并默认关闭。
+
+维护排空采用私有本机实时查询，空闲时不再定时刷盘；更新须配套维护脚本，见[维护排空](docs/MAINTENANCE_DRAIN.md)与[macOS 服务调度](docs/MACOS_SERVICE_SCHEDULING.md)。本候选不会自动变更运行服务。

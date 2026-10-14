@@ -64,9 +64,9 @@ node scripts/maintenance.mjs open --generation 3 --operation-id maintenance-exam
 
 check 返回私有 JSON：state、snapshot、drained。退出码 0 表示已观测 CLOSED 且
 全部工作为零；2 表示快照有效但 OPEN 或尚有工作；1 表示不能证明（状态非法、
-快照超过 2 秒、尚未观测最新代际、写入者不匹配或进程不存在等）。控制文件更新
+实时 IPC 超过 2 秒、代际改变、写入者不匹配或进程不存在等）。控制文件更新
 不等于 BFF 已确认；等待对应 generation 的 check 成功，不能只看 close 的退出码。
-快照每 250 ms 刷新，证明仅对该观察时刻/代际有效，不是永久维护授权。
+check 通过同 UID 私有 Unix socket 按需读取实时计数，不再定时写入快照。查询前后核对维护代际与 writer，响应绑定随机请求标识；证明仅对该观察时刻/代际有效，不是永久维护授权。
 
 ## 入口与计数
 
@@ -106,7 +106,7 @@ sourceIntent、preview、createdAt、status。拒绝缺失/未知字段、无效
 旧格式若不符合该合同，维护者必须先离线审查处理，不能删除文件伪造空队列。
 
 队列加载早于维护 writer 启动，因此异常存储不会生成新的 drain 快照/租约。
-遗留快照仍必须通过原有 freshness、代际和存活 writer 检查，不能只看旧文件。
+旧 snapshot 文件不作为证明；必须完成实时 IPC、代际和存活 writer 检查。
 该校验只在配置维护时启用；未配置时原有跳过异常行、重复 id 覆盖和 TTL 行为
 保持兼容。此候选不自动转换或清理任何运行存储。
 
@@ -118,7 +118,7 @@ sourceIntent、preview、createdAt、status。拒绝缺失/未知字段、无效
 未配置维护时保留原 TTL 行为。回退/取消配置前先处理保留项，旧代码会按 TTL 清理。
 
 `state.lock` 是短期 CLI 写锁，`state.writer/owner` 是 BFF 单写入者租约，
-`state.snapshot` 只含计数和本机进程标识，不含问题或凭证。崩溃遗留锁不自动抢占。
+实时响应只含计数和本机进程标识，不含问题或凭证。Unix socket 位于系统临时目录下同 UID 的 `ztx-maint-<uid>` 私有短路径目录（0700），socket 为 0600；文件名由规范状态路径和实例标识散列生成，支持 macOS/Linux。旧 `state.snapshot` 不再更新或读取。崩溃遗留锁不自动抢占。
 维护者必须先确认对应 CLI/BFF 已退出，再清理遗留锁/租约并正常启动；不得删除
 仍运行进程的 writer。不要删 state 来解锁：缺失 state 会关闭新提交。
 权限/损坏修复须在外部私有目录内进行，保留最后可信代际；同进程拒绝代际回退。
@@ -129,3 +129,9 @@ sourceIntent、preview、createdAt、status。拒绝缺失/未知字段、无效
 覆盖权限/链接、非法配置、代际 CAS、写入者、新提交拒绝、既有 queued 排空、
 preview 等待者、SSE 断流清理、paused/过期保留及原所有者删除。
 另运行 gateway/Vercel 测试确认固定拒绝响应头可达公网；不发真实问题。
+
+## 实时检查升级与回退
+
+`checkMaintenance` 现在返回 Promise；CLI 的 JSON（state/snapshot/drained）和退出码 0/2/1 保持兼容。更新所有导入该函数的宿主管理脚本，使用 `await`，否则不能判断排空。新 `deploy/macos/control.mjs` 同时支持旧同步 gate 和新版异步 gate。
+
+在旧 gate 下先完成排空，保留维护状态和私有 writer 记录，再停止 BFF。一起更新 BFF 与控制工具，新 BFF 保持 CLOSED；验证实时 check 成功后再开放。回退同样先用当前工具证明排空，停止后恢复成对代码与工具，保留最新状态/队列，不恢复旧历史备份。socket 最多接受 8 个并行连接，帧最多 16KiB，连接与查询均有 2 秒截止；关闭后的旧实例不能认证排空。

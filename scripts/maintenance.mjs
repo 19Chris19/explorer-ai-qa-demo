@@ -5,7 +5,7 @@ try {
   const [action, generationFlag, generation, operationFlag, operationId, ...rest] = process.argv.slice(2);
   if (!file || rest.length) throw new Error();
   if (action === 'check' && generationFlag === undefined) {
-    const result = checkMaintenance(file);
+    const result = await checkMaintenance(file);
     console.log(JSON.stringify(result));
     if (!result.drained) process.exitCode = 2;
   } else if (['close', 'open'].includes(action) && generationFlag === '--generation'
