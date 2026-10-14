@@ -27,7 +27,9 @@ const providerApiToken = process.env.PROVIDER_A_API_TOKEN || env.PROVIDER_A_API_
 const providerServiceToken = process.env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || env.PROVIDER_A_INTERNAL_SERVICE_TOKEN || '';
 const knowledgeScopeRef = process.env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || env.PROVIDER_A_KNOWLEDGE_SCOPE_REF || '';
 const cookieSecret = process.env.DEMO_COOKIE_SECRET || env.DEMO_COOKIE_SECRET || providerApiToken;
-const releaseRevision = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_REVISION || 'local-dev';
+const websiteRelease = `v${JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version}`;
+const revisionInput = process.env.DEMO_RELEASE_REVISION || env.DEMO_RELEASE_REVISION || '';
+const releaseRevision = /^[a-f0-9]{40}$/u.test(revisionInput) ? revisionInput : null;
 const disableAdmin = (process.env.DEMO_DISABLE_ADMIN || env.DEMO_DISABLE_ADMIN) === '1';
 const paths = deploymentPaths({ ...env, ...process.env });
 const assetPrefix = paths.prefix;
@@ -271,9 +273,9 @@ async function readBody(req) {
 async function health(res) {
   try {
     const status = await provider.readiness();
-    sendJson(res, 200, { ...status, lastRealSuccessAt, websiteRelease: releaseRevision });
+    sendJson(res, 200, { ...status, lastRealSuccessAt, websiteRelease, websiteRevision: releaseRevision });
   } catch {
-    sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt, websiteRelease: releaseRevision });
+    sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt, websiteRelease, websiteRevision: releaseRevision });
   }
 }
 
