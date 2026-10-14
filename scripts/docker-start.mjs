@@ -19,6 +19,10 @@ export function parseStartOptions(args) {
   return {providerDir:resolve(values['provider-dir']),kb:values.kb,project:values.project,webPort,providerPort,plan:Boolean(values.plan)};
 }
 
+export function assertStartedBundle(health, version, revision) {
+  if (!health.authenticated || !health.contractSupported || health.websiteRelease !== `v${version}` || health.websiteRevision !== revision) throw new Error('Started containers did not pass authentication/contract/version checks; inspect privately before promotion');
+}
+
 async function start(args) {
   const options=parseStartOptions(args),root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
   if(resolve(process.cwd())!==root)throw new Error('Run this command from the website repository root');
@@ -36,11 +40,12 @@ async function start(args) {
   if(options.plan){console.log(JSON.stringify({firstDeployment:true,project:options.project,explorerRevision,providerRevision,webPort:options.webPort,providerPort:options.providerPort,privateConfig:'values withheld'}));return;}
   run('docker',['info','--format','{{.OSType}}']);
   await assertFreshProject(options.project,args=>run('docker',args));
+  const websiteVersion=JSON.parse(readFileSync(resolve(root,'package.json'),'utf8')).version;
   if(['provider.env','explorer.env','deployment.json','release.env'].some(name=>existsSync(resolve(root,'.docker-lab',name))))throw new Error('Private deployment config already exists; refusing to replace it');
   run(process.execPath,['scripts/prepare-docker-lab.mjs','--kb',options.kb]);
   console.log('Building Provider and website sequentially; configuration values withheld.');
-  run('docker',['build','--label',`org.opencontainers.image.revision=${providerRevision}`,'-t',providerImage,options.providerDir]);
-  run('docker',['build','--build-arg',`SOURCE_REVISION=${explorerRevision}`,'-t',explorerImage,'.']);
+  run('docker',['build','--build-arg',`SOURCE_REVISION=${providerRevision}`,'--build-arg',`RELEASE_VERSION=v${providerPackage.version}`,'-t',providerImage,options.providerDir]);
+  run('docker',['build','--build-arg',`SOURCE_REVISION=${explorerRevision}`,'--build-arg',`RELEASE_VERSION=v${websiteVersion}`,'-t',explorerImage,'.']);
   const metadata={project:options.project,
     providerImage:run('docker',['image','inspect','--format','{{.Id}}',providerImage]).trim(),
     explorerImage:run('docker',['image','inspect','--format','{{.Id}}',explorerImage]).trim(),
@@ -49,7 +54,7 @@ async function start(args) {
   const env={...process.env,PROVIDER_IMAGE:metadata.providerImage,EXPLORER_IMAGE:metadata.explorerImage,EXPLORER_REVISION:explorerRevision,WEB_HOST_PORT:String(options.webPort),PROVIDER_HOST_PORT:String(options.providerPort)};
   execFileSync('docker',['compose','-p',options.project,'-f','compose.linux.yaml','up','-d','--no-build','--wait','--wait-timeout','180'],{cwd:root,env,stdio:['ignore','pipe','pipe'],timeout:240000});
   const h=await(await fetch(`http://127.0.0.1:${options.webPort}/api/qa/health`,{signal:AbortSignal.timeout(10000)})).json();
-  if(!h.authenticated||!h.contractSupported||h.websiteRelease!==explorerRevision)throw new Error('Started containers did not pass authentication/contract/version checks; inspect privately before promotion');
+  assertStartedBundle(h,websiteVersion,explorerRevision);
   console.log(JSON.stringify({website:`http://127.0.0.1:${options.webPort}/`,accountAdmin:`http://127.0.0.1:${options.providerPort}/admin.html`,release:explorerRevision,capacity:h.capacity,ready:h.ready,accountOnboarding:'manual authorization required'}));
 }
 

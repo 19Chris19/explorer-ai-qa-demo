@@ -1,8 +1,8 @@
-> 当前候选 v0.4.0-rc.1 配套 Provider v0.6.0-rc.1，尚待正式发布验收。生产通过专用分支跟随已验收稳定版，见 [配套发布](docs/PAIRED_RELEASES.md)。
+> 当前稳定配对为 Provider v0.6.0 / 知天下 v0.4.0；核对对应 Release 附件及实际运行版本，生产通过专用分支发布。见 [配套发布](docs/PAIRED_RELEASES.md)。
 
 # 知天下 AI 问答网站
 
-> 本次候选版本为 **v0.4.0-rc.1**，固定配套 **Provider v0.6.0-rc.1**；安装前核对 [最新稳定 Release](https://github.com/19Chris19/explorer-ai-qa-demo/releases/latest) 的实际发布状态和两仓镜像清单。
+> 本次稳定版本为 **v0.4.0**，固定配套 **Provider v0.6.0**；安装前核对 [最新稳定 Release](https://github.com/19Chris19/explorer-ai-qa-demo/releases/latest) 的实际发布状态和两仓镜像清单。
 > 新网页要求 Provider 明确声明 `durable_qa_tasks_v1`，不回退到旧版直连 SSE。
 > 包含持久任务、长回答与断线续接，以及[发布前性能优化](./docs/FRONTEND_PERFORMANCE_20261010.md)；旧 RC tag 保留，不追随浮动 main。
 > 合成验收、发布版本、运行服务必须分别确认，不能直接用旧镜像搭配本分支网页。
@@ -28,7 +28,7 @@
 
 这是新安装的唯一推荐入口。预设“3DGS 知识答疑”分享链接，也支持显式配置其他官方分享链接。先准备私有仓库和私有镜像拉取权限、Docker 与 Git，再交给 Agent；需要扫码、手机确认或加入知识库时由人完成。
 
-**候选 v0.4.0-rc.1 固定依赖 Provider v0.6.0-rc.1。** 新安装选择最新非预发布 Release，核对两边的不可变镜像清单；发布前的 main 或仅有 tag 的候选不算完整交付。历史 v0.2.1/v0.4.2 和 RC 配对见各自 tag，不混改旧安装。
+**稳定 v0.4.0 固定依赖 Provider v0.6.0。** 新安装选择最新非预发布 Release，核对两边的不可变镜像清单；发布前的 main 或仅有 tag 的候选不算完整交付。历史 v0.2.1/v0.4.2 和 RC 配对见各自 tag，不混改旧安装。
 
 完整流程见 [Agent 部署说明](./docs/AGENT_DEPLOYMENT.md)。[配套清单](./deploy/bundle.env)统一选择版本；[版本与候选门槛](./docs/DEPLOYMENT_MODEL.md)解释镜像摘要、独立部署和发布顺序。
 
@@ -76,7 +76,7 @@ v0.2.0 保留已验收的输入、阅读、流式格式、复制与划词复制�
 
 | Provider A 版本 | 网站配套范围 |
 | --- | --- |
-| v0.6.0-rc.1 | v0.4.0-rc.1 固定候选配套，要求 `durable_qa_tasks_v1`，不退回旧直连 SSE；安装前核对实际 Release 与镜像附件。 |
+| v0.6.0 | v0.4.0 固定稳定配套，要求 `durable_qa_tasks_v1`，不退回旧直连 SSE；安装前核对实际 Release 与镜像附件。 |
 | v0.5.0-rc.1 | 历史 v0.3.0-rc.1 灰度配套，旧 tag 保留，不是默认新安装选择。 |
 | v0.4.2 | v0.2.1 固定引导扫码基线；Provider 镜像及干净安装已验证，真实新账号扫码与问答仍未验收。 |
 | v0.3.1 及更早版本 | 不兼容本应用使用的带键内部 SSE；不能仅凭健康检查宣称已接通。 |

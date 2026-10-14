@@ -44,7 +44,7 @@ export function releaseManifest(bundle, { revision, digest, providerDigest, prov
     image: 'ghcr.io/19chris19/explorer-ai-qa-demo', digest,
     platforms: ['linux/amd64', 'linux/arm64'], providerBaseline: bundle.PROVIDER_TAG,
     providerImage: 'ghcr.io/19chris19/ima-qa-web-agent', providerDigest, providerRevision,
-    providerContract: 'knowledge_agent_keyed_sse_v1', topology: 'dedicated-provider',
+    taskRecordFormat: 'jsonl_v2', providerContract: 'knowledge_agent_keyed_sse_v1', topology: 'dedicated-provider',
     acceptance: 'synthetic startup; no real IMA question', realQaVerified: false,
     visibility: 'private; authorized registry login required' };
 }
