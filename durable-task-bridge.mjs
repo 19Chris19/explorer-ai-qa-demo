@@ -1,3 +1,4 @@
+import chatPresentation from './chat-presentation.cjs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export const terminalTask = status => ['succeeded', 'failed', 'cancelled', 'indeterminate'].includes(status);
@@ -108,7 +109,7 @@ export async function followTask(provider, { clientId, taskId, emit, signal, onS
   }
 }
 
-export async function relayTaskEvents(provider, { req, res, route, clientId, rotationMs = 240000, heartbeatMs = 15000 }) {
+export async function relayTaskEvents(provider, { req, res, route, clientId, rotationMs = 240000, heartbeatMs = 15000, presentation }) {
   const controller = new AbortController();
   const detach = () => controller.abort();
   res.once('close', detach);
@@ -124,9 +125,11 @@ export async function relayTaskEvents(provider, { req, res, route, clientId, rot
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no' });
     res.flushHeaders();
     heartbeat = setInterval(() => { if (!res.destroyed && !res.writableEnded) res.write(': transport-heartbeat\n\n'); }, heartbeatMs);
+    const projector = presentation === 'chat_v1' ? createPresentationProjector() : null;
     for await (const chunk of upstream.body) {
       if (res.destroyed || res.writableEnded) break;
-      if (!res.write(chunk)) await new Promise(resolve => {
+      const output = projector ? projector.append(chunk) : chunk;
+      if (output.length && !res.write(output)) await new Promise(resolve => {
         const settle = () => { res.off('drain', settle); res.off('close', settle); resolve(); };
         res.once('drain', settle); res.once('close', settle);
         if (res.destroyed || res.writableEnded) settle();
@@ -141,4 +144,28 @@ export async function relayTaskEvents(provider, { req, res, route, clientId, rot
     clearTimeout(rotate); clearInterval(heartbeat); res.off('close', detach);
     controller.abort(); res.end();
   }
+}
+
+// Frame-by-frame defense for a Provider that ignores the optional view. IDs and
+// unknown event names survive so a filtered metadata frame never creates a gap.
+export function createPresentationProjector() {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let pending = '';
+  return { append(chunk) {
+    pending += decoder.decode(chunk, { stream: true });
+    if (pending.length > 2 * 1024 * 1024) throw new Error('task_event_too_large');
+    let output = '', boundary;
+    while ((boundary = /\r?\n\r?\n/u.exec(pending))) {
+      const frame = pending.slice(0, boundary.index);
+      pending = pending.slice(boundary.index + boundary[0].length);
+      const lines = frame.split(/\r?\n/u);
+      const name = lines.find(line => line.startsWith('event:'))?.slice(6).trim();
+      const raw = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+      if (name && raw) {
+        const data = chatPresentation.projectData(name, JSON.parse(raw));
+        output += lines.filter(line => !line.startsWith('data:')).join('\n') + '\ndata: ' + JSON.stringify(data) + '\n\n';
+      } else output += frame + '\n\n';
+    }
+    return Buffer.from(output);
+  } };
 }

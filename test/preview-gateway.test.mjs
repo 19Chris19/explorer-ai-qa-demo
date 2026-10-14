@@ -7,7 +7,7 @@ import { createPreviewGateway, allowedPreviewRoute } from '../preview-gateway.mj
 test('preview route allowlist excludes admin and internal APIs', () => {
   assert.equal(allowedPreviewRoute('/', 'GET'), true);
   assert.equal(allowedPreviewRoute('/api/qa/ask', 'POST'), true);
-  for (const path of ['/turn-lifecycle.mjs', '/prompt-sparks.mjs', '/answer-process.mjs', '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs']) {
+  for (const path of ['/chat-presentation.js', '/chat-presentation.css', '/turn-lifecycle.mjs', '/prompt-sparks.mjs', '/answer-process.mjs', '/voice-preview.mjs', '/message-shape.mjs', '/composer-shape.mjs']) {
     assert.equal(allowedPreviewRoute(path, 'GET'), true);
     assert.equal(allowedPreviewRoute(path, 'POST'), false);
   }

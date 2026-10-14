@@ -70,18 +70,20 @@ export function createTaskReplay(task) {
   const view = () => {
     let text = '', sources = [], sourceCount = 0, done = null, error = false;
     const process = [];
+    let citationMap = {}, suggestions = [];
     let current = { ...task };
     for (const { event, data = {} } of events.values()) {
       if (event === 'delta' && typeof data.text === 'string') text += data.text;
-      if (event === 'sources') { sources = Array.isArray(data.sources) ? data.sources : []; sourceCount = data.sourceCount ?? sources.length; }
+      if (event === 'sources') { sources = Array.isArray(data.sources) ? data.sources : []; sourceCount = data.sourceCount ?? sources.length; citationMap = data.citationMap || citationMap; }
       if (event === 'process') process.push(data);
-      if (event === 'done') done = data;
+      if (event === 'suggestions') suggestions = data.suggestions || suggestions;
+      if (event === 'done') { done = data; citationMap = data.citationMap || citationMap; suggestions = data.suggestions || suggestions; }
       if (event === 'error') error = true;
       if (event === 'task.status' && taskStates.has(data.status)) current.status = data.status;
     }
     // Snapshot metadata is newer than the events it contains.
     if (isTerminalTask(task)) current.status = task.status;
-    return { task: current, cursor, text, sources, sourceCount, process, done, error };
+    return { task: current, cursor, text, sources, sourceCount, citationMap, suggestions, process, done, error };
   };
   return {
     event(event) { ingest(event); return view(); },
@@ -119,6 +121,7 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
   delay = abortableDelay, heartbeatTimeoutMs = 45000, requestTimeoutMs = 20000 } = {}) {
   const endpoint = id => path(`/api/qa/tasks${id ? `/${encodeURIComponent(id)}` : ''}`);
   async function json(url, options = {}) {
+    if (!options.method || options.method === 'GET') url += (url.includes('?') ? '&' : '?') + 'presentation=chat_v1';
     const controller = new AbortController();
     const abort = () => controller.abort();
     options.signal?.addEventListener('abort', abort, { once: true });
@@ -226,7 +229,7 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
         signal.addEventListener('abort', abort, { once: true });
         const touch = () => { clearTimeout(watchdog); watchdog = setTimeout(abort, heartbeatTimeoutMs); };
         touch();
-        const response = await request(`${endpoint(task.id)}/events?after=${value.cursor}`, {
+        const response = await request(`${endpoint(task.id)}/events?after=${value.cursor}&presentation=chat_v1`, {
           signal: controller.signal, headers: { Accept: 'text/event-stream' },
         });
         if (!response.ok) throw fault('stream_failed', response.status);

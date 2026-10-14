@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { readBundle, releaseManifest } from '../deploy/bundle.mjs';
 
 test('Node and Shell agree on strict fixed rc deployment pairs', () => {
@@ -20,7 +21,7 @@ test('Node and Shell agree on strict fixed rc deployment pairs', () => {
       if (valid) assert.equal(readBundle(file).WEBSITE_VERSION, website);
       else assert.throws(() => readBundle(file), /invalid_deployment_bundle/);
       const shell = spawnSync('sh', ['-c', 'ROOT=$2; . "$1"', 'synthetic',
-        new URL('../deploy/bundle.sh', import.meta.url).pathname, root], { encoding: 'utf8' });
+        fileURLToPath(new URL('../deploy/bundle.sh', import.meta.url)), root], { encoding: 'utf8' });
       assert.equal(shell.status === 0, valid, `${website}: ${shell.stderr}`);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }

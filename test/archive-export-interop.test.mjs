@@ -31,6 +31,19 @@ test('actual Provider exportHistory -> serialized JSON -> website parser (synthe
     const row = syntheticConversation(); row.turns[0].evidence = value; return row;
   };
 
+  await t.test('presentation fields survive Provider export and website archive parsing', () => {
+    const row = syntheticConversation();
+    Object.assign(row.turns[0], { citationMap: { 'index:42': { type: 'web', sources: [{ url: 'https://example.org/paper', title: 'Web', snippet: 'excerpt' }], displayNumbers: ['7'] },
+      'index:5': { type: 'knowledge', title: 'synthetic-private-title' } },
+      suggestions: [{ text: 'Followup', knowledgeBaseId: 'synthetic-private-scope' }],
+      process: [{ phase: 'web', status: 'completed', text: 'synthetic-private-process' }] });
+    const restored = parse(row).turns[0];
+    assert.deepEqual(restored.citationMap['index:42'].displayNumbers, ['7']);
+    assert.deepEqual(restored.citationMap['index:5'], { type: 'knowledge' });
+    assert.deepEqual(restored.suggestions, ['Followup']);
+    assert.doesNotMatch(JSON.stringify(exported(row)), /synthetic-private/);
+  });
+
   await t.test('actual sourceType mapping and numeric/string type interoperate', () => {
     for (const sourceType of [0, 1, 2]) {
       for (const type of [0, 1, 'knowledge']) {

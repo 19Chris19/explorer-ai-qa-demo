@@ -405,6 +405,7 @@ function setConnection(text, ready, title = '') {
 }
 
 async function api(url, options = {}) {
+  if ((!options.method || options.method === 'GET') && /\/conversations\//u.test(url)) url += (url.includes('?') ? '&' : '?') + 'presentation=chat_v1';
   const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error('request_failed'), { status: response.status });
@@ -535,6 +536,9 @@ function busy(value) {
 }
 
 function updateSendButton() {
+  for (const section of log.querySelectorAll('.chat-suggestions')) {
+    for (const control of section.querySelectorAll('button')) control.disabled = Boolean(question.value.trim()) || state.busy || state.access !== 'ready' || Boolean(archiveConversationId) || state.legacyMode || state.preparing || state.queueSubmitting || Boolean(state.submissionPhase);
+  }
   const { stopping, disabled, action } = composerControlState({ ...state, draft: question.value });
   const submitting = Boolean(state.submissionPhase || state.queueSubmitting);
   const label = t(state.submissionPhase || (state.queueSubmitting ? 'queueSubmitting' : action));
@@ -1078,7 +1082,7 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
   if (role === 'user') content.textContent = text || '';
   else {
     const prepared = historic ? globalThis.ImaAnswerMarkdown?.prepareLegacyAnswer(text || '') : null;
-    renderAnswer(content, prepared?.text ?? text ?? '', sources);
+    renderAnswer(content, prepared?.text ?? text ?? '', sources, true, { ...evidence, partial: evidence.complete === false || evidence.interrupted === true });
   }
   outer.append(content);
   if (role === 'user') messageShapes.observe(content);
@@ -1090,6 +1094,7 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
       });
     }
     if (historic) createAnswerProcess(outer, { locale: ui.locale, history: evidence.process });
+    if (historic) globalThis.ChatPresentation?.renderSuggestions(outer, evidence.suggestions, question, state.busy || Boolean(archiveConversationId) || state.legacyMode);
     setSourceCount(outer, sourceCount ?? evidence.source_count ?? sources.length);
     setEvidenceStatus(outer, inspectSourceEvidence(evidence, false, sourceCount ?? sources.length));
     const copy = { text: text || '', sources };
@@ -1138,13 +1143,14 @@ function sourceIndexes(sources) {
   return sources.map((source, index) => Number.isInteger(Number(source?.index)) && Number(source.index) > 0 ? Number(source.index) : index + 1);
 }
 
-function renderAnswer(element, text, sources = [], answerComplete = true) {
+function renderAnswer(element, text, sources = [], answerComplete = true, presentation = {}) {
   const copy = answerCopies.get(element.parentElement);
   if (copy) { copy.text = text; copy.sources = sources; }
   try {
     if (!globalThis.ImaAnswerMarkdown?.updateAnswerElement) throw new Error('answer_renderer_unavailable');
     globalThis.ImaAnswerMarkdown.updateAnswerElement(element, text, {
       answerComplete, hideCitations: true, sourceIndexes: sourceIndexes(sources),
+      ...(globalThis.ChatPresentation ? { presentation: 'chat_v1', citationMap: presentation.citationMap || {}, partial: presentation.partial } : {}),
     });
   } catch {
     element.textContent = text;
@@ -1152,6 +1158,7 @@ function renderAnswer(element, text, sources = [], answerComplete = true) {
 }
 
 function detachTaskView() {
+  globalThis.ChatPresentation?.closeCard();
   state.viewEpoch += 1;
   state.controller?.abort();
   state.controller = null;
@@ -1326,7 +1333,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       return;
     }
     // Render the reduced full value, never append a snapshot to previously displayed text.
-    renderAnswer(content, view.text, view.sources, false);
+    renderAnswer(content, view.text, view.sources, false, view);
     content.classList.toggle('typing', !view.text && view.task.status === 'running');
     for (; processCount < view.process.length; processCount += 1) processView.push(view.process[processCount]);
     setSourceCount(reply, view.done?.source_count ?? view.done?.sourceCount ?? view.sourceCount);
@@ -1381,9 +1388,10 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     beginTurn();
     const complete = view.task.status === 'succeeded' && Boolean(view.text.trim()) && Boolean(view.done);
     const outcome = complete ? 'done' : view.task.status === 'cancelled' ? 'cancelled' : 'interrupted';
-    renderAnswer(content, view.text, view.sources, complete);
+    renderAnswer(content, view.text, view.sources, true, { ...view, partial: !complete });
     content.classList.remove('typing');
     processView.settle(outcome);
+    if (complete) globalThis.ChatPresentation?.renderSuggestions(reply, view.suggestions, question, true);
     settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, outcome);
     lifecycleTicker = 0;
     answerCopies.get(reply)?.control.setReady(Boolean(view.text.trim()), { partial: !complete });

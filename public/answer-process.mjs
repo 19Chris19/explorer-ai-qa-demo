@@ -2,6 +2,11 @@ export function createAnswerProcess(message, { locale = 'zh', history = [] } = {
   let details, list;
   const entries = [];
   const push = item => {
+    if (globalThis.ChatPresentation) {
+      entries.push(item);
+      globalThis.ChatPresentation.renderProcess(message, entries);
+      return;
+    }
     if (item?.kind !== 'status' || typeof item.text !== 'string'
         || !item.text.length || item.text.length > 2048 || entries.length >= 40) return;
     if (entries.at(-1)?.text === item.text) return;
@@ -21,6 +26,7 @@ export function createAnswerProcess(message, { locale = 'zh', history = [] } = {
     entries.push({ kind: 'status', text: item.text });
   };
   const settle = outcome => {
+    if (globalThis.ChatPresentation) { globalThis.ChatPresentation.renderProcess(message, entries, true); return; }
     if (!details) return;
     details.dataset.outcome = outcome;
     if (outcome === 'done') details.open = false;
