@@ -9,3 +9,11 @@ For an existing installation: close admission, drain to zero, stop the single wr
 Task records now use bounded version 2 JSONL with compact checkpoints. Existing legacy records are read without re-asking. After accepting new tasks, rollback must retain the JSONL reader/writer; do not restore an older data snapshot over new history. Cover previews are independent, anonymous and optional: 2 seconds on the client, 3 seconds on the worker, no automatic retry, no browser screenshots. A failed cover leaves the accurate text source available.
 
 A deployment is complete only when the running Provider, BFF, Vercel commit and served asset hashes agree with the accepted manifest. Air robot configuration and login renewal are separate maintenance operations.
+
+Read-only production verification after cutover:
+
+```sh
+node scripts/check-paired-release.mjs --url https://your-website.example/ --manifest /private/path/release-manifest.json
+```
+
+Download the website manifest from the accepted stable GitHub Release. The check compares both running source revisions and five served QA asset hashes; it never submits a question or reads history. Separately verify the Vercel production deployment source commit matches the same website revision. A check failure blocks announcing the production release.

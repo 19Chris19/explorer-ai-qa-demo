@@ -13,6 +13,7 @@ try {
     } catch { if (attempt >= 60) throw Error('Image startup failed'); await new Promise(r => setTimeout(r, 1000)); }
   }
   run(['exec', name, 'node', '-e', "const f=require('fs');for(const p of ['/app/.env.local','/app/.docker-lab','/app/runtime/accounts.json'])if(f.existsSync(p))process.exit(1);Promise.all(['/','/admin','/internal/provider-a/capacity'].map(async(p,i)=>{const r=await fetch('http://127.0.0.1:4317'+p);if(r.status!==[200,404,404][i])throw Error('boundary')})).catch(()=>process.exit(1))"]);
+  run(['exec',name,'node','-e',"const fs=require('fs');fetch('http://127.0.0.1:4317/api/qa/health').then(r=>r.json()).then(h=>{if(h.websiteRelease!=='v'+JSON.parse(fs.readFileSync('/app/package.json')).version||h.websiteRevision!==process.env.DEMO_RELEASE_REVISION||! /^[a-f0-9]{40}$/.test(h.websiteRevision))throw Error('provenance')}).catch(()=>process.exit(1))"]);
   console.log(JSON.stringify({ platform, startup: 'PASS', paths: 'PASS', providerCredentials: 'absent', realIMA: 'NOT RUN' }));
 } catch {
   console.error('Isolated website image verification failed; logs withheld.'); process.exitCode = 1;
