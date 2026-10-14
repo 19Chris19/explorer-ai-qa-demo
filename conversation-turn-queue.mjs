@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, fsyncSync, openSync, rmSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
 
 const pendingTtlMs = 60 * 60 * 1000;
 const completedTtlMs = 10 * 60 * 1000;
 const maxPendingPerConversation = 3;
 const maxBufferedBytes = 2 * 1024 * 1024;
+const maxReplayWireBytes = 16 * 1024 * 1024;
 
 const ownerOf = clientId => createHash('sha256').update(clientId).digest('hex');
 const laneOf = (owner, conversationId) => `${owner}:${conversationId}`;
@@ -50,11 +52,13 @@ function readPreservedStorage(file) {
 }
 
 export class ConversationTurnQueue {
-  constructor(file, dispatch, now = () => Date.now(), { preserveExpiredPending = false } = {}) {
+  constructor(file, dispatch, now = () => Date.now(), { preserveExpiredPending = false, maxReplayBytes = 32 * 1024 * 1024, maxJobs = 500 } = {}) {
     this.file = file;
     this.dispatch = dispatch;
     this.now = now;
     this.preserveExpiredPending = preserveExpiredPending;
+    this.maxReplayBytes = maxReplayBytes;
+    this.maxJobs = maxJobs;
     this.jobs = new Map();
     this.active = new Set();
     let saved;
@@ -115,6 +119,9 @@ export class ConversationTurnQueue {
 
   resumeTask(job, clientId) {
     if (!job.recoverTask) return;
+    // Observation restarts at Provider cursor zero. Replace the temporary replay
+    // cache so an earlier partial prefix cannot accumulate across reconnects.
+    job.events = []; job.bytes = 0; job.wireBytes = 0; job.providerError = false;
     job.recoverTask = false;
     job.clientId = clientId;
     job.status = 'running';
@@ -135,7 +142,7 @@ export class ConversationTurnQueue {
   }
 
   providerStatus(job, status) {
-    if (!['queued', 'running'].includes(status)) return;
+    if (!['queued', 'running'].includes(status) || job.providerStatus === status) return;
     job.providerStatus = status;
     this.save();
   }
@@ -173,6 +180,8 @@ export class ConversationTurnQueue {
     const existing = [...this.jobs.values()].find(job => job.owner === owner && job.requestId === requestId);
     if (existing) return existing.conversationId === conversationId && existing.question === question && existing.sourceIntent === sourceIntent
       ? { job: snapshot(existing), repeated: true } : { error: 'conflict' };
+    if (this.jobs.size >= this.maxJobs
+      || [...this.jobs.values()].reduce((bytes, job) => bytes + job.bytes, 0) >= this.maxReplayBytes) return { error: 'busy' };
     const jobs = this.laneJobs(lane);
     if (jobs.some(job => job.status === 'paused')) return { error: 'paused' };
     if (jobs.filter(job => job.status === 'queued').length >= maxPendingPerConversation) return { error: 'full' };
@@ -218,7 +227,7 @@ export class ConversationTurnQueue {
     if (!job) return false;
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
     res.write(statusEvent(job.status, job));
-    for (const event of job.events) res.write(event);
+    for (const event of job.events) res.write(Buffer.isBuffer(event) ? event : inflateRawSync(event.compressed, { maxOutputLength: event.rawBytes }));
     if (['complete', 'failed', 'cancelled', 'paused'].includes(job.status)) res.end();
     else {
       job.subscribers.add(res);
@@ -273,20 +282,30 @@ export class ConversationTurnQueue {
   emit(job, chunk) {
     const buffer = Buffer.from(chunk);
     if (/^event: error\r?$/mu.test(buffer.toString('utf8'))) job.providerError = true;
-    job.bytes += buffer.length;
-    if (job.bytes > maxBufferedBytes) throw new Error('queued_stream_too_large');
-    job.events.push(buffer);
+    const wire = (job.wireBytes || 0) + buffer.length;
+    if (buffer.length > maxBufferedBytes || wire > maxReplayWireBytes) throw new Error('queued_stream_too_large');
+    // The Provider is the durable record. This bounded, temporary reconnect cache
+    // need not retain each repeated reference excerpt as another full byte copy.
+    const candidate = buffer.length >= 4096 ? deflateRawSync(buffer, { level: 1 }) : buffer;
+    const compressed = candidate.length < buffer.length;
+    const retained = compressed ? candidate.length : buffer.length;
+    if (job.bytes + retained > maxBufferedBytes
+      || [...this.jobs.values()].reduce((bytes, item) => bytes + item.bytes, 0) + retained > this.maxReplayBytes) throw new Error('queued_stream_too_large');
+    job.bytes += retained; job.wireBytes = wire;
+    job.events.push(compressed ? { compressed: candidate, rawBytes: buffer.length } : buffer);
     this.broadcast(job, buffer);
   }
 
   broadcast(job, chunk) {
     for (const res of job.subscribers) {
-      if (res.destroyed || !res.write(chunk)) { job.subscribers.delete(res); res.destroy(); }
+      try { if (!res.destroyed && res.write(chunk)) continue; } catch { /* A broken observer cannot stop the task. */ }
+      job.subscribers.delete(res);
+      try { res.destroy(); } catch { /* Already closed. */ }
     }
   }
 
   endSubscribers(job) {
-    for (const res of job.subscribers) res.end();
+    for (const res of job.subscribers) { try { res.end(); } catch { /* Observation is independent of execution. */ } }
     job.subscribers.clear();
   }
 

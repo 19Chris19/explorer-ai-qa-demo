@@ -567,8 +567,8 @@ async function queueRoute(req, res, pathname) {
     clientId, conversationId: input.conversationId, requestId: input.requestId,
     question: input.question.trim(), sourceIntent: input.sourceIntent || '', preview: Boolean(visitor),
   });
-  const errors = { conflict: '此请求编号已用于另一问题，请重新提交。', paused: '上一轮未完整结束，请先处理待发问题。', full: '本会话最多排队 3 条问题。' };
-  sendJson(res, result.error ? 409 : 202, result.error ? { error: errors[result.error] } : result);
+  const errors = { conflict: '此请求编号已用于另一问题，请重新提交。', paused: '上一轮未完整结束，请先处理待发问题。', full: '本会话最多排队 3 条问题。', busy: '服务暂时繁忙，问题尚未接收，请稍后提交。' };
+  sendJson(res, result.error === 'busy' ? 429 : result.error ? 409 : 202, result.error ? { error: errors[result.error] } : result);
 }
 
 function validateQueuedInput(input, requireIdentity) {
