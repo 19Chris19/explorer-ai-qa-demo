@@ -1150,7 +1150,10 @@ function renderAnswer(element, text, sources = [], answerComplete = true, presen
     if (!globalThis.ImaAnswerMarkdown?.updateAnswerElement) throw new Error('answer_renderer_unavailable');
     globalThis.ImaAnswerMarkdown.updateAnswerElement(element, text, {
       answerComplete, hideCitations: true, sourceIndexes: sourceIndexes(sources),
-      ...(globalThis.ChatPresentation ? { presentation: 'chat_v1', citationMap: presentation.citationMap || {}, partial: presentation.partial } : {}),
+      ...(globalThis.ChatPresentation ? { presentation: 'chat_v1', citationMap: presentation.citationMap || {}, partial: presentation.partial,
+        conversationId: state.conversationId, taskId: presentation.task?.id || presentation.taskId,
+        loadPreview: globalThis.ChatPresentation.previewLoader((url, init) => fetch(url, { credentials: 'same-origin', ...init }), sitePath('/api/qa/source-preview')),
+      } : {}),
     });
   } catch {
     element.textContent = text;

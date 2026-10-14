@@ -15,6 +15,7 @@ import { MaintenanceGate } from './maintenance-gate.mjs';
 import { cancelTaskAttempt, followTask, lookupSubmittedTask, recoverSubmittedTask, relayTaskEvents, taskTerminalError, terminalTask } from './durable-task-bridge.mjs';
 import { TaskWatchStore } from './task-watch-store.mjs';
 import { createStaticResponder } from './static-assets.mjs';
+import { relaySourcePreview } from './source-preview.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const serveStatic = createStaticResponder(root);
@@ -127,6 +128,10 @@ const server = createServer(async (req, res) => {
       await health(res);
       return;
     }
+    if (['/api/qa/source-preview', '/api/qa/source-preview/image'].includes(pathname) && req.method === 'GET') {
+      await relaySourcePreview(provider, { req, res, clientId: getClientId(req, res), params: url.searchParams,
+        image: pathname.endsWith('/image'), prefix: assetPrefix }); return;
+    }
     if (pathname === '/api/qa/tasks' || /^\/api\/qa\/tasks\/[a-zA-Z0-9-]{1,100}(?:\/events)?$/u.test(pathname)) {
       if (!provider.configured) { sendJson(res, 503, { error: '问答接入尚未完成配置' }); return; }
       if (req.method !== 'GET' && !isSameOrigin(req)) { sendJson(res, 403, { error: 'Invalid request origin' }); return; }
@@ -197,7 +202,7 @@ function setSecurityHeaders(res, embedded = false) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Content-Security-Policy', `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors ${embedded ? "'self'" : "'none'"}; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors ${embedded ? "'self'" : "'none'"}; connect-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'`);
 }
 
 function sendJson(res, status, data) {

@@ -41,6 +41,8 @@ export function failure(request, status = 503, retryAfter, { apiJsonError = fals
 
 export function validResponseType(path, type) {
   const mime = (type || '').split(';')[0].trim().toLowerCase();
+  if (path === 'api/qa/source-preview/image') return ['image/png', 'image/jpeg', 'image/webp', 'application/json'].includes(mime);
+  if (path === 'api/qa/source-preview') return mime === 'application/json';
   if (path.startsWith('api/')) return ['application/json', 'text/event-stream'].includes(mime);
   if (path === '') return mime === 'text/html';
   if (/\.m?js$/.test(path)) return ['text/javascript', 'application/javascript'].includes(mime);
@@ -50,4 +52,15 @@ export function validResponseType(path, type) {
   if (path.endsWith('.svg')) return mime === 'image/svg+xml';
   if (path.endsWith('.woff2')) return ['font/woff2', 'application/font-woff2'].includes(mime);
   return false;
+}
+export async function boundedPreviewBody(response, limit) {
+  if (Number(response.headers.get('content-length')) > limit) { await response.body?.cancel(); throw new Error('preview_too_large'); }
+  const reader = response.body?.getReader(); if (!reader) return new Uint8Array();
+  const chunks = []; let size = 0;
+  try {
+    while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length;
+      if (size > limit) { await reader.cancel(); throw new Error('preview_too_large'); } chunks.push(value); }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(size); let at = 0;
+  for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; } return bytes;
 }

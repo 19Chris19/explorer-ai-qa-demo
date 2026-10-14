@@ -52,10 +52,12 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
   function request({ route, method, clientId, body, requestId, sourceIntent, signal }) {
     const ask = route === '/api/ask';
     const task = /^\/api\/tasks(?:[/?]|$)/u.test(route);
+    const preview = /^\/api\/source-preview(?:[/?]|$)/u.test(route);
     const submitTask = route === '/api/tasks' && method === 'POST';
-    const internalRoute = ask ? '/internal/provider-a/deep-ask' : task ? route.replace('/api/tasks', '/internal/provider-a/tasks') : route;
+    const internalRoute = ask ? '/internal/provider-a/deep-ask' : task ? route.replace('/api/tasks', '/internal/provider-a/tasks')
+      : preview ? route.replace('/api/source-preview', '/internal/provider-a/source-preview') : route;
     const headers = {
-      Authorization: `Bearer ${ask || task ? serviceToken : apiToken}`,
+      Authorization: `Bearer ${ask || task || preview ? serviceToken : apiToken}`,
       'X-IMA-Client-Id': clientId,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     };
