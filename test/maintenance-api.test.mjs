@@ -97,8 +97,8 @@ test('private CLI closes live synthetic BFF; existing queue drains, counters set
   const waiting = await (await submit('queue', 'synthetic-2')).json();
   const cli = (...args) => spawnSync(process.execPath, ['scripts/maintenance.mjs', ...args], { cwd: root, env, encoding: 'utf8' });
   assert.equal(cli('close', '--generation', '2', '--operation-id', 'synthetic-drain').status, 0);
-  const observed = await until(() => {
-    const result = checkMaintenance(state);
+  const observed = await until(async () => {
+    const result = await checkMaintenance(state);
     return result.state.generation === 3 && result.snapshot.running === 1 && result;
   });
   assert.equal(observed.snapshot.activeDirect, 1);
@@ -123,7 +123,7 @@ test('private CLI closes live synthetic BFF; existing queue drains, counters set
   await until(() => asks.length >= 2); releases[1]();
   await until(() => asks.length === 3); releases[2]();
   assert.match(await events.text(), /event: done/u); await waitingEvents.text();
-  await until(() => checkMaintenance(state).drained);
+  await until(async () => (await checkMaintenance(state)).drained);
   // A busy full-suite run may age the private snapshot between two processes.
   // Keep the production freshness bound and wait for a new valid observation.
   await until(() => cli('check').status === 0);
@@ -133,13 +133,13 @@ test('private CLI closes live synthetic BFF; existing queue drains, counters set
   const paused = await (await submit('queue', 'synthetic-1')).json();
   assert.equal(cli('close', '--generation', '4', '--operation-id', 'synthetic-disconnect').status, 0);
   controller.abort(); await broken.text().catch(() => {});
-  const after = await until(() => {
-    const result = checkMaintenance(state);
+  const after = await until(async () => {
+    const result = await checkMaintenance(state);
     return result.snapshot.inflight === 0 && result.snapshot.activeDirect === 0 && result.snapshot.paused === 1 && result;
   });
   assert.equal(after.snapshot.previewActive, 0); assert.equal(after.drained, false);
   assert.equal((await fetch(`${base}/api/qa/queue/${paused.job.id}`, { method: 'DELETE', headers })).status, 200);
-  await until(() => checkMaintenance(state).drained);
+  await until(async () => (await checkMaintenance(state)).drained);
   assert.equal((await fetch(`${base}/api/qa/conversations/synthetic-1`, { method: 'DELETE', headers })).status, 200);
   writeFileSync(state, '{invalid');
   assert.equal((await submit('ask', 'synthetic-1')).status, 503);

@@ -44,7 +44,7 @@ const invalid = {
 };
 
 for (const [name, mutate] of Object.entries(invalid)) {
-  test(`preserve rejects ${name} before rewriting or publishing drain`, t => {
+  test(`preserve rejects ${name} before rewriting or publishing drain`, async t => {
     const { dir, file, row } = fixture(t);
     const bytes = Buffer.from(JSON.stringify(mutate(row), null, 2) + '\n');
     writeFileSync(file, bytes);
@@ -60,13 +60,13 @@ for (const [name, mutate] of Object.entries(invalid)) {
     assert.deepEqual(readFileSync(file), bytes);
     assert.equal(existsSync(`${state}.snapshot`), false);
     assert.equal(existsSync(`${state}.writer`), false);
-    assert.throws(() => checkMaintenance(state));
+    await assert.rejects(checkMaintenance(state));
   });
 }
 
 for (const bytes of [Buffer.from('{broken'), Buffer.from('{}'), Buffer.from('null'), Buffer.from('"synthetic"'),
   Buffer.from('[{"question":"\xc3("}]', 'binary')]) {
-  test(`preserve rejects invalid root/encoding ${bytes.toString('hex')} without writes`, t => {
+  test(`preserve rejects invalid root/encoding ${bytes.toString('hex')} without writes`, async t => {
     const { file } = fixture(t);
     writeFileSync(file, bytes);
     assert.throws(() => new ConversationTurnQueue(file, () => {}, undefined, { preserveExpiredPending: true }));
@@ -74,7 +74,7 @@ for (const bytes of [Buffer.from('{broken'), Buffer.from('{}'), Buffer.from('nul
   });
 }
 
-test('legacy still skips malformed rows, overwrites duplicate IDs, and expires old pending', t => {
+test('legacy still skips malformed rows, overwrites duplicate IDs, and expires old pending', async t => {
   const { file, row } = fixture(t);
   writeFileSync(file, JSON.stringify([null, row, { ...row, question: 'Synthetic replacement' }]));
   const queue = new ConversationTurnQueue(file, () => {}, () => 1000);
@@ -84,7 +84,7 @@ test('legacy still skips malformed rows, overwrites duplicate IDs, and expires o
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), []);
 });
 
-test('legacy parse and non-array errors still reject without rewriting', t => {
+test('legacy parse and non-array errors still reject without rewriting', async t => {
   const { file } = fixture(t);
   for (const text of ['{broken', '{}', 'null']) {
     writeFileSync(file, text);
@@ -93,7 +93,7 @@ test('legacy parse and non-array errors still reject without rewriting', t => {
   }
 });
 
-test('valid empty storage is not normalized or rewritten', t => {
+test('valid empty storage is not normalized or rewritten', async t => {
   const { file } = fixture(t);
   const bytes = Buffer.from('[  \n ]\n');
   writeFileSync(file, bytes);
@@ -102,7 +102,7 @@ test('valid empty storage is not normalized or rewritten', t => {
   assert.deepEqual(readFileSync(file), bytes);
 });
 
-test('missing storage is a new empty queue; unreadable non-file storage is not empty', t => {
+test('missing storage is a new empty queue; unreadable non-file storage is not empty', async t => {
   const { dir } = fixture(t);
   const absent = join(dir, 'absent.json');
   assert.equal(new ConversationTurnQueue(absent, () => {}, undefined, { preserveExpiredPending: true }).jobs.size, 0);
@@ -111,7 +111,7 @@ test('missing storage is a new empty queue; unreadable non-file storage is not e
   assert.throws(() => new ConversationTurnQueue(absent, () => {}, undefined, { preserveExpiredPending: true }));
 });
 
-test('preserve rejects invalid UTF-8 inside an otherwise valid serialized row', t => {
+test('preserve rejects invalid UTF-8 inside an otherwise valid serialized row', async t => {
   const { file, row } = fixture(t);
   const text = JSON.stringify([{ ...row, question: 'SYNTHETIC_MARKER' }]);
   const [before, after] = text.split('SYNTHETIC_MARKER');
@@ -121,7 +121,7 @@ test('preserve rejects invalid UTF-8 inside an otherwise valid serialized row', 
   assert.deepEqual(readFileSync(file), bytes);
 });
 
-test('preserve rejects existing and dangling storage symlinks without touching either path', t => {
+test('preserve rejects existing and dangling storage symlinks without touching either path', async t => {
   const { dir, file } = fixture(t);
   const bytes = readFileSync(file);
   for (const target of [file, join(dir, 'missing-target')]) {
@@ -164,12 +164,12 @@ for (const kind of ['invalid-row', 'duplicate-id', 'malformed-json', 'non-array'
     assert.deepEqual(readFileSync(file), bytes);
     assert.equal(existsSync(`${state}.snapshot`), false);
     assert.equal(existsSync(`${state}.writer`), false);
-    assert.throws(() => checkMaintenance(state));
+    await assert.rejects(checkMaintenance(state));
     assert.equal(calls, 0);
   });
 }
 
-test('all valid serialized statuses restore paused with expired contents retained', t => {
+test('all valid serialized statuses restore paused with expired contents retained', async t => {
   const { file, row } = fixture(t);
   for (const status of ['queued', 'paused', 'running']) {
     writeFileSync(file, JSON.stringify([{ ...row, status }]));

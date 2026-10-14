@@ -46,7 +46,7 @@ const previewAdmission = new PreviewAdmission();
 const taskWatches = new Map();
 const taskWatchStore = new TaskWatchStore(join(runtimeDir, 'task-watch.json'));
 const directLanes = new Map();
-maintenance.start(() => ({ ...turnQueue.maintenanceSnapshot(), ...previewAdmission.maintenanceSnapshot() }));
+await maintenance.start(() => ({ ...turnQueue.maintenanceSnapshot(), ...previewAdmission.maintenanceSnapshot() }));
 process.once('exit', () => maintenance.stop());
 if (maintenance.enabled) {
   process.once('SIGTERM', () => process.exit(0));

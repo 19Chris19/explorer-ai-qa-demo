@@ -1,6 +1,7 @@
-import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { constants, chmodSync, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { createServer, createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
@@ -88,16 +89,60 @@ export function transitionMaintenance(file, action, { generation, operationId } 
   } finally { rmSync(lock, { recursive: true }); }
 }
 
-export function checkMaintenance(file) {
+function socketPath(file, instanceId) {
+  const parent = join(realpathSync('/tmp'), `ztx-maint-${process.geteuid()}`);
+  try { mkdirSync(parent, { mode: 0o700 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+  const stat = lstatSync(parent);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.geteuid() || (stat.mode & 0o777) !== 0o700) fail();
+  return join(parent, `${createHash('sha256').update(`${file}\0${instanceId}`).digest('hex').slice(0, 32)}.sock`);
+}
+
+function readWriter(file) {
+  const value = readPrivate(`${file}.writer/owner`);
+  if (!exactKeys(value, ['pid', 'instanceId']) || !Number.isSafeInteger(value.pid) || value.pid < 1
+      || typeof value.instanceId !== 'string' || !/^[a-f0-9-]{36}$/u.test(value.instanceId)) fail();
+  return value;
+}
+
+export async function checkMaintenance(file) {
   const state = readState(file);
-  const snapshot = readPrivate(`${file}.snapshot`);
-  const writer = readPrivate(`${file}.writer/owner`);
+  const writer = readWriter(file);
+  const address = socketPath(file, writer.instanceId);
+  const stat = lstatSync(address);
+  if (!stat.isSocket() || stat.uid !== process.geteuid() || (stat.mode & 0o777) !== 0o600) fail();
+  const requestId = randomUUID();
+  const snapshot = await new Promise((resolve, reject) => {
+    const client = createConnection(address);
+    let data = '', finished = false;
+    const finish = (error, value) => {
+      if (finished) return; finished = true; clearTimeout(timer); client.destroy();
+      if (error) reject(new Error('maintenance_unavailable')); else resolve(value);
+    };
+    const timer = setTimeout(() => finish(true), 2000);
+    client.once('error', () => finish(true));
+    client.once('end', () => { if (!finished) finish(true); });
+    client.once('connect', () => client.write(JSON.stringify({ requestId, instanceId: writer.instanceId,
+      generation: state.generation, operationId: state.operationId }) + '\n'));
+    client.on('data', chunk => {
+      data += chunk.toString('utf8');
+      if (Buffer.byteLength(data) > 16384) return finish(true);
+      if (!data.includes('\n')) return;
+      try {
+        const value = JSON.parse(data);
+        if (!exactKeys(value, ['requestId', 'snapshot']) || value.requestId !== requestId) return finish(true);
+        finish(false, value.snapshot);
+      } catch { finish(true); }
+    });
+  });
+  const current = readState(file), currentWriter = readWriter(file);
+  if (JSON.stringify(current) !== JSON.stringify(state) || currentWriter.pid !== writer.pid
+      || currentWriter.instanceId !== writer.instanceId) fail();
   const now = Date.now();
   if (!exactKeys(snapshot, ['schemaVersion', 'generation', 'operationId', 'mode', 'observedAt', 'pid', 'instanceId', ...countKeys])
       || snapshot.schemaVersion !== 1 || snapshot.generation !== state.generation || snapshot.operationId !== state.operationId
       || snapshot.mode !== state.mode || !Number.isFinite(snapshot.observedAt) || snapshot.observedAt > now
       || now - snapshot.observedAt > 2000 || !Number.isSafeInteger(snapshot.pid) || snapshot.pid < 1
-      || typeof snapshot.instanceId !== 'string' || !exactKeys(writer, ['pid', 'instanceId'])
+      || typeof snapshot.instanceId !== 'string'
       || writer.pid !== snapshot.pid || writer.instanceId !== snapshot.instanceId
       || !countKeys.every(key => integer(snapshot[key]))
       || snapshot.pending !== snapshot.queued + snapshot.paused || snapshot.expiredPending > snapshot.pending) fail();
@@ -139,7 +184,7 @@ export class MaintenanceGate {
     return () => { if (!released) { released = true; this.inflight--; } };
   }
 
-  start(counts) {
+  async start(counts) {
     if (!this.enabled) return;
     assertPath(this.file);
     const writerPath = `${this.file}.writer`;
@@ -150,9 +195,47 @@ export class MaintenanceGate {
     catch (error) { rmSync(writerPath, { recursive: true }); throw error; }
     this.writer = true;
     this.counts = counts;
-    this.publish();
-    this.timer = setInterval(() => this.publish(), 250);
-    this.timer.unref();
+    this.publicationFailed = true;
+    this.connections = new Set();
+    try {
+      this.address = socketPath(this.file, this.instanceId);
+      this.server = createServer(socket => {
+        if (this.connections.size >= 8) { socket.destroy(); return; }
+        this.connections.add(socket);
+        socket.once('close', () => this.connections.delete(socket));
+        socket.setTimeout(2000, () => socket.destroy());
+        socket.on('error', () => {});
+        let data = '', replied = false;
+        socket.on('data', chunk => {
+          if (replied) { socket.destroy(); return; }
+          data += chunk.toString('utf8');
+          if (Buffer.byteLength(data) > 16384) { socket.destroy(); return; }
+          if (!data.includes('\n')) return;
+          replied = true;
+          try {
+            const request = JSON.parse(data), state = this.state();
+            if (!exactKeys(request, ['requestId', 'instanceId', 'generation', 'operationId'])
+                || typeof request.requestId !== 'string' || !/^[a-f0-9-]{36}$/u.test(request.requestId)
+                || request.instanceId !== this.instanceId || request.generation !== state.generation
+                || request.operationId !== state.operationId || !['OPEN', 'CLOSED'].includes(state.mode)) fail();
+            const counts = { inflight: this.inflight, ...this.counts() };
+            if (!exactKeys(counts, countKeys) || !countKeys.every(key => integer(counts[key]))
+                || counts.pending !== counts.queued + counts.paused || counts.expiredPending > counts.pending) fail();
+            socket.end(JSON.stringify({ requestId: request.requestId, snapshot: { schemaVersion: 1, ...state,
+              observedAt: Date.now(), pid: process.pid, instanceId: this.instanceId, ...counts } }) + '\n');
+          } catch { socket.destroy(); }
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.server.once('error', reject);
+        this.server.listen(this.address, () => { this.server.removeListener('error', reject); resolve(); });
+      });
+      // The containing directory is already private before listen creates the socket.
+      chmodSync(this.address, 0o600);
+      this.server.on('error', () => { this.publicationFailed = true; });
+      this.server.unref();
+      this.publish();
+    } catch (error) { this.stop(); throw error; }
   }
 
   publish() {
@@ -160,16 +243,16 @@ export class MaintenanceGate {
     try {
       const state = this.state();
       const counts = { inflight: this.inflight, ...this.counts() };
-      if (!countKeys.every(key => integer(counts[key]))) fail();
-      atomicWrite(`${this.file}.snapshot`, { schemaVersion: 1, generation: state.generation,
-        operationId: state.operationId, mode: state.mode, observedAt: Date.now(), pid: process.pid,
-        instanceId: this.instanceId, ...counts });
+      if (!exactKeys(counts, countKeys) || !countKeys.every(key => integer(counts[key]))
+          || counts.pending !== counts.queued + counts.paused || counts.expiredPending > counts.pending) fail();
+      if (!['OPEN', 'CLOSED'].includes(state.mode) || !this.server?.listening) fail();
       this.publicationFailed = false;
     } catch { this.publicationFailed = true; }
   }
 
   stop() {
-    clearInterval(this.timer);
+    for (const connection of this.connections || []) connection.destroy();
+    this.server?.close();
     this.publicationFailed = this.enabled;
     if (!this.writer) return;
     this.writer = false;

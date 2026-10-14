@@ -18,4 +18,6 @@ for (const file of [
 }
 mkdirSync(join(output, 'scripts'), { recursive: true });
 copyFileSync(join(root, 'scripts/maintenance.mjs'), join(output, 'scripts/maintenance.mjs'));
+mkdirSync(join(output, 'deploy'), { recursive: true });
+cpSync(join(root, 'deploy/macos'), join(output, 'deploy/macos'), { recursive: true });
 console.log('Built dist/ (no credentials or runtime data).');

@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY public ./public
 COPY scripts ./scripts
+COPY deploy/macos ./deploy/macos
 COPY *.mjs ./
 COPY chat-presentation.cjs ./
 COPY .env.example ./
