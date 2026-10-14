@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
+import { PREVIEW_IMAGE_TYPES, readPreviewBody } from './source-preview.mjs';
 
 const assets = new Set([
   '/', '/styles.css', '/chat.css', '/chat-presentation.js', '/chat-presentation.css', '/icons.svg', '/brand-orbit.png',
@@ -21,6 +22,7 @@ const assets = new Set([
 export function allowedPreviewRoute(path, method) {
   if (assets.has(path)) return method === 'GET' || method === 'HEAD';
   if (path === '/api/qa/health') return method === 'GET';
+  if (['/api/qa/source-preview', '/api/qa/source-preview/image'].includes(path)) return method === 'GET';
   if (path === '/api/qa/archive/conversations' || /^\/api\/qa\/archive\/conversations\/archive(?::|%3A)[a-zA-Z0-9-]{1,100}$/iu.test(path)) return method === 'GET';
   if (path === '/api/qa/conversations') return ['GET', 'POST'].includes(method);
   if (/^\/api\/qa\/conversations\/[a-zA-Z0-9-]+$/u.test(path)) return ['GET', 'DELETE'].includes(method);
@@ -82,16 +84,24 @@ export function createPreviewGateway({ key, bffUrl, fetchImpl = fetch }) {
           'X-Explorer-Preview-Visitor': visitor,
         },
         body,
-        signal: controller.signal,
+        signal: url.pathname.startsWith('/api/qa/source-preview') ? AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) : controller.signal,
         redirect: 'manual',
       });
       if (upstream.status >= 300 && upstream.status < 400) throw new Error('redirect_not_allowed');
+      let previewBody;
+      if (url.pathname.startsWith('/api/qa/source-preview')) {
+        const type = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+        const image = url.pathname.endsWith('/image') && upstream.ok;
+        if (image ? !PREVIEW_IMAGE_TYPES.includes(type) : type !== 'application/json') { await upstream.body?.cancel(); throw new Error('preview_type'); }
+        previewBody = await readPreviewBody(upstream, image ? 512 * 1024 : 4096);
+      }
       for (const name of ['content-type', 'content-security-policy', 'set-cookie', 'x-frame-options', 'referrer-policy', 'x-accel-buffering', 'retry-after']) {
         const value = upstream.headers.get(name);
         if (value) res.setHeader(name, value);
       }
       res.writeHead(upstream.status);
-      if (upstream.body && req.method !== 'HEAD') await pipeline(Readable.fromWeb(upstream.body), res);
+      if (previewBody) res.end(previewBody);
+      else if (upstream.body && req.method !== 'HEAD') await pipeline(Readable.fromWeb(upstream.body), res);
       else res.end();
     } catch (error) {
       if (res.destroyed) return;
