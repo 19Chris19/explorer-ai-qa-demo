@@ -36,11 +36,11 @@ async function start(args) {
   const providerPackage=JSON.parse(readFileSync(resolve(options.providerDir,'package.json'),'utf8'));
   if(providerPackage.name!=='ima-qa-web'||!existsSync(resolve(options.providerDir,'Dockerfile')))throw new Error('Provider source is not ima-qa-web');
   const explorerRevision=revision(root),providerRevision=revision(options.providerDir);
-  const websiteVersion=JSON.parse(readFileSync(resolve(root,'package.json'),'utf8')).version;
   const providerImage=`zhitianxia-provider:${providerRevision}`,explorerImage=`zhitianxia-explorer:${explorerRevision}`;
   if(options.plan){console.log(JSON.stringify({firstDeployment:true,project:options.project,explorerRevision,providerRevision,webPort:options.webPort,providerPort:options.providerPort,privateConfig:'values withheld'}));return;}
   run('docker',['info','--format','{{.OSType}}']);
   await assertFreshProject(options.project,args=>run('docker',args));
+  const websiteVersion=JSON.parse(readFileSync(resolve(root,'package.json'),'utf8')).version;
   if(['provider.env','explorer.env','deployment.json','release.env'].some(name=>existsSync(resolve(root,'.docker-lab',name))))throw new Error('Private deployment config already exists; refusing to replace it');
   run(process.execPath,['scripts/prepare-docker-lab.mjs','--kb',options.kb]);
   console.log('Building Provider and website sequentially; configuration values withheld.');
