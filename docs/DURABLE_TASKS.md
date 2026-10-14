@@ -33,6 +33,29 @@ Provider 是任务/终态/正文的唯一执行依据。网站私有 task-watch.
 及观察状态，用于 BFF 重启后重新观察，不存答案或上游凭证。已有待发问题仍可
 编辑/删除；派发后保存 taskId，恢复时只观察该任务，不重新问 IMA。
 
+### 引用密集回答的回放保护
+
+Provider 的任务记录使用紧凑检查点和增量 JSONL；网站继续以 Provider 为唯一持久
+答案来源。网站排队流的临时缓存对大帧使用轻量无损压缩，重连后输出原始 SSE
+字节，不改变引用键、编号、内容或事件 ID。单任务保留缓存仍限 2MiB，展开的
+传输内容另限 16MiB；整个缓存限 32MiB、最多 500 个临时任务。完成缓存按原有
+10 分钟期限清理；含不确定任务身份的待恢复记录不删除。总容量不足时先拒绝新
+排队请求，已有请求编号仍按原身份查找。
+
+缓存或阶段状态持久化失败会传递给队列，暂停观察，保留原 taskId 和提交身份；不会冒充普通
+断网而在内部无限重试。之后恢复仍只 GET 原任务，并替换旧的部分回放缓存，
+避免一遍遍叠加前缀。真实终态以 Provider 为准，停止仍须明确取消。
+单个浏览器订阅写入或关闭异常只清理该订阅，不中断任务或其他读者。
+
+会话归属和旧接口请求去重文件补齐文件及父目录 fsync，并在写失败时恢复内存
+状态；它们仍为低频原子 JSON，不随答案分片刷盘。重复的 Provider 阶段状态不再
+反复重写待发文件。无效存储会报错，不会自动初始化空归属或空去重表。
+
+相关回归：`node --test test/queue-replay-reliability.test.mjs
+test/private-routing-durability.test.mjs`。这些修正不替代真实问答、部署和手机验收。
+`node --expose-gc scripts/benchmark-queue-replay.mjs` 可复现 30 轮合成缓存与重连
+性能检查，不访问 Provider 或真实网页，不读取运行数据。
+
 ### BFF recovery contract (FIX-20261009-EXPLORER-TASK-RECOVERY)
 
 - Both submission entry points fsync private request intent before the one-shot
