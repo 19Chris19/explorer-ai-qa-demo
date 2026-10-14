@@ -2,7 +2,7 @@
 
 ## 当前版本入口
 
-本次稳定配对 v0.4.0 / Provider v0.6.0；安装前核对两仓实际 Release 和镜像附件，见 [v0.4.0 说明](releases/v0.4.0.md)。新安装统一使用 [Agent 引导](AGENT_DEPLOYMENT.md)，默认独立 Provider，不手工拼接两仓或找数字 ID。配套版本以 `deploy/bundle.env` 为准，安装固定实际摘要，正式流水线记录两边镜像与源码。下文 v0.2.0 命令仅为旧版维护参考。
+本次稳定配对 v0.4.1 / Provider v0.6.1；安装前核对两仓实际 Release 和镜像附件，见 [v0.4.1 说明](releases/v0.4.1.md)。新安装统一使用 [Agent 引导](AGENT_DEPLOYMENT.md)，默认独立 Provider，不手工拼接两仓或找数字 ID。配套版本以 `deploy/bundle.env` 为准，安装固定实际摘要，正式流水线记录两边镜像与源码。下文 v0.2.0 命令仅为旧版维护参考。
 
 ## v0.2.0 已发布基线
 
