@@ -1,6 +1,6 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { writePrivateJson } from './private-json-file.mjs';
 
 const ttlMs = 7 * 24 * 60 * 60 * 1000;
 
@@ -13,6 +13,10 @@ export class RequestLedger {
       if (error.code !== 'ENOENT') throw error;
       this.rows = {};
     }
+    if (!this.rows || typeof this.rows !== 'object' || Array.isArray(this.rows)
+      || Object.entries(this.rows).some(([key, row]) => !/^[a-f0-9]{64}$/u.test(key) || !row
+        || !/^[a-f0-9]{64}$/u.test(row.fingerprint) || !Number.isFinite(row.createdAt)
+        || !['unknown', 'complete'].includes(row.state))) throw new Error('invalid_request_ledger');
   }
 
   claim({ clientId, requestId, question, conversationId, sourceIntent = '' }) {
@@ -22,15 +26,17 @@ export class RequestLedger {
     if (row && this.now() - row.createdAt < ttlMs) {
       return { accepted: false, reason: row.fingerprint === fingerprint ? 'duplicate' : 'conflict', key };
     }
-    this.rows[key] = { fingerprint, createdAt: this.now(), state: 'unknown' };
-    this.save();
+    const previous = this.rows;
+    this.rows = { ...previous, [key]: { fingerprint, createdAt: this.now(), state: 'unknown' } };
+    try { this.save(); } catch (error) { this.rows = previous; throw error; }
     return { accepted: true, key };
   }
 
   complete(key) {
     if (!this.rows[key]) return;
-    this.rows[key].state = 'complete';
-    this.save();
+    const previous = this.rows;
+    this.rows = { ...previous, [key]: { ...previous[key], state: 'complete' } };
+    try { this.save(); } catch (error) { this.rows = previous; throw error; }
   }
 
   save() {
@@ -38,10 +44,7 @@ export class RequestLedger {
     for (const [key, row] of Object.entries(this.rows)) {
       if (!row || row.createdAt < cutoff) delete this.rows[key];
     }
-    mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
-    const temp = `${this.file}.${randomUUID()}.tmp`;
-    writeFileSync(temp, JSON.stringify(this.rows), { mode: 0o600 });
-    renameSync(temp, this.file);
+    writePrivateJson(this.file, this.rows);
   }
 }
 

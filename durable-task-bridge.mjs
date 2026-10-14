@@ -45,16 +45,21 @@ export async function cancelTaskAttempt(provider, { clientId, taskId }) {
 export async function followTask(provider, { clientId, taskId, emit, signal, onStatus = () => {}, confirmedStatus = () => null, retryMs = 500 }) {
   let cursor = 0;
   let terminal;
+  const reportStatus = status => {
+    try { onStatus(status); }
+    catch (cause) { throw Object.assign(new Error('task_output_failed'), { downstreamFailure: true, cause }); }
+  };
   const consume = event => {
     if (!Number.isSafeInteger(event.id) || event.id <= cursor) return;
     if (event.id !== cursor + 1) throw new Error('task_cursor_gap');
-    emit(Buffer.from(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`));
-    cursor = event.id;
+    try { emit(Buffer.from(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)); }
+    catch (cause) { throw Object.assign(new Error('task_output_failed'), { downstreamFailure: true, cause }); }
     if (event.event === 'task.status') {
-      onStatus(event.data.status);
+      reportStatus(event.data.status);
       if (terminalTask(event.data.status) && event.data.status !== 'succeeded') terminal = event.data.status;
     }
     if (event.event === 'done') terminal = 'succeeded';
+    cursor = event.id;
     // Error bodies describe the failure; task.status owns its terminal category.
   };
   for (;;) {
@@ -86,7 +91,8 @@ export async function followTask(provider, { clientId, taskId, emit, signal, onS
           if (pending.length > 2 * 1024 * 1024) throw new Error('task_event_too_large');
           if (terminal) break;
         }
-      } catch {
+      } catch (error) {
+        if (error.downstreamFailure) throw error;
         // Subscription rotation, truncated JSON and cursor gaps are not execution failure.
       }
       if (terminal) return finish(terminal);
@@ -99,12 +105,12 @@ export async function followTask(provider, { clientId, taskId, emit, signal, onS
         if (data.task?.id && data.task.id !== taskId) data = undefined;
         for (const event of data?.snapshot?.events || []) consume(event);
       } else await response.body?.cancel();
-    } catch { /* Retain the task and cursor when observation fails. */ }
+    } catch (error) { if (error.downstreamFailure) throw error; /* Retain the task and cursor when observation fails. */ }
     if (data?.task?.id === taskId && data.task.status === 'succeeded' && data.task.eventsExpired
         && data.task.history?.taskId === taskId) return;
     if (terminal) return finish(terminal);
     if (data?.task?.id === taskId && terminalTask(data.task.status) && data.task.status !== 'succeeded') return finish(data.task.status);
-    if (['queued', 'running'].includes(data?.task?.status)) onStatus(data.task.status);
+    if (['queued', 'running'].includes(data?.task?.status)) reportStatus(data.task.status);
     await delay(retryMs);
   }
 }
