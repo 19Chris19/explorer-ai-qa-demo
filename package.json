@@ -14,7 +14,8 @@
     "dev": "node --watch server.mjs",
     "start": "node server.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "test:mobile-ui": "node scripts/check-mobile-ui.mjs"
   },
   "engines": {
     "node": ">=20"
