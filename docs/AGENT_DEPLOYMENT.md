@@ -2,7 +2,7 @@
 
 ## 当前稳定版本与任务协议
 
-2026-10-16 核对：当前稳定版本为网站 **v0.4.3** 与 Provider **v0.6.3** 的
+2026-10-17 核对：当前稳定版本为网站 **v0.4.4** 与 Provider **v0.6.4** 的
 `durable_qa_tasks_v1` 配对。Agent 先核对 GitHub 非预发布 Release 及附件；若
 尚未发布，停止本次目标安装，不把 main 当作已发布版本。
 本版本命令从 `deploy/bundle.env` 读取稳定配对，旧 RC tag 保留为历史测试版。
@@ -20,7 +20,7 @@
 账号或运行数据。历史本机迁移记录不等于新部署已迁移或已完成真实问答。
 [维护排空](MAINTENANCE_DRAIN.md)需逐实例配置，不自动修改现有安装。
 
-**本版本固定 v0.4.3 / Provider v0.6.3。** 两仓须有对应稳定 Release 和镜像清单，不能部署浮动 main。已有安装不会自动更新。Agent 必须核对配套版本、镜像权限及各平台尚未验收项。
+**本版本固定 v0.4.4 / Provider v0.6.4。** 两仓须有对应稳定 Release 和镜像清单，不能部署浮动 main。已有安装不会自动更新。Agent 必须核对配套版本、镜像权限及各平台尚未验收项。
 
 ```text
 浏览器 → 同源 Nginx → 知天下 BFF → 私有容器网络 Provider A → IMA
@@ -65,8 +65,8 @@ Shell/PowerShell 包装自动取得固定 Provider tag 的源码，引导器下�
 
 发布模式从公开仓库 `https://github.com/19Chris19/ima-qa-web-agent.git` 的
 `deploy/bundle.env` 的 Provider tag 取得工具；本分支默认镜像为
-`ghcr.io/19chris19/ima-qa-web-agent:v0.6.3` 与
-`ghcr.io/19chris19/explorer-ai-qa-demo:v0.4.3`；不跟随 main/latest。
+`ghcr.io/19chris19/ima-qa-web-agent:v0.6.4` 与
+`ghcr.io/19chris19/explorer-ai-qa-demo:v0.4.4`；不跟随 main/latest。
 执行缓存工具前核对 origin、tag 对应提交与干净工作树；不匹配时停止，不能删除
 旧安装数据来修复缓存。显式镜像覆盖也必须通过配套版本标签校验，随后记录摘要。
 版本标签是配套检查，不是签名或来源认证，候选源码与镜像仍须人工审查。
