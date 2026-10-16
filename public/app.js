@@ -54,8 +54,6 @@ const composerWrap = document.querySelector('#composerWrap');
 const composerFloatActions = document.querySelector('#composerFloatActions');
 const jumpLatest = document.querySelector('#jumpLatest');
 const queuedTurns = document.querySelector('#queuedTurns');
-const adminLink = document.querySelector('.admin-link');
-if (adminLink && ['localhost', '127.0.0.1'].includes(window.location?.hostname)) adminLink.hidden = false;
 const state = {
   conversationId: sessionStorage.getItem(storageKey('qa-native-conversation-id')) || taskStore.list().at(-1)?.conversationId || '',
   legacyMode: false, busy: false, controller: null, webIntentSupported: false, webRequested: false, access: 'checking',
@@ -86,7 +84,7 @@ const ui = {
 const labels = {
   zh: {
     myNav: '我的创作', uploadNav: '上传作品', contestNav: '创作大赛', videoNav: '视频渲染', award: '奖', mainSiteLogin: '登录',
-    qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们', adminNav: '问答管理',
+    qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们',
     newChat: '新建对话', recentChats: '最近对话', moreOptions: '更多选项', historyClose: '关闭最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
     titleLead: '你的 3DGS 疑问，', titleSubject: '随时来聊。', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验强势驱动。', placeholder: '输入你的 3DGS 问题…',
     searchHistory: '搜索对话', noHistory: '还没有对话', noMatches: '没有匹配的对话', newConversation: '新对话', deleteConfirm: '确定删除这段对话吗？',
@@ -108,7 +106,7 @@ const labels = {
   },
   en: {
     myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
-    qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About', adminNav: 'Q&A Admin',
+    qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About',
     newChat: 'New conversation', recentChats: 'Recent conversations', moreOptions: 'More options', historyClose: 'Close recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
     titleLead: 'Have a 3DGS question?', titleSubject: "Let's talk.", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience.', placeholder: 'Ask a 3DGS question…',
     searchHistory: 'Search conversations', noHistory: 'No conversations yet', noMatches: 'No matching conversations', newConversation: 'New conversation', deleteConfirm: 'Delete this conversation?',

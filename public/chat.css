@@ -141,17 +141,6 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .site-nav a:hover { color: var(--accent); background: var(--hover); }
 .app-page .site-nav a.active { background: var(--accent-soft); color: var(--accent); }
 .app-page .nav-icon { color: inherit; width: 26px; font-size: 21px; }
-.app-page .admin-link {
-  margin: auto 4px 0;
-  padding: 13px 16px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.app-page .admin-link:hover { background: var(--hover); }
-.app-page .admin-link[hidden] { display: none; }
-
 .app-page.qa-embedded .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .app-page.qa-embedded .site-header,
 .app-page.qa-embedded .site-sidebar { display: none; }
@@ -568,7 +557,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .answer-lifecycle-details:not(:empty)::before { content: "·"; margin-right: 7px; }
 .app-page .message-content { color: var(--text); }
 .app-page .message-content a { color: var(--accent); }
-.app-page .answer-tools { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.app-page .answer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin-top: 8px; }
 .app-page .answer-tools[hidden] { display: none; }
 .app-page .answer-copy, .app-page .copy-fallback-close { width: 44px; height: 44px; color: var(--muted); }
 .app-page .answer-copy .icon, .app-page .copy-fallback-close .icon { width: 17px; height: 17px; }
