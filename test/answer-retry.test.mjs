@@ -79,3 +79,23 @@ test('an unknown submission with no task ID still offers recovery of the origina
   assert.equal(posts, 1); assert.equal(p.window.localStorage.getItem('qa-task-identities-v1'), identity);
   assert.equal(p.document.querySelector('#sendButton').disabled, true);
 });
+
+test('restoring history places the composer directly instead of flying across answer actions', async t => {
+  const composerAnimations = [];
+  const p = await openUi({ conversationId: 'synthetic-history', setup: w => {
+    const bounds = w.Element.prototype.getBoundingClientRect;
+    w.Element.prototype.getBoundingClientRect = function () {
+      return this.id === 'askForm' ? new w.DOMRect(15, w.document.querySelector('#main').classList.contains('is-empty') ? 300 : 700, 360, 60) : bounds.call(this);
+    };
+    w.Element.prototype.animate = function (frames) {
+      if (this.id === 'askForm') composerAnimations.push(frames);
+      return { cancel() {}, finished: Promise.resolve() };
+    };
+  }, fetchImpl: async url => {
+    if (url === '/api/qa/conversations/synthetic-history') return { ok: true, json: async () => ({ conversation: { conversationId: 'synthetic-history' },
+      messages: [{ role: 'user', content: 'synthetic history question' }, { role: 'assistant', content: 'synthetic history answer' }] }) };
+  } });
+  t.after(() => p.close());
+  await until(() => p.document.querySelector('.chat-thread .message.assistant'));
+  assert.equal(composerAnimations.length, 0);
+});

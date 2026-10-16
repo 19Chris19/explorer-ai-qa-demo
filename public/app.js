@@ -28,7 +28,7 @@ const list = document.querySelector('#conversationList');
 const question = document.querySelector('#question');
 const form = document.querySelector('#askForm');
 const messageShapes = createMessageShapes();
-document.fonts?.ready.then(() => messageShapes.refresh());
+document.fonts?.ready.then(() => { messageShapes.refresh(); scrollBottom(); });
 const connection = document.querySelector('#connection');
 const menuConnection = document.querySelector('#menuConnection');
 const requestStatus = document.querySelector('#requestStatus');
@@ -444,7 +444,7 @@ async function loadConversation(id, archived = false) {
     if (archived) { state.queuedJobs = []; renderQueue(); }
     state.legacyMode = !archived && data.legacyMode === true;
     const messages = Array.isArray(data.messages) ? data.messages : [];
-    if (messages.length) renderThread(messages);
+    if (messages.length) renderThread(messages, { restoring: true });
     else welcome();
     if (state.legacyMode) status('这段历史可查看。继续提问请新建会话，使用原生知识库 Agent。', true);
     if (archived) status(ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读', true);
@@ -1009,11 +1009,12 @@ function welcome() {
   updateCarouselTimer();
 }
 
-function renderThread(messages) {
+function renderThread(messages, { restoring = false } = {}) {
   const fromWelcome = main.classList.contains('is-empty');
-  const previous = fromWelcome ? captureComposerPosition() : null;
+  const previous = fromWelcome && !restoring ? captureComposerPosition() : null;
   clearWelcomeExit();
-  if (fromWelcome) fadeWelcomeOut();
+  if (fromWelcome && !restoring) fadeWelcomeOut();
+  if (restoring) for (const animation of form.getAnimations()) animation.cancel();
   clearSuggestionMotion();
   messageShapes.reset();
   log.replaceChildren();
@@ -1033,7 +1034,7 @@ function renderThread(messages) {
       { id: message.taskId, conversationId: state.conversationId, question: pairedQuestion }, 'again');
   }
   log.append(thread); scrollBottom();
-  animateComposerPosition(previous, thread);
+  if (!restoring) animateComposerPosition(previous, thread);
   updateCarouselTimer();
   return thread;
 }
@@ -1299,7 +1300,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   };
   const beginTurn = (currentTask = task) => {
     if (reply) return;
-    if (pending.history) renderThread(taskHistoryPrefix(pending.history, task));
+    if (pending.history) renderThread(taskHistoryPrefix(pending.history, task), { restoring: true });
     const thread = currentThread();
     thread.querySelector('.chat-notice')?.remove();
     if (task.question) {
@@ -1382,7 +1383,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       const messages = Array.isArray(history.messages) ? history.messages : [];
       const historicAnswer = messages.find(message => message.role === 'assistant' && message.taskId === task.id);
       if (!historicAnswer?.content?.trim()) throw new Error('task_history_unavailable');
-      renderThread(messages);
+      renderThread(messages, { restoring: true });
       settled = true;
       state.completedTasks.add(task.id);
       taskStore.forget(task.id);
