@@ -10,7 +10,7 @@ test('website release selects one Provider version and never a floating latest p
   const bundle = readBundle();
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
   assert.equal(bundle.WEBSITE_VERSION, pkg.version);
-  assert.equal(bundle.PROVIDER_TAG, 'v0.6.3');
+  assert.equal(bundle.PROVIDER_TAG, 'v0.6.4');
   assert.throws(() => selectBundleImages({ ...bundle, STATUS: 'candidate' }, {}), /candidate_requires_explicit_images/);
   assert.throws(() => selectBundleImages({ ...bundle, STATUS: 'candidate' }, { PROVIDER_IMAGE: 'synthetic/provider:reviewed' }), /candidate_requires_explicit_images/);
   assert.deepEqual(selectBundleImages(bundle, { PROVIDER_IMAGE: 'synthetic/provider:reviewed', EXPLORER_IMAGE: 'synthetic/website:reviewed' }),
