@@ -1,9 +1,16 @@
 # README asset provenance
 
-Updated 2026-10-15 for website v0.4.1 / Provider v0.6.1.
+Updated 2026-10-16 for website v0.4.1 / Provider v0.6.1.
 Frontend source revision: `478e46d3d081cced90cedf1f2f1e3d392d8525a8`.
 
 ## Sources
+
+- `hero-aperture.gif`: approved single-play logo-to-interface transition, captured
+  deterministically in Ego from `source/aperture-journey.template.html`. The real
+  stacked logo is unchanged; six procedural blades animate its aperture motif.
+  The final frame crops the welcome screenshot to the hero and composer only.
+- `hero-aperture-static.png`: the same export's opening frame, provided as an
+  explicit static alternative. The GIF stops on its final interface frame.
 
 - `hero.png`: deterministic HTML composition of the existing, unmodified real
   Zhitianxia logo `public/site/logo.png`; source is `source/hero.html`.
@@ -34,5 +41,26 @@ with HTTP 503 and provided no recommendation.
 6. Stop the server afterwards. It only serves local files and synthetic GET/HEAD
    responses; writes and unknown API routes are refused, and no upstream is called.
 
-PNG images are budgeted below 1.5 MB each. Preserve adjacent Markdown for mobile
+PNG and GIF images are budgeted below 1.5 MB each. Preserve adjacent Markdown for mobile
 readability and accessibility even when diagrams or screenshots change.
+
+## Reproduce the animated hero
+
+This is a README asset, not a website loading animation. It does not call APIs.
+GitHub does not reliably play scripted SVG; the published asset is a GIF.
+
+1. Build a self-contained preview outside the checkout:
+   `node assets/readme/source/build-aperture.mjs /tmp/ztx-hero`.
+2. In the authorized Ego task space, open `/tmp/ztx-hero/aperture-journey.html`.
+   Use that existing space for all subsequent capture commands.
+3. Execute `source/capture-aperture.mjs` through `ego-browser nodejs`, setting
+   `globalThis.readmeCapture = { spaceId: YOUR_SPACE_ID, directory: '/tmp/ztx-hero' }`
+   before evaluating the script. The script samples 144 frames at 24 FPS, 900 x 593,
+   with a settled final hold. It only reads the local preview canvas.
+4. Run `sh assets/readme/source/encode-aperture.sh /tmp/ztx-hero assets/readme`.
+   This requires FFmpeg/ffprobe and sets no repeat loop. No runtime dependency is added.
+5. Inspect the encoded GIF, not just the HTML: opening, aperture closure, reveal,
+   final hold, desktop/mobile readability and file size. Keep the static link.
+
+The HTML preview honors reduced motion. The GIF itself cannot react to that OS
+preference; it plays once and has an adjacent static alternative.

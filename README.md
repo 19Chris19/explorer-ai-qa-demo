@@ -1,6 +1,8 @@
 # 知天下 AI 问答
 
-![知天下：面向 3DGS 创作者的知识问答](assets/readme/hero.png)
+![知天下 AI 问答：从品牌光圈进入 3DGS 知识问答界面](assets/readme/hero-aperture.gif)
+
+[静态首图](assets/readme/hero-aperture-static.png)
 
 **把社群持续积累的 3DGS 知识，变成可以连续追问的网站体验。**
 

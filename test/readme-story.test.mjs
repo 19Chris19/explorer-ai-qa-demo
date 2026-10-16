@@ -31,7 +31,7 @@ test('README local assets and links exist and logo provenance is explicit', () =
       const svg = read(ref); assert.match(svg, /<title/); assert.match(svg, /viewBox=/);
       assert.doesNotMatch(svg, /<script|foreignObject/);
     }
-    if (ref.endsWith('.png')) assert.ok(statSync(join(root, ref)).size < 1500000, ref);
+    if (/\.(png|gif)$/.test(ref)) assert.ok(statSync(join(root, ref)).size < 1500000, ref);
   }
   assert.ok(read('assets/readme/ASSETS.md').includes('public/site/logo.png'));
   assert.ok(read('assets/readme/source/hero.html').includes('/public/site/logo.png'));

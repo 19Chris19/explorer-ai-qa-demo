@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知天下 · 穿过光圈</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#172b40;font:14px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;letter-spacing:0}main{max-width:1064px;margin:24px auto;padding:0 20px}header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}h1{font-size:15px;font-weight:500;margin:0}.tools{display:flex;gap:8px}button{display:grid;place-items:center;border:1px solid #dbe0e5;background:white;border-radius:50%;height:36px;width:36px;color:inherit;cursor:pointer}button:active{transform:scale(.96)}button:focus-visible,input:focus-visible{outline:2px solid #0078d4;outline-offset:3px}button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.stage{background:white;aspect-ratio:1366/900}canvas{display:block;width:100%;height:100%}footer{display:flex;align-items:center;gap:14px;margin-top:16px;font-size:12px;color:#697583}input{flex:1;min-width:50px;accent-color:#0a365e}output{font-variant-numeric:tabular-nums;width:34px;text-align:right}.note{font-size:12px;color:#697583;margin-top:14px}body.capture{background:white}.capture main{padding:0;margin:0;max-width:none}.capture header,.capture footer,.capture .note{display:none}@media(max-width:600px){main{padding:0 10px;margin:16px auto}header{margin-bottom:12px}h1{font-size:14px}.note{line-height:1.6}}
+</style>
+<main>
+<header><h1>知天下 · 穿过光圈</h1><div class="tools">
+<button id="replay" title="重新播放" aria-label="重新播放"><svg viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg></button>
+<button id="pause" title="暂停或继续" aria-label="暂停或继续" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button>
+<button id="skip" title="查看结束画面" aria-label="查看结束画面"><svg viewBox="0 0 24 24"><path d="m5 5 10 7-10 7zM19 5v14"/></svg></button>
+</div></header>
+<div class="stage"><canvas width="1366" height="900" role="img" aria-label="六片光圈叶片闭合后打开，呈现知天下真实问答界面">知天下 AI 问答：你的 3DGS 疑问，随时来聊。</canvas></div>
+<footer><span id="status" aria-live="polite">知天下 Logo</span><input id="seek" aria-label="动画时间" type="range" min="0" max="4.8" step="0.01" value="0"><output id="clock">0.0s</output></footer>
+<p class="note">界面为现有前端截图；此预览仅展示转场，不连接账号或发起问答。减少动态效果时直接展示最终画面。</p>
+</main>
+<script>
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+const picture=new Image();picture.src='SCREENSHOT_DATA';
+const logo=new Image();logo.src='LOGO_DATA';
+const seek=document.querySelector('#seek'),clock=document.querySelector('#clock'),status=document.querySelector('#status'),pause=document.querySelector('#pause');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+const W=1366,H=900,CX=W/2,CY=H/2,TAU=Math.PI*2,DURATION=4.8;
+const CROSSING=2.65,REVEALED=3.55;
+const brand={x:458,y:195,w:450,h:250},origin={x:660.5,y:386};
+let lensX=origin.x,lensY=origin.y;
+let time=0,last=0,playing=false,request;
+const smooth=(t,a,b)=>{const x=Math.max(0,Math.min(1,(t-a)/(b-a)));return x*x*x*(x*(x*6-15)+10)};
+const flow=(t,a,b)=>{const x=Math.max(0,Math.min(1,(t-a)/(b-a)));return x*x*(3-2*x)};
+function drawCore(){
+ // Frame the complete hero and composer from the real screenshot, excluding the site shell.
+ const source={x:394,y:295,w:832,h:500},width=1266,height=width*source.h/source.w;
+ const scale=.965+.035*smooth(time,CROSSING,3.85);
+ ctx.save();ctx.translate(CX,CY);ctx.scale(scale,scale);
+ ctx.drawImage(picture,source.x,source.y,source.w,source.h,-width/2,-height/2,width,height);ctx.restore();
+}
+function point(r,a){return [lensX+r*Math.cos(a),lensY+r*Math.sin(a)]}
+function blade(inner,outer,angle,index){
+ const step=TAU/6, a=angle+index*step;
+ const p=point(inner,a),q=point(inner,a+step),u=point(outer,a+.68),v=point(outer,a+.68+step);
+ ctx.beginPath();ctx.moveTo(...p);ctx.lineTo(...u);ctx.arc(lensX,lensY,outer,a+.68,a+.68+step);ctx.lineTo(...q);ctx.closePath();
+ ctx.fillStyle=['#173b5c','#193e5f','#153857','#193c5a','#143653','#193b59'][index];ctx.fill();
+ // Blade edges meet at the aperture, rather than masking its center with a separate shape.
+ ctx.beginPath();ctx.moveTo(...p);ctx.lineTo(...u);ctx.strokeStyle='#496078';ctx.lineWidth=.8;ctx.stroke();
+}
+window.renderFrame=function(t){
+ time=Math.max(0,Math.min(DURATION,t));ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+ const advance=smooth(time,.65,3.65),zoom=Math.exp(Math.log(2600/26)*advance);
+ lensX=origin.x+(CX-origin.x)*advance;lensY=origin.y+(CY-origin.y)*advance;
+ const closing=flow(time,2.08,CROSSING),opening=flow(time,CROSSING,REVEALED);
+ const inner=9.3*zoom*(1-closing)+1100*opening;
+ const outer=26*zoom;
+ const angle=-Math.PI/2-.18*closing+.18*opening;
+ if(time<CROSSING){
+  ctx.save();ctx.translate(lensX,lensY);ctx.scale(zoom,zoom);ctx.translate(-origin.x,-origin.y);
+  ctx.globalAlpha=1-smooth(time,1.8,2.3);ctx.drawImage(logo,brand.x,brand.y,brand.w,brand.h);
+  ctx.fillStyle='#172b40';ctx.textAlign='center';ctx.font='500 44px "PingFang SC",sans-serif';ctx.fillText('AI 问答',CX,535);
+  ctx.fillStyle='#536272';ctx.font='28px "PingFang SC",sans-serif';ctx.fillText('你的 3DGS 疑问，随时来聊。',CX,594);ctx.restore();
+ }else drawCore();
+ if(time>=.65&&time<REVEALED){
+  ctx.globalAlpha=smooth(time,.65,.95);
+  ctx.beginPath();ctx.arc(lensX,lensY,outer,0,TAU);ctx.fillStyle='#fff';ctx.fill();
+  // When opening, retain the actual interface in the aperture instead of painting its center white.
+  if(time>=CROSSING){ctx.save();ctx.clip();drawCore();ctx.restore();}
+  for(let i=0;i<6;i++)blade(inner,outer,angle,i);ctx.globalAlpha=1;
+ }
+ seek.value=String(time);clock.value=time.toFixed(1)+'s';
+ const stage=time<.65?'知天下 Logo':time<2.08?'走入 Logo 光圈':time<CROSSING?'推进中闭合':time<REVEALED?'穿过镜头':'知天下 AI 问答';
+ if(status.textContent!==stage)status.textContent=stage;
+ window.frameState={time,inner,outer,zoom,stage,playing,reduced:reduce.matches};
+};
+function tick(now){if(!playing)return;const delta=Math.min((now-last)/1000,.05);last=now;renderFrame(time+delta);if(time<DURATION)request=requestAnimationFrame(tick);else stop()}
+function stop(){playing=false;if(window.frameState)window.frameState.playing=false;cancelAnimationFrame(request);pause.setAttribute('aria-pressed','true')}
+function play(){if(reduce.matches){stop();renderFrame(DURATION);return}playing=true;last=performance.now();pause.setAttribute('aria-pressed','false');cancelAnimationFrame(request);request=requestAnimationFrame(tick)}
+window.freezeAt=t=>{stop();renderFrame(t)};
+document.querySelector('#replay').onclick=()=>{stop();renderFrame(0);play()};
+pause.onclick=()=>{if(playing)stop();else play()};
+document.querySelector('#skip').onclick=()=>freezeAt(DURATION);
+seek.oninput=()=>freezeAt(Number(seek.value));
+reduce.addEventListener('change',()=>{if(reduce.matches)freezeAt(DURATION)});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});
+Promise.all([picture.decode(),logo.decode()]).then(()=>{renderFrame(0);window.previewReady=true;play()}).catch(()=>{status.textContent='素材加载失败';stop()});
+</script></html>
