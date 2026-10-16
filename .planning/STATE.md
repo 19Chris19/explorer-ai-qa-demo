@@ -1,5 +1,15 @@
 # Durable website handoff
 
+## README refresh audit, 2026-10-15
+
+Audit-HEAD: 478e46d3d081cced90cedf1f2f1e3d392d8525a8
+Branch: codex/DOCS-20261015-EXPLORER-README. Local docs/assets/tests candidate;
+no running service, account, Release or Vercel configuration changed.
+Stable v0.4.1 / Provider v0.6.1; authentic logo and synthetic current UI proof.
+Full suite 335 pass / 2 skip; added capture regression 1 pass; build/budget passed.
+See DOCS-20261015-EXPLORER-README for checks and legacy governance finding.
+Earlier checkpoints below are historical and do not describe current services.
+
 ## Stable publication preparation, 2026-10-10
 
 Branch codex/PERF-20261010-EXPLORER-STABLE targets v0.3.0 paired with Provider
