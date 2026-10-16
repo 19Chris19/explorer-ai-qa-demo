@@ -33,10 +33,16 @@ async function fixture(t, { status = 'failed', denyCheck = false } = {}) {
   return { ...page, task, events, posts };
 }
 
-test('failed answer has a one-click retry even with no text; preserves draft, intent and original evidence', async t => {
+for (const entrance of ['icon', 'message menu']) test(`${entrance}: failed answer has a one-click retry even with no text; preserves draft, intent and original evidence`, async t => {
   const p = await fixture(t); const original = JSON.stringify({ task: p.task, events: p.events });
   const input = p.document.querySelector('#question'); input.value = 'unsent draft'; input.dispatchEvent(new p.window.Event('input'));
-  const retry = p.document.querySelector('.answer-retry'); retry.click(); retry.click();
+  const retry = p.document.querySelector('.answer-retry');
+  if (entrance === 'message menu') {
+    p.document.querySelector('.message.user .message-actions-trigger').click();
+    assert.equal(p.document.querySelector('.message-action-item[data-action="retry"] span').textContent, '重试');
+    p.document.querySelector('.message-action-item[data-action="retry"]').click();
+  } else retry.click();
+  retry.click();
   await until(() => p.posts.length === 1 && p.document.querySelectorAll('.answer-retry').length === 2);
   assert.equal(p.posts[0].question, 'original synthetic question'); assert.equal(p.posts[0].sourceIntent, 'web');
   assert.equal(p.posts[0].conversationId, p.task.conversationId); assert.ok(p.posts[0].requestId);
@@ -54,7 +60,9 @@ test('a failed task check does not send a question and offers retry later', asyn
 test('indeterminate answers recover the same task without submitting and keep new sends gated', async t => {
   const p = await fixture(t, { status: 'indeterminate' });
   assert.equal(p.document.querySelector('.answer-retry').textContent, '恢复连接');
-  p.document.querySelector('.answer-retry').click();
+  p.document.querySelector('.message.user .message-actions-trigger').click();
+  assert.equal(p.document.querySelector('.message-action-item[data-action="retry"] span').textContent, '恢复连接');
+  p.document.querySelector('.message-action-item[data-action="retry"]').click();
   await until(() => p.document.querySelector('.answer-retry')?.textContent === '恢复连接' && !p.document.querySelector('.answer-retry').disabled);
   assert.equal(p.posts.length, 0); assert.equal(p.document.querySelector('#sendButton').disabled, true);
 });

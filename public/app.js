@@ -70,6 +70,7 @@ const latestControl = window.ChatControls.latest({ log, button: jumpLatest,
   hasContent: () => !main.classList.contains('is-empty'),
 });
 const retryControls = new Set();
+const userMessageActions = new WeakMap();
 let conversationItems = [];
 let archiveConversationId = '';
 let historyLoadError = false;
@@ -98,8 +99,8 @@ const labels = {
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
     taskReconnecting: '连接暂时中断，正在恢复同一任务。已收到的内容会保留，无需重新提交。',
     taskConfirming: '正在确认任务是否已接收，请勿重复提交。草稿已保留。',
-    taskFailed: '本次回答未完成。已收到的内容已保留，你可以重试。', taskCancelled: '已停止本次回答，已收到的内容已保留。',
-    taskIndeterminate: '任务结果暂时无法确认。已收到的内容已保留，请勿重复提交。',
+    taskFailed: '回答未完成，请重试。', taskCancelled: '已停止回答。',
+    taskIndeterminate: '结果尚无法确认，请先检查原任务。',
     taskUnavailable: '暂时无法恢复任务，请稍后从最近对话重新打开。请勿重复提交。',
     taskPartial: '任务已结束，但回答正文尚不完整。请稍后重新打开最近对话，勿重复提交。',
     taskDone: '回答已完成', taskConnecting: '正在连接知识库…', taskGenerating: '正在生成回答…',
@@ -120,7 +121,7 @@ const labels = {
     copySelection: 'Copy selected text', selectionActions: 'Selected text actions', selectionCopyFailed: 'Copy failed; select the text below',
     taskReconnecting: 'Connection interrupted. Reconnecting to the same task; received text is kept. No need to resubmit.',
     taskConfirming: 'Checking whether the task was accepted. Your draft is kept; please do not resubmit.',
-    taskFailed: 'The answer could not finish. Received text is kept; you can retry.', taskCancelled: 'Answer stopped. Received text has been kept.',
+    taskFailed: 'Answer incomplete. Please retry.', taskCancelled: 'Answer stopped.',
     taskIndeterminate: 'The task outcome is uncertain. Received text is kept; please do not resubmit.',
     taskUnavailable: 'The task cannot be restored right now. Reopen it from recent conversations later; please do not resubmit.',
     taskPartial: 'The task ended, but its answer is not yet complete. Reopen recent conversations later; please do not resubmit.',
@@ -502,6 +503,7 @@ function busy(value) {
 }
 
 function updateSendButton() {
+  for (const message of log.querySelectorAll('[data-message-actions]')) userMessageActions.get(message)?.refresh();
   for (const section of log.querySelectorAll('.chat-suggestions')) {
     for (const control of section.querySelectorAll('button')) control.disabled = Boolean(question.value.trim()) || state.busy || state.access !== 'ready' || Boolean(archiveConversationId) || state.legacyMode || state.preparing || state.queueSubmitting || Boolean(state.submissionPhase);
   }
@@ -1025,13 +1027,18 @@ function renderThread(messages, { restoring = false } = {}) {
   updateFloatingControls();
   suggestionStrip.hidden = true;
   const thread = document.createElement('div'); thread.className = 'chat-thread';
-  let pairedQuestion = '';
+  let pairedQuestion = '', pairedUser = null;
   for (const message of messages) {
     if (message.role === 'user') pairedQuestion = message.content || '';
     const element = createMessage(message.role, message.content, message.sources || [], message.sourceCount, message, true);
     thread.append(element);
-    if (message.role === 'assistant' && message.taskId && pairedQuestion) attachAnswerRetry(element,
-      { id: message.taskId, conversationId: state.conversationId, question: pairedQuestion }, 'again');
+    if (message.role === 'user') pairedUser = element;
+    if (message.role === 'assistant') {
+      if (message.taskId && pairedQuestion) attachAnswerRetry(element,
+        { id: message.taskId, conversationId: state.conversationId, question: pairedQuestion },
+        message.complete === false || message.interrupted === true ? 'retry' : 'again', pairedUser);
+      pairedQuestion = ''; pairedUser = null;
+    }
   }
   log.append(thread); scrollBottom();
   if (!restoring) animateComposerPosition(previous, thread);
@@ -1054,7 +1061,10 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
     renderAnswer(content, prepared?.text ?? text ?? '', sources, true, { ...evidence, partial: evidence.complete === false || evidence.interrupted === true });
   }
   outer.append(content);
-  if (role === 'user') messageShapes.observe(content);
+  if (role === 'user') {
+    messageShapes.observe(content);
+    userMessageActions.set(outer, window.ChatControls.messageActions({ message: outer, target: content, getText: () => text || '', locale: () => ui.locale }));
+  }
   if (role !== 'user') {
     if (historic) {
       renderAnswerLifecycle(createAnswerLifecycle(outer), {
@@ -1077,7 +1087,7 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
   return outer;
 }
 
-function attachAnswerRetry(message, task, mode) {
+function attachAnswerRetry(message, task, mode, userMessage) {
   if ((!task?.id && !(mode === 'recover' && task?.requestId)) || !task.conversationId || message.querySelector('.answer-retry') || archiveConversationId) return;
   const tools = message.querySelector('.answer-tools');
   if (!tools) return;
@@ -1106,6 +1116,7 @@ function attachAnswerRetry(message, task, mode) {
     onError: () => ui.locale === 'en' ? 'Could not confirm the task. No question was sent.' : '暂时无法核对原任务，没有重新发送。请稍后再试。',
   });
   retryControls.add(control);
+  userMessageActions.get(userMessage)?.setAction(control, mode === 'recover' ? 'recover' : 'retry');
 }
 
 function setSourceCount(message, value) {
@@ -1290,7 +1301,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   state.activeQueuedId = job?.id || '';
   busy(true);
   let task = initialTask;
-  let reply, content, lifecycle, processView, lifecycleTiming, lifecycleTicker = 0;
+  let reply, userMessage, content, lifecycle, processView, lifecycleTiming, lifecycleTicker = 0;
   let processCount = 0, lastView = null, settled = false, queuedReceipt = false;
   const current = () => !controller.signal.aborted && epoch === state.viewEpoch;
   const connectionNotice = phase => {
@@ -1304,9 +1315,9 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     const thread = currentThread();
     thread.querySelector('.chat-notice')?.remove();
     if (task.question) {
-      const user = createMessage('user', task.question);
-      thread.append(user);
-      animateContentIn(user, { distance: 6, duration: 220 });
+      userMessage = createMessage('user', task.question);
+      thread.append(userMessage);
+      animateContentIn(userMessage, { distance: 6, duration: 220 });
     }
     const queued = currentTask.status === 'queued';
     reply = createMessage('assistant', queued ? '' : t('taskConnecting'));
@@ -1413,14 +1424,15 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       });
       status(t('taskDone'));
     } else {
-      const key = { failed: 'taskFailed', cancelled: 'taskCancelled', indeterminate: 'taskIndeterminate' }[view.task.status] || 'taskPartial';
-      const warning = document.createElement('div'); warning.className = 'message-error'; warning.textContent = t(key);
+      const warning = window.ChatControls.failure(reply, { status: !['failed', 'cancelled'].includes(view.task.status) ? 'indeterminate' : view.task.status, hasAnswer: Boolean(view.text.trim()), locale: ui.locale, className: 'message-error', details: lifecycle?.querySelector('.answer-lifecycle-details')?.textContent });
+      lifecycle.hidden = true;
       appendAnswerMeta(reply, warning);
-      status(t(key));
+      // The outcome is already beside this answer; don't repeat it at the composer.
+      status('');
       if (task.sourceIntent === 'web') setWebRequestState('idle');
     }
     state.recoveryRequired = view.task.status === 'indeterminate' || (!complete && !['failed', 'cancelled'].includes(view.task.status));
-    attachAnswerRetry(reply, { ...task, status: view.task.status }, complete ? 'again' : state.recoveryRequired ? 'recover' : 'retry');
+    attachAnswerRetry(reply, { ...task, status: view.task.status }, complete ? 'again' : state.recoveryRequired ? 'recover' : 'retry', userMessage);
     scrollBottom();
     await loadConversations();
   } catch (error) {
@@ -1430,7 +1442,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       queuedReceipt = true;
       status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
     } else status(error.code === 'submission_rejected' ? userError(error)
-      : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), true);
+      : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), !reply);
     state.recoveryRequired = !['submission_rejected', 'submission_cancelled', 'submission_queued'].includes(error.code);
     if (state.recoveryRequired && !reply && pending.record) {
       const thread = currentThread();
@@ -1441,8 +1453,13 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       attachAnswerRetry(notice, pending.record, 'recover');
     }
     if (reply) {
-      if (state.recoveryRequired && task) attachAnswerRetry(reply, task, 'recover');
+      if (state.recoveryRequired && task) attachAnswerRetry(reply, task, 'recover', userMessage);
       content.classList.remove('typing');
+      renderAnswer(content, lastView?.text || '', lastView?.sources || [], true, { ...lastView, partial: true });
+      const warning = window.ChatControls.failure(reply, { status: state.recoveryRequired ? 'indeterminate' : 'cancelled', hasAnswer: Boolean(lastView?.text?.trim()), locale: ui.locale, className: 'message-error', details: lifecycle?.querySelector('.answer-lifecycle-details')?.textContent });
+      lifecycle.hidden = true;
+      appendAnswerMeta(reply, warning);
+      status('');
       processView?.settle('interrupted');
       settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, 'interrupted');
       lifecycleTicker = 0;

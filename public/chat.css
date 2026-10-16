@@ -556,6 +556,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .answer-lifecycle[data-status="interrupted"] .answer-status-mark,
 .app-page .answer-lifecycle[data-status="failed"] .answer-status-mark { border-radius: 3px; }
 .app-page .answer-lifecycle[data-status="failed"] { color: #b24b5c; }
+.app-page .answer-lifecycle[hidden] { display: none; }
 .app-page .answer-lifecycle-label { font-weight: 600; }
 .app-page .answer-lifecycle-details { font-variant-numeric: tabular-nums; }
 .app-page .answer-lifecycle { flex-wrap: wrap; }
@@ -595,7 +596,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .message-content h4, .app-page .message-content h5, .app-page .message-content h6 { color: var(--text); }
 .app-page .evidence-status { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .app-page .evidence-status.verified { color: var(--accent); }
-.app-page .message-error { border-radius: 4px; }
+.app-page .message-error { border: 0; padding: 0; border-radius: 0; background: none; color: color-mix(in srgb, var(--text) 60%, var(--muted)); }
 .app-page .chat-notice { margin: 0; padding: 6px 0 6px 12px; border-left: 2px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.5; }
 body.app-page.dark .message-content pre,
 body.app-page.dark .message-content :not(pre)>code,
@@ -603,7 +604,7 @@ body.app-page.dark .answer-table th { background: #263747; color: var(--text); }
 body.app-page.dark .answer-table-wrap,
 body.app-page.dark .answer-table th,
 body.app-page.dark .answer-table td { border-color: var(--line); }
-body.app-page.dark .message-error { background: #382b2a; color: #f4c5a6; }
+body.app-page.dark .message-error { background: none; color: color-mix(in srgb, var(--text) 60%, var(--muted)); }
 
 @keyframes reveal-menu { from { opacity: 0; transform: translateY(-5px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes composer-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
