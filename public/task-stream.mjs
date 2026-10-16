@@ -276,6 +276,7 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
     throw fault('detached');
   }
   return { list, lookup, submit, resolve, subscribe, remember,
+    read: (id, signal) => json(endpoint(id), { signal }),
     cancel: (id, signal) => json(endpoint(id), { method: 'DELETE', signal }),
   };
 }

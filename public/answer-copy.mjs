@@ -52,7 +52,7 @@ export function createAnswerCopy(message, {
   });
   refresh();
   return {
-    setReady(value, options = {}) { ready = Boolean(value); partial = Boolean(options.partial); tools.hidden = !ready; refresh(); },
+    setReady(value, options = {}) { ready = Boolean(value); partial = Boolean(options.partial); button.hidden = !ready; tools.hidden = !ready && !tools.querySelector('.answer-retry'); refresh(); },
     refresh,
     destroy() { destroyed = true; cancel(timer); tools.remove(); message.querySelector('.copy-fallback')?.remove(); },
   };

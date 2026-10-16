@@ -3,7 +3,7 @@ import { failure, validResponseType, boundedPreviewBody } from './failure.mjs';
 
 export const maxDuration = 300;
 
-const assets = new Set(['', 'styles.css', 'chat.css', 'chat-presentation.js', 'chat-presentation.css', 'icons.svg', 'brand-orbit.png', 'questions.json',
+const assets = new Set(['', 'styles.css', 'chat.css', 'chat-presentation.js', 'chat-presentation.css', 'chat-controls.js', 'chat-controls.css', 'icons.svg', 'brand-orbit.png', 'questions.json',
   'question-rotation.mjs', 'source-evidence.mjs', 'app.js', 'answer-markdown.js', 'message-shape.mjs',
   'turn-lifecycle.mjs', 'prompt-sparks.mjs', 'answer-process.mjs', 'voice-preview.mjs',
   'composer-shape.mjs', 'composer-controls.mjs',

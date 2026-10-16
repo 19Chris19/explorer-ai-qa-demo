@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 test('restoring an empty conversation keeps the welcome screen and ID; history still opens', async () => {
   const moduleDir = mkdtempSync(join(tmpdir(), 'explorer-restore-ui-'));
   const dom = new JSDOM(readFileSync(join(root, 'public/index.html'), 'utf8'), {
-    url: 'http://127.0.0.1:4318/', pretendToBeVisual: true,
+    url: 'http://127.0.0.1:4318/', pretendToBeVisual: true, runScripts: 'outside-only',
   });
   const { window } = dom;
   window.sessionStorage.setItem('qa-native-conversation-id', 'synthetic-empty');
@@ -74,6 +74,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
       cancelAnimationFrame: clearTimeout,
       fetch: fetchMock,
     });
+    window.eval(readFileSync(join(root, 'public/chat-controls.js'), 'utf8'));
     await import(pathToFileURL(join(moduleDir, 'app.mjs')).href);
     await until(() => requests.includes('/api/qa/queue?conversationId=synthetic-empty'));
     const main = window.document.querySelector('#main');

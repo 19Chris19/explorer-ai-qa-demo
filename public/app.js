@@ -62,9 +62,14 @@ const state = {
   activeWebRequest: false, webRequestState: 'idle',
   queuedJobs: [], queueSubmitting: false, preparing: false, submissionPhase: '', activeQueuedId: '',
   questionBank: [], questionRotation: null, currentSuggestions: null, carouselTimer: 0, carouselHover: false, carouselFocus: false, suggestionSelected: false, composing: false,
-  followLatest: true,
+  followLatest: true, recoveryRequired: false,
   durableTasksSupported: false, activeTask: null, viewEpoch: 0, completedTasks: new Set(), queueTimer: 0,
 };
+const latestControl = window.ChatControls.latest({ log, button: jumpLatest,
+  following: () => state.followLatest, setFollowing: value => { state.followLatest = value; },
+  hasContent: () => !main.classList.contains('is-empty'),
+});
+const retryControls = new Set();
 let conversationItems = [];
 let archiveConversationId = '';
 let historyLoadError = false;
@@ -93,7 +98,7 @@ const labels = {
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
     taskReconnecting: '连接暂时中断，正在恢复同一任务。已收到的内容会保留，无需重新提交。',
     taskConfirming: '正在确认任务是否已接收，请勿重复提交。草稿已保留。',
-    taskFailed: '任务未能完成。已收到的部分内容已保留。', taskCancelled: '已停止本次回答，已收到的内容已保留。',
+    taskFailed: '本次回答未完成。已收到的内容已保留，你可以重试。', taskCancelled: '已停止本次回答，已收到的内容已保留。',
     taskIndeterminate: '任务结果暂时无法确认。已收到的内容已保留，请勿重复提交。',
     taskUnavailable: '暂时无法恢复任务，请稍后从最近对话重新打开。请勿重复提交。',
     taskPartial: '任务已结束，但回答正文尚不完整。请稍后重新打开最近对话，勿重复提交。',
@@ -115,7 +120,7 @@ const labels = {
     copySelection: 'Copy selected text', selectionActions: 'Selected text actions', selectionCopyFailed: 'Copy failed; select the text below',
     taskReconnecting: 'Connection interrupted. Reconnecting to the same task; received text is kept. No need to resubmit.',
     taskConfirming: 'Checking whether the task was accepted. Your draft is kept; please do not resubmit.',
-    taskFailed: 'The task could not finish. Any partial answer has been kept.', taskCancelled: 'Answer stopped. Received text has been kept.',
+    taskFailed: 'The answer could not finish. Received text is kept; you can retry.', taskCancelled: 'Answer stopped. Received text has been kept.',
     taskIndeterminate: 'The task outcome is uncertain. Received text is kept; please do not resubmit.',
     taskUnavailable: 'The task cannot be restored right now. Reopen it from recent conversations later; please do not resubmit.',
     taskPartial: 'The task ended, but its answer is not yet complete. Reopen recent conversations later; please do not resubmit.',
@@ -290,45 +295,6 @@ question.addEventListener('input', () => {
   resizeQuestion(); updateSendButton(); updateCarouselTimer();
 });
 document.addEventListener('visibilitychange', updateCarouselTimer);
-jumpLatest.addEventListener('click', () => {
-  returnToLatest();
-});
-let userScrollUntil = 0;
-let lastScrollTop = 0;
-let touchStartY = 0;
-const markUserScroll = () => { userScrollUntil = performance.now() + 200; };
-log.addEventListener('wheel', event => {
-  markUserScroll();
-  if (event.deltaY > 0 && !state.followLatest && isNearLatest()) returnToLatest();
-}, { passive: true });
-log.addEventListener('touchstart', event => { touchStartY = event.touches[0]?.clientY ?? 0; }, { passive: true });
-log.addEventListener('touchmove', event => {
-  markUserScroll();
-  if ((event.touches[0]?.clientY ?? touchStartY) < touchStartY && !state.followLatest && isNearLatest()) returnToLatest();
-}, { passive: true });
-log.addEventListener('pointerdown', markUserScroll);
-log.addEventListener('pointermove', event => { if (event.buttons) markUserScroll(); });
-document.addEventListener('keydown', event => {
-  if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)
-      && !['TEXTAREA', 'INPUT'].includes(document.activeElement?.tagName)) {
-    markUserScroll();
-    if (['ArrowDown', 'PageDown', 'End'].includes(event.key) && !state.followLatest && isNearLatest()) returnToLatest();
-  }
-});
-log.addEventListener('scroll', () => {
-  const top = log.scrollTop;
-  const direction = top - lastScrollTop;
-  lastScrollTop = top;
-  if (main.classList.contains('is-empty') || performance.now() > userScrollUntil) return;
-  const nearLatest = isNearLatest();
-  if (!nearLatest && direction < 0) {
-    state.followLatest = false;
-    updateFloatingControls();
-  } else if (nearLatest && direction > 0) {
-    state.followLatest = true;
-    updateFloatingControls();
-  }
-});
 new ResizeObserver(() => {
   if (main.classList.contains('is-empty')) return;
   const clearance = Math.ceil(composerWrap.getBoundingClientRect().height + 24);
@@ -543,7 +509,10 @@ function updateSendButton() {
   const submitting = Boolean(state.submissionPhase || state.queueSubmitting);
   const label = t(state.submissionPhase || (state.queueSubmitting ? 'queueSubmitting' : action));
   sendButton.type = stopping ? 'button' : 'submit';
-  sendButton.disabled = disabled;
+  sendButton.disabled = disabled || state.recoveryRequired;
+  for (const control of retryControls) {
+    if (!control.button.isConnected) retryControls.delete(control); else control.refresh();
+  }
   sendButton.classList.toggle('is-busy', stopping);
   sendButton.classList.toggle('is-submitting', submitting);
   sendButton.setAttribute('aria-busy', String(submitting));
@@ -722,20 +691,12 @@ async function enqueueQuestion(text) {
   finally { state.queueSubmitting = false; updateSendButton(); }
 }
 
-function isNearLatest() { return log.scrollHeight - log.clientHeight - log.scrollTop <= 80; }
-
-function returnToLatest() {
-  state.followLatest = true;
-  updateFloatingControls();
-  requestAnimationFrame(scrollBottom);
-}
-
 function updateFloatingControls() {
   const empty = main.classList.contains('is-empty');
-  jumpLatest.hidden = empty || state.followLatest;
+  latestControl.refresh();
   jumpLatest.title = t('jumpLatest');
   jumpLatest.setAttribute('aria-label', t('jumpLatest'));
-  composerFloatActions.hidden = jumpLatest.hidden;
+  composerFloatActions.hidden = empty;
 }
 
 function resizeQuestion() {
@@ -1063,7 +1024,14 @@ function renderThread(messages) {
   updateFloatingControls();
   suggestionStrip.hidden = true;
   const thread = document.createElement('div'); thread.className = 'chat-thread';
-  for (const message of messages) thread.append(createMessage(message.role, message.content, message.sources || [], message.sourceCount, message, true));
+  let pairedQuestion = '';
+  for (const message of messages) {
+    if (message.role === 'user') pairedQuestion = message.content || '';
+    const element = createMessage(message.role, message.content, message.sources || [], message.sourceCount, message, true);
+    thread.append(element);
+    if (message.role === 'assistant' && message.taskId && pairedQuestion) attachAnswerRetry(element,
+      { id: message.taskId, conversationId: state.conversationId, question: pairedQuestion }, 'again');
+  }
   log.append(thread); scrollBottom();
   animateComposerPosition(previous, thread);
   updateCarouselTimer();
@@ -1106,6 +1074,37 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
     copy.control.setReady(historic && Boolean(copy.text.trim()), { partial: evidence.complete === false || evidence.interrupted === true });
   }
   return outer;
+}
+
+function attachAnswerRetry(message, task, mode) {
+  if ((!task?.id && !(mode === 'recover' && task?.requestId)) || !task.conversationId || message.querySelector('.answer-retry') || archiveConversationId) return;
+  const tools = message.querySelector('.answer-tools');
+  if (!tools) return;
+  tools.hidden = false;
+  const control = window.ChatControls.retry({ host: tools,
+    label: phase => ui.locale === 'en'
+      ? phase === 'pending' ? 'Checking…' : phase === 'sent' ? 'Opened' : mode === 'recover' ? 'Reconnect' : mode === 'again' ? 'Ask again' : 'Retry'
+      : phase === 'pending' ? '正在检查…' : phase === 'sent' ? '已处理' : mode === 'recover' ? '恢复连接' : mode === 'again' ? '再问一次' : '重试',
+    disabled: () => !message.isConnected || task.conversationId !== state.conversationId
+      || state.busy || state.preparing || state.queueSubmitting || state.legacyMode || (mode !== 'recover' && state.recoveryRequired),
+    run: async () => {
+      const attemptEpoch = state.viewEpoch;
+      if (mode === 'recover') { await loadConversation(task.conversationId); return true; }
+      const snapshot = await taskClient.read(task.id);
+      const confirmed = snapshot.task;
+      if (attemptEpoch !== state.viewEpoch || !message.isConnected) return false;
+      if (confirmed?.id !== task.id || confirmed.conversationId !== state.conversationId) throw new Error('retry_unavailable');
+      if (!['succeeded', 'failed', 'cancelled'].includes(confirmed.status)) {
+        await loadConversation(task.conversationId); return true;
+      }
+      if (state.queuedJobs.some(job => job.status === 'paused')) {
+        return ui.locale === 'en' ? status('Handle the paused queued question first.', true) : status('请先处理已暂停的待发问题，再重试。', true);
+      }
+      return ask(confirmed.question || task.question || '', { preserveDraft: true, sourceIntent: confirmed.sourceIntent || 'knowledge' });
+    },
+    onError: () => ui.locale === 'en' ? 'Could not confirm the task. No question was sent.' : '暂时无法核对原任务，没有重新发送。请稍后再试。',
+  });
+  retryControls.add(control);
 }
 
 function setSourceCount(message, value) {
@@ -1161,6 +1160,8 @@ function renderAnswer(element, text, sources = [], answerComplete = true, presen
 }
 
 function detachTaskView() {
+  state.recoveryRequired = false;
+  latestControl.cancel();
   globalThis.ChatPresentation?.closeCard();
   state.viewEpoch += 1;
   state.controller?.abort();
@@ -1244,9 +1245,9 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
   }
 }
 
-async function ask(raw) {
+async function ask(raw, options = {}) {
   const text = raw.trim();
-  if (!text || state.busy || state.preparing || !state.durableTasksSupported) return;
+  if (!text || state.busy || state.preparing || state.recoveryRequired || !state.durableTasksSupported) return false;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
   if (!state.conversationId && archiveConversationId) { archiveConversationId = ''; welcome(); }
   state.preparing = true;
@@ -1264,16 +1265,19 @@ async function ask(raw) {
     updateSendButton();
     status(t(state.submissionPhase));
     const input = { question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(),
-      ...(state.webRequested ? { sourceIntent: 'web' } : {}) };
+      ...((options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested) ? { sourceIntent: 'web' } : {}) };
     try {
       const { task } = await taskClient.submit(input);
-      void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null, { clearDraft: text });
+      state.followLatest = true;
+      void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null, options.preserveDraft ? {} : { clearDraft: text });
     } catch (error) {
       if (error.code !== 'submission_unknown') throw error;
-      void streamAnswer(null, null, { record: input, clearDraft: text });
+      state.followLatest = true;
+      void streamAnswer(null, null, { record: input, ...(options.preserveDraft ? {} : { clearDraft: text }) });
     }
     if (createdConversation) void loadConversations();
-  } catch (error) { status(userError(error), true); }
+    return true;
+  } catch (error) { status(userError(error), true); return false; }
   finally { state.preparing = false; state.submissionPhase = ''; updateSendButton(); }
 }
 
@@ -1281,6 +1285,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   const controller = new AbortController();
   const epoch = state.viewEpoch;
   state.controller = controller;
+  state.recoveryRequired = false;
   state.activeQueuedId = job?.id || '';
   busy(true);
   let task = initialTask;
@@ -1332,7 +1337,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (state.activeWebRequest) setWebRequestState(view.task.status === 'running' ? 'searching' : 'idle');
     if (view.task.status === 'queued' && !view.text && !view.process.length && !view.done) {
       status(t('taskQueued'));
-      if (state.followLatest) scrollBottom();
+      scrollBottom();
       return;
     }
     // Render the reduced full value, never append a snapshot to previously displayed text.
@@ -1345,7 +1350,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (view.text) {
       status(t('taskGenerating'));
     }
-    if (state.followLatest) scrollBottom();
+    scrollBottom();
   };
   const frameUpdate = createFrameUpdater(update);
   try {
@@ -1413,6 +1418,9 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       status(t(key));
       if (task.sourceIntent === 'web') setWebRequestState('idle');
     }
+    state.recoveryRequired = view.task.status === 'indeterminate' || (!complete && !['failed', 'cancelled'].includes(view.task.status));
+    attachAnswerRetry(reply, { ...task, status: view.task.status }, complete ? 'again' : state.recoveryRequired ? 'recover' : 'retry');
+    scrollBottom();
     await loadConversations();
   } catch (error) {
     frameUpdate.flush();
@@ -1422,7 +1430,17 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
     } else status(error.code === 'submission_rejected' ? userError(error)
       : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), true);
+    state.recoveryRequired = !['submission_rejected', 'submission_cancelled', 'submission_queued'].includes(error.code);
+    if (state.recoveryRequired && !reply && pending.record) {
+      const thread = currentThread();
+      let notice = thread.querySelector('.chat-notice');
+      if (!notice) { notice = document.createElement('div'); notice.className = 'chat-notice'; thread.append(notice); }
+      const actions = document.createElement('span'); actions.className = 'answer-tools';
+      notice.replaceChildren(document.createTextNode(t('taskUnavailable')), actions);
+      attachAnswerRetry(notice, pending.record, 'recover');
+    }
     if (reply) {
+      if (state.recoveryRequired && task) attachAnswerRetry(reply, task, 'recover');
       content.classList.remove('typing');
       processView?.settle('interrupted');
       settleAnswerLifecycle(lifecycle, lifecycleTicker, lifecycleTiming, 'interrupted');
@@ -1448,10 +1466,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
 
 window.addEventListener('pagehide', detachTaskView);
 
-function scrollBottom() {
-  log.scrollTop = log.scrollHeight;
-  lastScrollTop = log.scrollTop;
-}
+function scrollBottom() { latestControl.pin(); }
 
 if (document.body.classList.contains('qa-embedded')) {
   hostBridge = createHostBridge(window, {
