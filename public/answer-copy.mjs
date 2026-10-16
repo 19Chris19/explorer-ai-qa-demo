@@ -5,7 +5,7 @@ export function createAnswerCopy(message, {
 }) {
   const doc = message.ownerDocument;
   const tools = doc.createElement('div'); tools.className = 'answer-tools'; tools.hidden = true;
-  const button = doc.createElement('button'); button.type = 'button'; button.className = 'icon-button answer-copy';
+  const button = doc.createElement('button'); button.type = 'button'; button.className = 'icon-button answer-copy answer-action';
   const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
   icon.classList.add('icon'); icon.setAttribute('aria-hidden', 'true');
   const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use');

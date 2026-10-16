@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openUi } from '../test-support/ui-harness.mjs';
 
 test('Docker UI initializes with administration removed and renders a usable welcome', async () => {
-  const ui = await openUi({ setup(window) { window.document.querySelector('.admin-link').remove(); } });
+  const ui = await openUi();
   try {
     assert.equal(ui.document.querySelector('.admin-link'), null);
     assert.ok(ui.document.querySelector('.welcome'));
