@@ -27,6 +27,8 @@ jobs:
       - run: npm run build
       - run: npm run check:performance
       - run: npm run check:release
+      - name: Native touch targets and mobile composer (Chromium)
+        run: npm run test:mobile-ui
 
   containers:
     name: Paired durable Docker acceptance
