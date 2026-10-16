@@ -310,12 +310,13 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
   pointer-events: none;
 }
 .app-page .composer-float-actions {
-  width: min(768px, 100%);
-  margin: 0 auto 8px;
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: max-content;
+  margin: 0;
   display: flex;
   justify-content: center;
   gap: 8px;
-  pointer-events: auto;
+  pointer-events: none;
 }
 .app-page .floating-action {
   min-height: 44px;
@@ -636,7 +637,7 @@ body.app-page.dark .message-error { background: #382b2a; color: #f4c5a6; }
   .app-page .welcome h2 span { display: block; }
   .app-page .welcome p { padding: 0 10px; }
   .app-page .composer-wrap { padding: 0 15px 18px; }
-  .app-page .chat-main:not(.is-empty) .composer-wrap { padding: 0 15px max(32px, calc(8px + env(safe-area-inset-bottom, 0px))); background: linear-gradient(180deg, transparent, var(--page) 18px); }
+  .app-page .chat-main:not(.is-empty) .composer-wrap { padding: 0 15px max(32px, calc(8px + env(safe-area-inset-bottom, 0px))); background: transparent; }
   .app-page .chat-main.is-empty .composer-wrap { padding-top: 48px; }
   .app-page .composer { padding-left: 12px; gap: 5px; }
   .app-page .more-menu { top: 59px; right: 12px; }

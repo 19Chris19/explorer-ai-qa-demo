@@ -53,14 +53,19 @@ export function taskLifecycleTiming(task, previous = {}, now = performance.now()
   const queued = task.status === 'queued';
   const startedAt = queued ? null : dispatched !== undefined ? now - (wallNow - dispatched)
     : previous.startedAt ?? (task.status === 'running' ? now : null);
+  const terminal = ['succeeded', 'failed', 'cancelled', 'indeterminate'].includes(task.status)
+    ? timestamp(task.trace?.terminalAt) : null;
+  const endedAt = terminal !== null && (created === null || terminal >= created)
+    && (dispatched === undefined || terminal >= dispatched) ? now - (wallNow - terminal) : null;
   return { phase: startedAt === null ? 'queued' : previous.phase === 'generating' ? 'generating' : 'connecting',
-    queuedAt, startedAt, queueWaitMs: startedAt === null ? 0 : Math.max(0, startedAt - queuedAt) };
+    queuedAt, startedAt, endedAt, queueWaitMs: startedAt === null ? 0 : Math.max(0, startedAt - queuedAt) };
 }
 
 export function elapsedLifecycleTiming(timing, now = performance.now()) {
+  const measuredAt = Number.isFinite(timing.endedAt) ? Math.min(now, timing.endedAt) : now;
   return { ...timing,
-    elapsedMs: timing.startedAt === null ? 0 : Math.max(0, now - timing.startedAt),
-    queueWaitMs: timing.startedAt === null ? Math.max(0, now - timing.queuedAt) : timing.queueWaitMs,
+    elapsedMs: timing.startedAt === null ? 0 : Math.max(0, measuredAt - timing.startedAt),
+    queueWaitMs: timing.startedAt === null ? Math.max(0, measuredAt - timing.queuedAt) : timing.queueWaitMs,
   };
 }
 

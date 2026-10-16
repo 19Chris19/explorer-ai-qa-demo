@@ -61,6 +61,7 @@ export async function openUi({ fetchImpl, setup, conversationId = '', presentati
       requestAnimationFrame: fn => window.setTimeout(fn, 0), cancelAnimationFrame: id => window.clearTimeout(id), fetch: fetchMock,
       getComputedStyle: window.getComputedStyle.bind(window),
     });
+    window.eval(readFileSync(join(root, 'public/chat-controls.js'), 'utf8'));
     if (presentation) {
       for (const file of [join(require.resolve('marked'), '../marked.umd.js'), require.resolve('dompurify/dist/purify.min.js'),
         join(root, 'public/chat-presentation.js'), join(root, 'public/answer-markdown.js')]) window.eval(readFileSync(file, 'utf8'));

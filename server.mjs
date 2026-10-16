@@ -60,6 +60,8 @@ const staticFiles = new Map([
   ['/styles.css', ['public/styles.css', 'text/css; charset=utf-8']],
   ['/chat-presentation.js', ['public/chat-presentation.js', 'text/javascript; charset=utf-8']],
   ['/chat-presentation.css', ['public/chat-presentation.css', 'text/css; charset=utf-8']],
+  ['/chat-controls.js', ['public/chat-controls.js', 'text/javascript; charset=utf-8']],
+  ['/chat-controls.css', ['public/chat-controls.css', 'text/css; charset=utf-8']],
   ['/chat.css', ['public/chat.css', 'text/css; charset=utf-8']],
   ['/main-shell.css', ['public/main-shell.css', 'text/css; charset=utf-8']],
   ['/site/logo.png', ['public/site/logo.png', 'image/png']],
