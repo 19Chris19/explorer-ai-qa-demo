@@ -1,9 +1,8 @@
-const WINDOW_MS = 60_000;
-const MAX_SUBMISSIONS = 10;
-const MAX_PENDING = 8;
+import { qaAdmissionConfig } from './qa-admission-config.mjs';
 
 export class PreviewAdmission {
-  constructor(now = () => Date.now()) {
+  constructor(now = () => Date.now(), config = qaAdmissionConfig()) {
+    this.config = config;
     this.now = now;
     this.recent = new Map();
     this.active = false;
@@ -13,11 +12,12 @@ export class PreviewAdmission {
   admit(visitor, requestId) {
     const key = `${visitor}:${requestId}`;
     const now = this.now();
-    for (const [id, time] of this.recent) if (now - time >= WINDOW_MS) this.recent.delete(id);
+    for (const [id, time] of this.recent) if (now - time >= this.config.windowMs) this.recent.delete(id);
     if (this.recent.has(key)) return true;
     let count = 0;
     for (const id of this.recent.keys()) if (id.startsWith(`${visitor}:`)) count += 1;
-    if (count >= MAX_SUBMISSIONS) return false;
+    if (count >= this.config.maxSubmissions) return false;
+    if (this.recent.size >= this.config.maxRecentRecords) return false;
     this.recent.set(key, now);
     return true;
   }
@@ -27,7 +27,7 @@ export class PreviewAdmission {
   }
 
   hasRoom(pendingJobs = 0) {
-    return this.waiters.length + pendingJobs < MAX_PENDING;
+    return this.waiters.length + pendingJobs < this.config.maxPending;
   }
 
   tryEnter() {

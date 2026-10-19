@@ -4,7 +4,11 @@ import { readFileSync } from 'node:fs';
 import { readBundle } from '../deploy/bundle.mjs';
 test('private version images are gated and never drift a latest tag', () => {
   const workflow = readFileSync(new URL('../.github/workflows/images.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /IS_PRIVATE/);
+  // Source visibility no longer controls release eligibility. Keep registry
+  // package visibility and immutable merged-tag verification independent.
+  assert.doesNotMatch(workflow, /IS_PRIVATE/);
+  assert.match(workflow, /git merge-base --is-ancestor HEAD origin\/main/);
+  assert.match(workflow, /packages\/container\/\$\{GITHUB_REPOSITORY#\*\/\}.*visibility\)\" = private/);
   assert.match(workflow, /linux\/amd64,linux\/arm64/);
   assert.match(workflow, /release-manifest\.json/);
   assert.match(workflow, /npm test/);

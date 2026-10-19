@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-19",
+  "providerBase": "286653e5e08679d7534172c0188831c01310668d",
+  "websiteBase": "8e1f0016a2940e56674e584e231108cb1e599b8e",
+  "stage": "local synthetic acceptance; not released",
+  "node": "22.23.3",
+  "provider": {
+    "tests": 983,
+    "pass": 981,
+    "fail": 0,
+    "skipped": 2
+  },
+  "website": {
+    "tests": 372,
+    "pass": 371,
+    "fail": 0,
+    "skipped": 1
+  },
+  "pairedActualCodeTest": {
+    "passed": true,
+    "mockUpstream": true,
+    "namedApps": 2,
+    "maxConcurrentObserved": 3,
+    "websiteCap": 2,
+    "agentCap": 1,
+    "sameSessionBindingPreserved": true,
+    "queuedCancelNoDispatch": true,
+    "sseReconnectNoResubmit": true,
+    "bffRestartHistoryUnchanged": true,
+    "sameVisitorCrossApplicationDenied": true
+  },
+  "waitingDeadline": {
+    "httpFailedReceiptVerified": true,
+    "noUpstreamCall": true,
+    "originalAcceptanceTimeSurvivesRestore": true
+  },
+  "packaging": {
+    "providerNewModulesIncluded": true,
+    "websiteBuild": true,
+    "websiteAssetBudgets": true,
+    "websiteReleasePrivacyCheck": true,
+    "dockerSourceLayoutOnly": true,
+    "containerImagesBuilt": false
+  },
+  "livePostcheck": {
+    "localReady": true,
+    "onlineReady": true,
+    "capacity": 5,
+    "active": 0,
+    "queued": 0
+  },
+  "productionChanged": false,
+  "realIMARequests": 0,
+  "accountCredentialsHistoryOrAirModified": false,
+  "newProductionAcceptanceGrants": 0,
+  "prCreated": false,
+  "remainingAcceptance": [
+    "real single-account five-session Provider/BFF chain",
+    "per-account/mode validation",
+    "20 per account and 100 real global concurrency",
+    "sustained full-service resource measurement",
+    "two 365-second clock tests not rerun",
+    "container image and mobile browser acceptance not run"
+  ]
+}

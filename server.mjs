@@ -1,4 +1,5 @@
 import chatPresentation from './chat-presentation.cjs';
+import { qaAdmissionConfig } from './qa-admission-config.mjs';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -20,6 +21,7 @@ import { relaySourcePreview } from './source-preview.mjs';
 const root = dirname(fileURLToPath(import.meta.url));
 const serveStatic = createStaticResponder(root);
 const env = readPrivateEnv(join(root, '.env.local'));
+const admissionConfig = qaAdmissionConfig({ ...env, ...process.env });
 const port = Number(process.env.PORT || env.PORT || 4317);
 const listenHost = process.env.DEMO_LISTEN_HOST || env.DEMO_LISTEN_HOST || '127.0.0.1';
 const providerBaseUrl = process.env.PROVIDER_A_BASE_URL || env.PROVIDER_A_BASE_URL || 'http://127.0.0.1:3117';
@@ -41,8 +43,8 @@ const nativeSessions = new SessionModeStore(join(runtimeDir, 'native-sessions.js
 const requestLedger = new RequestLedger(join(runtimeDir, 'request-ledger.json'));
 const maintenance = new MaintenanceGate(process.env.DEMO_MAINTENANCE_STATE_PATH ?? env.DEMO_MAINTENANCE_STATE_PATH ?? '');
 const turnQueue = new ConversationTurnQueue(join(runtimeDir, 'queued-turns.json'), dispatchQueuedTurn, () => Date.now(),
-  { preserveExpiredPending: maintenance.enabled });
-const previewAdmission = new PreviewAdmission();
+  { preserveExpiredPending: maintenance.enabled, maxPendingPerConversation: admissionConfig.maxPendingPerConversation });
+const previewAdmission = new PreviewAdmission(() => Date.now(), admissionConfig);
 const taskWatches = new Map();
 const taskWatchStore = new TaskWatchStore(join(runtimeDir, 'task-watch.json'));
 const directLanes = new Map();
@@ -275,7 +277,7 @@ async function readBody(req) {
 async function health(res) {
   try {
     const status = await provider.readiness();
-    sendJson(res, 200, { ...status, lastRealSuccessAt, websiteRelease, websiteRevision: releaseRevision });
+    sendJson(res, 200, { ...status, admission: { maxSubmissions: admissionConfig.maxSubmissions, windowMs: admissionConfig.windowMs, maxPending: admissionConfig.maxPending, maxPendingPerConversation: admissionConfig.maxPendingPerConversation }, lastRealSuccessAt, websiteRelease, websiteRevision: releaseRevision });
   } catch {
     sendJson(res, 503, { connected: false, configured: provider.configured, authenticated: false, contractSupported: false, ready: false, capacity: 0, webIntentSupported: false, lastRealSuccessAt, websiteRelease, websiteRevision: releaseRevision });
   }
@@ -289,6 +291,10 @@ async function requireNativeContract(res, durable = false) {
   }
   if (!status.authenticated) {
     sendJson(res, 503, { error: 'Provider A 接入凭证不可用', code: 'provider_auth_unavailable' });
+    return false;
+  }
+  if (status.allocationValid === false || status.allocation?.maxConcurrent === 0) {
+    sendJson(res, 503, { error: '当前入口的处理额度暂不可用，请稍后重试。', code: 'application_capacity_unavailable' });
     return false;
   }
   if (!status.contractSupported || (durable && !status.durableTasksSupported)) {
@@ -325,7 +331,7 @@ async function postTaskOnce(row, input) {
   try {
     response = await provider.request({ route: '/api/tasks', method: 'POST', clientId: row.clientId, requestId: row.requestId,
       body: JSON.stringify({ question: input.question.trim(), conversationId: input.conversationId }), sourceIntent: input.sourceIntent,
-      signal: AbortSignal.timeout(60000) });
+      signal: AbortSignal.timeout(admissionConfig.submitTimeoutMs) });
     if (response.ok) {
       const data = await response.json();
       if (recordTask(row, data.task)) return { status: response.status, data };
@@ -447,7 +453,7 @@ async function taskRoute(req, res, pathname, params) {
     route += '?' + query;
   }
   if (!rootRoute && presentation) route += '?presentation=chat_v1';
-  const upstream = await provider.request({ route, method: 'GET', clientId, signal: AbortSignal.timeout(60000) });
+  const upstream = await provider.request({ route, method: 'GET', clientId, signal: AbortSignal.timeout(admissionConfig.submitTimeoutMs) });
   if (!upstream.ok) {
     await upstream.body?.cancel();
     sendJson(res, [400, 403, 404, 409, 410, 429].includes(upstream.status) ? upstream.status : 503, { error: '当前操作未能确认，请检查原任务状态。', code: 'task_request_unconfirmed' });
@@ -708,7 +714,7 @@ async function proxy(req, res, route) {
     }
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 190000);
+  const timeout = setTimeout(() => controller.abort(), admissionConfig.legacyAskTimeoutMs);
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
   if (res.destroyed) controller.abort();
   try {
