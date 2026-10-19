@@ -35,12 +35,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Validate merged tag and private repository
+      - name: Validate merged tag and package version
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
-          IS_PRIVATE: ${{ github.event.repository.private }}
         run: |
-          test "$IS_PRIVATE" = true
           node --input-type=module -e 'import {releaseVersionValid} from "./deploy/bundle.mjs"; if(!process.env.VERSION.startsWith("v") || !releaseVersionValid(process.env.VERSION.slice(1))) throw Error("invalid_release_tag")'
           test "$VERSION" = "v$(node -p 'require("./package.json").version')"
           git merge-base --is-ancestor HEAD origin/main

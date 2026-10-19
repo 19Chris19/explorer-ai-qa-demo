@@ -5,7 +5,6 @@ import { deflateRawSync, inflateRawSync } from 'node:zlib';
 
 const pendingTtlMs = 60 * 60 * 1000;
 const completedTtlMs = 10 * 60 * 1000;
-const maxPendingPerConversation = 3;
 const maxBufferedBytes = 2 * 1024 * 1024;
 const maxReplayWireBytes = 16 * 1024 * 1024;
 
@@ -52,13 +51,15 @@ function readPreservedStorage(file) {
 }
 
 export class ConversationTurnQueue {
-  constructor(file, dispatch, now = () => Date.now(), { preserveExpiredPending = false, maxReplayBytes = 32 * 1024 * 1024, maxJobs = 500 } = {}) {
+  constructor(file, dispatch, now = () => Date.now(), { preserveExpiredPending = false, maxReplayBytes = 32 * 1024 * 1024, maxJobs = 500, maxPendingPerConversation = 3 } = {}) {
     this.file = file;
     this.dispatch = dispatch;
     this.now = now;
     this.preserveExpiredPending = preserveExpiredPending;
     this.maxReplayBytes = maxReplayBytes;
     this.maxJobs = maxJobs;
+    if (!Number.isSafeInteger(maxPendingPerConversation) || maxPendingPerConversation < 1 || maxPendingPerConversation > 50) throw new Error('Invalid maxPendingPerConversation');
+    this.maxPendingPerConversation = maxPendingPerConversation;
     this.jobs = new Map();
     this.active = new Set();
     let saved;
@@ -184,7 +185,7 @@ export class ConversationTurnQueue {
       || [...this.jobs.values()].reduce((bytes, job) => bytes + job.bytes, 0) >= this.maxReplayBytes) return { error: 'busy' };
     const jobs = this.laneJobs(lane);
     if (jobs.some(job => job.status === 'paused')) return { error: 'paused' };
-    if (jobs.filter(job => job.status === 'queued').length >= maxPendingPerConversation) return { error: 'full' };
+    if (jobs.filter(job => job.status === 'queued').length >= this.maxPendingPerConversation) return { error: 'full' };
     const job = {
       id: randomUUID(), owner, clientId, conversationId, requestId, question, sourceIntent, preview,
       createdAt: this.now(), status: 'queued', events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0,

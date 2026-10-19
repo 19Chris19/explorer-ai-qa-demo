@@ -102,7 +102,7 @@ const labels = {
     taskUnavailable: '暂时无法恢复任务，请稍后从最近对话重新打开。请勿重复提交。',
     taskPartial: '任务已结束，但回答正文尚不完整。请稍后重新打开最近对话，勿重复提交。',
     taskDone: '回答已完成', taskConnecting: '正在连接知识库…', taskGenerating: '正在生成回答…',
-    taskQueued: '正在等待上一轮完成…', taskStopping: '正在确认停止结果…', queueAdded: '下一问已加入队列',
+    taskQueued: '正在排队，等待可用处理额度…', taskStopping: '正在确认停止结果…', queueAdded: '下一问已加入队列',
   },
   en: {
     myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
@@ -124,7 +124,7 @@ const labels = {
     taskUnavailable: 'The task cannot be restored right now. Reopen it from recent conversations later; please do not resubmit.',
     taskPartial: 'The task ended, but its answer is not yet complete. Reopen recent conversations later; please do not resubmit.',
     taskDone: 'Answer complete', taskConnecting: 'Connecting to the knowledge base…', taskGenerating: 'Generating answer…',
-    taskQueued: 'Waiting for the previous turn…', taskStopping: 'Confirming cancellation…', queueAdded: 'Next question queued',
+    taskQueued: 'Queued; waiting for available capacity…', taskStopping: 'Confirming cancellation…', queueAdded: 'Next question queued',
   },
 };
 function t(key) { return labels[ui.locale][key] || key; }

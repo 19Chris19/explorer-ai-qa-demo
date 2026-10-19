@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { allocationView } from './qa-admission-config.mjs';
 
 export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowledgeScopeRef, allowHostGateway = false, fetchImpl = fetch }) {
   const localPort = /^http:\/\/127\.0\.0\.1:(\d+)$/u.exec(baseUrl)?.[1];
@@ -30,7 +31,7 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
         redirect: 'error',
       }),
     ]);
-    const authenticated = ordinary.ok && capacityResponse.ok;
+    let authenticated = ordinary.ok && capacityResponse.ok;
     const payload = capacityResponse.ok ? await capacityResponse.json() : {};
     // Bot capacity is not evidence of website capability or available slots.
     const hasWebsite = Object.hasOwn(payload ?? {}, 'website');
@@ -39,9 +40,23 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
     const nativeMode = !hasWebsite || capacity.mode === 'knowledge_agent';
     const contractSupported = nativeMode && capacity.schemaVersion === 1 && capacity.features?.knowledge_agent_keyed_sse_v1 === true;
     const durableTasksSupported = nativeMode && capacity.schemaVersion === 1 && capacity.features?.durable_qa_tasks_v1 === true;
-    const nativeCapacity = Number(capacity.policies?.knowledge_agent?.max_concurrent ?? capacity.policy_capacity?.knowledge_agent ?? 0);
+    let nativeCapacity = Number(capacity.policies?.knowledge_agent?.max_concurrent ?? capacity.policy_capacity?.knowledge_agent ?? 0);
+    const hasAllocation = Object.hasOwn(capacity, 'allocation');
+    const allocation = hasAllocation ? allocationView(capacity.allocation) : null;
+    let isolationVerified = false;
+    if (authenticated && allocation && capacity.applicationId) {
+      const identityResponse = await fetchImpl(`${baseUrl}/api/capabilities`, {
+        headers: { Authorization: `Bearer ${apiToken}` }, signal: AbortSignal.timeout(3500), redirect: 'error',
+      });
+      const identity = identityResponse.ok ? await identityResponse.json() : {};
+      isolationVerified = typeof capacity.applicationId === 'string' && identity.applicationId === capacity.applicationId;
+      authenticated = isolationVerified;
+    }
+    if (allocation) nativeCapacity = Math.min(nativeCapacity, allocation.maxConcurrent);
+    else if (hasAllocation) nativeCapacity = 0;
     return {
       connected: true,
+      ...(hasAllocation ? { allocationValid: Boolean(allocation), ...(allocation ? { allocation: { ...allocation, isolationVerified } } : {}) } : {}),
       ...(providerRelease ? { providerRelease } : {}),
       configured: true,
       authenticated,
@@ -50,8 +65,8 @@ export function createProviderAClient({ baseUrl, apiToken, serviceToken, knowled
       ready: authenticated && contractSupported && durableTasksSupported && Number.isInteger(nativeCapacity) && nativeCapacity > 0,
       capacity: authenticated ? nativeCapacity : 0,
       webIntentSupported: authenticated && contractSupported && capacity.features?.source_intent_web_requested_v1 === true,
-      active: capacity.active ?? (hasWebsite ? 0 : service.queue?.activeRequests ?? 0),
-      queued: capacity.queued ?? (hasWebsite ? 0 : service.queue?.queuedRequests ?? 0),
+      active: allocation?.active ?? capacity.active ?? (hasWebsite ? 0 : service.queue?.activeRequests ?? 0),
+      queued: allocation?.queued ?? capacity.queued ?? (hasWebsite ? 0 : service.queue?.queuedRequests ?? 0),
     };
   }
 

@@ -43,7 +43,7 @@
 
 ## 开始部署
 
-当前稳定配套：**知天下 v0.4.4 / Provider A v0.6.4**。同一 Release 交付 Node 源码和 Docker 路径，不存在不同功能的“本地版／容器版”。版本由 [配套清单](deploy/bundle.env) 固定，镜像摘要以 Release 附件为准。
+当前配套发布：**知天下 v0.5.0 / Provider A v0.7.0**。同一 Release 交付 Node 源码和 Docker 路径，不存在不同功能的“本地版／容器版”。版本由 [配套清单](deploy/bundle.env) 固定，镜像摘要以 Release 附件为准。新增调度的启用与实际容量须按[版本说明](docs/releases/v0.5.0.md)单独验收。
 
 | 方式 | 适合谁 | 当前边界 |
 | --- | --- | --- |

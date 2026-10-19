@@ -11,7 +11,7 @@ mkdirSync(join(output, 'public/vendor'), { recursive: true });
 copyFileSync(join(root, 'node_modules/marked/lib/marked.umd.js'), join(output, 'public/vendor/marked.umd.js'));
 copyFileSync(join(root, 'node_modules/dompurify/dist/purify.min.js'), join(output, 'public/vendor/purify.min.js'));
 for (const file of [
-  'chat-presentation.cjs', 'source-preview.mjs', 'server.mjs', 'static-assets.mjs', 'provider-a-client.mjs', 'durable-task-bridge.mjs', 'task-watch-store.mjs', 'history-archive.mjs', 'maintenance-gate.mjs', 'session-mode-store.mjs', 'request-ledger.mjs', 'private-json-file.mjs', 'conversation-turn-queue.mjs', 'preview-admission.mjs', 'preview-gateway.mjs',
+  'qa-admission-config.mjs', 'chat-presentation.cjs', 'source-preview.mjs', 'server.mjs', 'static-assets.mjs', 'provider-a-client.mjs', 'durable-task-bridge.mjs', 'task-watch-store.mjs', 'history-archive.mjs', 'maintenance-gate.mjs', 'session-mode-store.mjs', 'request-ledger.mjs', 'private-json-file.mjs', 'conversation-turn-queue.mjs', 'preview-admission.mjs', 'preview-gateway.mjs',
   'question-rotation.mjs', 'source-evidence.mjs', 'deployment-paths.mjs', 'package.json', 'package-lock.json', '.env.example',
 ]) {
   copyFileSync(join(root, file), join(output, file));
