@@ -76,7 +76,9 @@ let conversationItems = [];
 let archiveConversationId = '';
 let historyLoadError = false;
 let suggestionFlight = null;
-let composerImpact = null;
+let suggestionTextMotion = null;
+let composerResizeMotion = null;
+let welcomeAnchorHeld = false;
 let exitingWelcome = null;
 let webStateTimer = 0;
 const ui = {
@@ -285,6 +287,9 @@ micButton.addEventListener('click', () => {
 window.addEventListener('pagehide', () => {
   voicePreview.stop();
   composerSparks.setActive(false);
+  clearSuggestionMotion();
+  composerResizeMotion?.cancel();
+  composerResizeMotion = null;
 });
 window.addEventListener('pageshow', updateWebIntentControl);
 webSearchButton.addEventListener('click', () => {
@@ -301,31 +306,37 @@ suggestionStrip.addEventListener('focusout', event => {
 suggestionList.addEventListener('click', event => {
   const button = event.target.closest('[data-question-id]');
   if (!button || state.suggestionSelected || state.composing || question.value.trim()) return;
-  const source = button.getBoundingClientRect();
-  const computed = getComputedStyle(button);
+  const sourceText = button.querySelector('span:first-child') || button;
+  const source = sourceText.getBoundingClientRect();
+  const computed = window.getComputedStyle(sourceText);
   const style = { font: computed.font, lineHeight: computed.lineHeight, color: computed.color };
+  clearSuggestionMotion();
+  holdWelcomeAnchor();
+  if (!reducedMotion()) button.classList.add('is-flying');
   question.value = button.dataset.question;
-  resizeQuestion();
+  resizeQuestion({ animate: true });
   updateSendButton();
   question.focus();
   question.setSelectionRange(question.value.length, question.value.length);
   state.suggestionSelected = true;
-  renderSuggestions();
+  updateSuggestionVisibility();
   updateCarouselTimer();
   animateSuggestionSelection(button.dataset.question, source, style);
 });
 question.addEventListener('focus', updateCarouselTimer);
 question.addEventListener('blur', updateCarouselTimer);
-question.addEventListener('compositionstart', () => { state.composing = true; updateCarouselTimer(); });
+question.addEventListener('compositionstart', () => { clearSuggestionMotion(); state.composing = true; updateCarouselTimer(); });
 question.addEventListener('compositionend', () => { state.composing = false; updateSuggestionVisibility(); updateCarouselTimer(); });
 question.addEventListener('input', () => {
+  if (question.value.trim()) holdWelcomeAnchor();
+  if (suggestionFlight || suggestionTextMotion) clearSuggestionMotion();
   if (state.suggestionSelected && !question.value.trim()) {
     state.suggestionSelected = false;
     clearSuggestionMotion();
     renderSuggestions();
   }
   updateSuggestionVisibility();
-  resizeQuestion(); updateSendButton(); updateCarouselTimer();
+  resizeQuestion({ animate: true }); updateSendButton(); updateCarouselTimer();
 });
 document.addEventListener('visibilitychange', updateCarouselTimer);
 new ResizeObserver(() => {
@@ -745,8 +756,46 @@ function updateFloatingControls() {
   composerFloatActions.hidden = empty;
 }
 
-function resizeQuestion() {
+function holdWelcomeAnchor() {
+  if (!main.classList.contains('is-empty') || welcomeAnchorHeld) return;
+  const margin = parseFloat(window.getComputedStyle(log).marginTop);
+  if (!Number.isFinite(margin)) return;
+  log.style.marginTop = `${margin}px`;
+  main.classList.add('is-welcome-anchored');
+  welcomeAnchorHeld = true;
+}
+
+function releaseWelcomeAnchor() {
+  if (!welcomeAnchorHeld) return;
+  log.style.removeProperty('margin-top');
+  main.classList.remove('is-welcome-anchored');
+  welcomeAnchorHeld = false;
+}
+
+function resizeQuestion({ animate = false } = {}) {
+  const shouldAnimate = animate && !reducedMotion() && typeof form.animate === 'function';
+  const before = shouldAnimate ? form.getBoundingClientRect().height : 0;
+  if (composerResizeMotion) {
+    const previous = composerResizeMotion;
+    composerResizeMotion = null;
+    previous.cancel();
+  }
   resizeComposer(form, question);
+  const after = shouldAnimate ? form.getBoundingClientRect().height : before;
+  if (!shouldAnimate || Math.abs(after - before) < 1) {
+    if (!question.value.trim() && !state.composing) releaseWelcomeAnchor();
+    return;
+  }
+  const motion = form.animate([{ height: `${before}px` }, { height: `${after}px` }], {
+    duration: 280, easing: 'cubic-bezier(.2, .8, .2, 1)',
+  });
+  composerResizeMotion = motion;
+  motion.onfinish = () => {
+    if (composerResizeMotion !== motion) return;
+    composerResizeMotion = null;
+    if (!question.value.trim() && !state.composing) releaseWelcomeAnchor();
+  };
+  motion.oncancel = () => { if (composerResizeMotion === motion) composerResizeMotion = null; };
 }
 
 function updateWebIntentControl() {
@@ -852,10 +901,11 @@ function updateCarouselTimer() {
 }
 
 function clearSuggestionMotion() {
+  const textMotion = suggestionTextMotion;
+  suggestionTextMotion = null;
+  textMotion?.cancel();
   suggestionFlight?.remove();
   suggestionFlight = null;
-  composerImpact?.cancel();
-  composerImpact = null;
 }
 
 function reducedMotion() {
@@ -926,8 +976,7 @@ function settleAnswerLifecycle(lifecycle, ticker, timing, outcome) {
 }
 
 function animateSuggestionSelection(text, source, style) {
-  clearSuggestionMotion();
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (reducedMotion() || typeof question.animate !== 'function') return;
   const target = question.getBoundingClientRect();
   const flight = document.createElement('span');
   flight.className = 'suggestion-flight';
@@ -947,16 +996,15 @@ function animateSuggestionSelection(text, source, style) {
   const motion = flight.animate([
     { transform: 'translate(0, 0)', opacity: 1 },
     { transform: `translate(${target.left - source.left}px, ${target.top - source.top}px)`, opacity: 0 },
-  ], { duration: 240, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  ], { duration: 300, easing: 'cubic-bezier(.2, .8, .2, 1)' });
   motion.onfinish = finish;
   motion.oncancel = finish;
-  composerImpact = form.animate([
-    { transform: 'translateY(0)' },
-    { transform: 'translateY(3px)', offset: .52 },
-    { transform: 'translateY(-1px)', offset: .78 },
-    { transform: 'translateY(0)' },
-  ], { duration: 260, easing: 'ease-out' });
-  composerImpact.onfinish = () => { composerImpact = null; };
+  const textMotion = question.animate([
+    { opacity: 0, offset: 0 }, { opacity: 0, offset: .55 }, { opacity: 1, offset: 1 },
+  ], { duration: 300, easing: 'linear' });
+  suggestionTextMotion = textMotion;
+  textMotion.onfinish = () => { if (suggestionTextMotion === textMotion) suggestionTextMotion = null; };
+  textMotion.oncancel = () => { if (suggestionTextMotion === textMotion) suggestionTextMotion = null; };
 }
 
 function captureComposerPosition() {
@@ -1018,6 +1066,7 @@ function welcome() {
   const previous = main.classList.contains('is-empty') ? null : captureComposerPosition();
   clearWelcomeExit();
   clearSuggestionMotion();
+  releaseWelcomeAnchor();
   messageShapes.reset();
   log.replaceChildren();
   main.classList.add('is-empty');
@@ -1052,6 +1101,7 @@ function renderThread(messages, { restoring = false } = {}) {
   if (fromWelcome && !restoring) fadeWelcomeOut();
   if (restoring) for (const animation of form.getAnimations()) animation.cancel();
   clearSuggestionMotion();
+  releaseWelcomeAnchor();
   messageShapes.reset();
   log.replaceChildren();
   main.classList.remove('is-empty');
