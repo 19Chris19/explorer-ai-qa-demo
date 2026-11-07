@@ -79,10 +79,10 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     await until(() => requests.includes('/api/qa/queue?conversationId=synthetic-empty'));
     const main = window.document.querySelector('#main');
     assert.equal(main.classList.contains('is-empty'), true);
-    assert.equal(window.document.querySelector('.welcome h2')?.textContent, '你的 3DGS 疑问，随时来聊。');
+    assert.equal(window.document.querySelector('.welcome h2')?.textContent, '你的 3DGS 疑问 随时来聊');
     assert.equal(window.document.querySelector('#suggestionStrip').hidden, false);
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
-    assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题…');
+    assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题');
     assert.equal(window.document.querySelector('#askForm').dataset.textShape, 'single');
     const webToggle = window.document.querySelector('#webSearchButton');
     await until(() => !webToggle.hidden);
@@ -137,7 +137,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     await until(() => main.classList.contains('is-empty'));
     assert.ok(window.document.querySelector('.welcome'));
     assert.equal(window.sessionStorage.getItem('qa-native-conversation-id'), 'synthetic-empty');
-    assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题…');
+    assert.equal(window.document.querySelector('#question').placeholder, '输入你的 3DGS 问题');
     draft.value = '连接失败也保留这条合成草稿';
     draft.dispatchEvent(new window.Event('input', { bubbles: true }));
     window.document.querySelector('#askForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));

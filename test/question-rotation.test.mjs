@@ -40,3 +40,18 @@ test('rotation accepts responsive group sizes and rejects malformed question ent
   for (const count of [1, 2, 3]) assert.equal(createQuestionRotation(bank).next(count).length, count);
   assert.throws(() => createQuestionRotation([{ id: 'duplicate', zh: '问题', en: 'Question' }, { id: 'duplicate', zh: '问题二', en: 'Question two' }, { id: 'third', zh: '问题三', en: 'Question three' }]), /unique bilingual/u);
 });
+
+test('homepage groups prefer distinct categories without losing questions from the shuffle bag', () => {
+  const rotation = createQuestionRotation(bank, () => 0.37);
+  const cycle = [];
+  while (cycle.length < bank.length) {
+    const group = rotation.next(3, { preferDistinctCategories: true });
+    assert.ok(group.length >= 1 && group.length <= 3);
+    if (cycle.length === 0) assert.equal(new Set(group.map(item => item.category)).size, 3);
+    cycle.push(...group);
+  }
+  assert.equal(cycle.length, bank.length);
+  assert.equal(new Set(cycle.map(item => item.id)).size, bank.length);
+  const singleCategory = bank.filter(item => item.category === bank[0].category);
+  assert.equal(createQuestionRotation(singleCategory).next(3, { preferDistinctCategories: true }).length, 3);
+});

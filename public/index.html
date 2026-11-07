@@ -28,9 +28,12 @@
       </a>
       <nav class="top-nav" aria-label="当前板块">
         <a href="/" class="active" aria-current="page" data-i18n="qaNav">AI 问答</a>
-        <span class="top-nav-pending" title="交流群入口待配置" data-i18n="communityNav">交流群</span>
+        <button id="communityOpen" class="top-nav-community" type="button" aria-haspopup="dialog" aria-controls="communityDialog" aria-expanded="false" data-i18n="communityNav">交流群</button>
       </nav>
       <div class="header-actions">
+        <button id="themeQuickToggle" class="icon-button" type="button" aria-label="切换深色模式" aria-pressed="false" title="切换深色模式">
+          <svg class="icon" aria-hidden="true"><use href="/icons.svg#moon"></use></svg>
+        </button>
         <button id="moreToggle" class="icon-button more-toggle" type="button" aria-label="打开更多选项" aria-controls="moreMenu" aria-expanded="false" title="更多选项">
           <svg class="icon" aria-hidden="true"><use href="/icons.svg#ellipsis"></use></svg>
         </button>
@@ -106,9 +109,6 @@
         </div>
         <div id="composerExpanded" class="composer-expanded">
           <div id="queuedTurns" class="queued-turns" aria-label="待发问题" aria-live="polite" hidden></div>
-          <div class="suggestion-strip" id="suggestionStrip" aria-label="提问建议">
-            <div id="suggestionList" class="suggestion-list" aria-live="off"></div>
-          </div>
           <div id="requestStatus" class="request-status" role="status"></div>
           <form id="askForm" class="composer">
             <canvas id="composerSparks" class="composer-sparks" aria-hidden="true"></canvas>
@@ -133,6 +133,9 @@
               </div>
             </div>
           </form>
+          <div class="suggestion-strip" id="suggestionStrip" aria-label="提问建议">
+            <div id="suggestionList" class="suggestion-list" aria-live="off"></div>
+          </div>
           <span id="voicePreviewHint" class="voice-preview-hint" role="status" hidden></span>
           <p id="composerAccessNote" class="composer-access-note" role="status" hidden></p>
           <div class="composer-meta">
@@ -143,5 +146,16 @@
       </div>
     </main>
   </div>
+  <dialog id="communityDialog" class="community-dialog" aria-modal="true" aria-labelledby="communityTitle" aria-describedby="communityDescription">
+    <section class="community-panel">
+      <button id="communityClose" class="icon-button community-close" type="button" aria-label="关闭交流群" title="关闭">
+        <svg class="icon" aria-hidden="true"><use href="/icons.svg#x"></use></svg>
+      </button>
+      <h2 id="communityTitle" data-i18n="communityTitle">3DGS 交流群</h2>
+      <p id="communityDescription" data-i18n="communityDescription">和更多创作者交流实践与经验</p>
+      <div class="community-placeholder" role="img" aria-labelledby="communityPlaceholder"><span id="communityPlaceholder" data-i18n="communityPlaceholder">示意 · 不可扫码</span></div>
+      <p class="community-note" data-i18n="communityUnavailable">入群方式待配置</p>
+    </section>
+  </dialog>
 </body>
 </html>

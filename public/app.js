@@ -37,6 +37,9 @@ const history = document.querySelector('#historySidebar');
 const historySearch = document.querySelector('#historySearch');
 const moreToggle = document.querySelector('#moreToggle');
 const moreMenu = document.querySelector('#moreMenu');
+const communityOpen = document.querySelector('#communityOpen');
+const communityDialog = document.querySelector('#communityDialog');
+const communityClose = document.querySelector('#communityClose');
 const suggestionStrip = document.querySelector('#suggestionStrip');
 const suggestionList = document.querySelector('#suggestionList');
 const webSearchButton = document.querySelector('#webSearchButton');
@@ -86,7 +89,8 @@ const labels = {
     myNav: '我的创作', uploadNav: '上传作品', contestNav: '创作大赛', videoNav: '视频渲染', award: '奖', mainSiteLogin: '登录',
     qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们',
     newChat: '新建对话', recentChats: '最近对话', moreOptions: '更多选项', historyClose: '关闭最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
-    titleLead: '你的 3DGS 疑问，', titleSubject: '随时来聊。', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验强势驱动。', placeholder: '输入你的 3DGS 问题…',
+    titleLead: '你的 3DGS 疑问', titleSubject: '随时来聊', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验驱动', placeholder: '输入你的 3DGS 问题',
+    communityTitle: '3DGS 交流群', communityDescription: '和更多创作者交流实践与经验', communityPlaceholder: '示意 · 不可扫码', communityUnavailable: '入群方式待配置', communityClose: '关闭交流群', toDark: '切换深色模式', toLight: '切换浅色模式',
     searchHistory: '搜索对话', noHistory: '还没有对话', noMatches: '没有匹配的对话', newConversation: '新对话', deleteConfirm: '确定删除这段对话吗？',
     disclaimer: '回答可能不完整，请自行核对重要信息。', webRequested: '本轮请求联网', webIntentOn: '本轮将请求联网',
     webEvidence: '已取得可验证网页来源 {count} 条', webNoEvidence: '已请求联网 · 未取得可验证网页来源', evidenceUnverified: '来源信息无法验证',
@@ -108,7 +112,8 @@ const labels = {
     myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
     qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About',
     newChat: 'New conversation', recentChats: 'Recent conversations', moreOptions: 'More options', historyClose: 'Close recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
-    titleLead: 'Have a 3DGS question?', titleSubject: "Let's talk.", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience.', placeholder: 'Ask a 3DGS question…',
+    titleLead: 'Have a 3DGS question', titleSubject: "Let's talk", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience', placeholder: 'Ask a 3DGS question',
+    communityTitle: '3DGS community', communityDescription: 'Share experiences with other creators', communityPlaceholder: 'Preview · not scannable', communityUnavailable: 'Join details are not configured yet', communityClose: 'Close community', toDark: 'Switch to dark mode', toLight: 'Switch to light mode',
     searchHistory: 'Search conversations', noHistory: 'No conversations yet', noMatches: 'No matching conversations', newConversation: 'New conversation', deleteConfirm: 'Delete this conversation?',
     disclaimer: 'Answers may be incomplete. Verify important details.', webRequested: 'Request web sources for this turn', webIntentOn: 'Web sources requested for this turn',
     webEvidence: 'Verified web sources: {count}', webNoEvidence: 'Web requested · no verifiable web sources found', evidenceUnverified: 'Source evidence could not be verified',
@@ -144,6 +149,10 @@ function applyPreferences() {
   document.querySelectorAll('[data-i18n]').forEach(element => { element.textContent = t(element.dataset.i18n); });
   document.querySelector('#languageValue').textContent = ui.locale === 'zh' ? '中文' : 'English';
   document.querySelector('#darkModeButton').setAttribute('aria-pressed', String(ui.dark));
+  const themeQuickToggle = document.querySelector('#themeQuickToggle');
+  themeQuickToggle.setAttribute('aria-pressed', String(ui.dark));
+  themeQuickToggle.setAttribute('aria-label', t(ui.dark ? 'toLight' : 'toDark'));
+  themeQuickToggle.title = t(ui.dark ? 'toLight' : 'toDark');
   document.querySelectorAll('[data-color-option]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.colorOption === ui.color));
   });
@@ -156,6 +165,8 @@ function applyPreferences() {
   moreToggle.setAttribute('aria-label', t('moreOptions'));
   moreToggle.title = t('moreOptions');
   moreMenu.setAttribute('aria-label', t('moreOptions'));
+  communityClose.setAttribute('aria-label', t('communityClose'));
+  communityClose.title = t('communityClose');
   history.setAttribute('aria-label', t('recentChats'));
   document.querySelector('#historyClose').setAttribute('aria-label', t('historyClose'));
   document.querySelector('#historyClose').title = t('historyClose');
@@ -188,6 +199,27 @@ function restoreHeaderFocus() {
   if (document.body.classList.contains('qa-embedded')) hostBridge?.returnFocus();
   else moreToggle.focus();
 }
+
+function closeCommunity() {
+  if (!communityDialog.open) return;
+  if (typeof communityDialog.close === 'function') communityDialog.close();
+  else communityDialog.removeAttribute('open');
+  communityOpen.setAttribute('aria-expanded', 'false');
+  communityOpen.focus();
+}
+
+communityOpen.addEventListener('click', () => {
+  if (communityDialog.open) return;
+  closeMore();
+  closeHistory();
+  if (typeof communityDialog.showModal === 'function') communityDialog.showModal();
+  else communityDialog.setAttribute('open', '');
+  communityOpen.setAttribute('aria-expanded', 'true');
+  communityClose.focus();
+});
+communityClose.addEventListener('click', closeCommunity);
+communityDialog.addEventListener('cancel', event => { event.preventDefault(); closeCommunity(); });
+communityDialog.addEventListener('click', event => { if (event.target === communityDialog) closeCommunity(); });
 
 document.querySelector('#newChat').addEventListener('click', async () => {
   voicePreview.stop();
@@ -236,11 +268,13 @@ document.querySelectorAll('[data-color-option]').forEach(button => button.addEve
   localStorage.setItem(storageKey('qa-ui-color'), ui.color);
   applyPreferences();
 }));
-document.querySelector('#darkModeButton').addEventListener('click', () => {
+function toggleDarkMode() {
   ui.dark = !ui.dark;
   localStorage.setItem(storageKey('qa-ui-dark'), String(ui.dark));
   applyPreferences();
-});
+}
+document.querySelector('#darkModeButton').addEventListener('click', toggleDarkMode);
+document.querySelector('#themeQuickToggle').addEventListener('click', toggleDarkMode);
 micButton.addEventListener('click', () => {
   voicePreview.toggle();
   clearTimeout(voiceHintTimer);
@@ -305,6 +339,18 @@ document.addEventListener('pointerdown', event => {
   if (!event.target.closest('#historySidebar, #showHistory')) closeHistory();
 });
 document.addEventListener('keydown', event => {
+  if (communityDialog.open) {
+    if (event.key === 'Escape') { event.preventDefault(); closeCommunity(); return; }
+    if (event.key === 'Tab') {
+      const controls = [...communityDialog.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')];
+      const first = controls[0], last = controls.at(-1);
+      if (controls.length && (event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    }
+    return;
+  }
   if (event.key !== 'Escape') return;
   if (!history.hidden) closeHistory({ restore: true });
   else if (!moreMenu.hidden) closeMore({ restore: true });
@@ -756,7 +802,7 @@ async function loadQuestionBank() {
 function renderSuggestions(advance = false) {
   if (!suggestionList || !state.questionRotation) return;
   const items = advance || !state.currentSuggestions
-    ? state.questionRotation.next(1)
+    ? state.questionRotation.next(3, { preferDistinctCategories: true })
     : state.currentSuggestions;
   state.currentSuggestions = items;
   suggestionList.replaceChildren();
@@ -991,18 +1037,8 @@ function welcome() {
   const title = document.createElement('h2');
   const lead = document.createElement('span'); lead.textContent = t('titleLead');
   const subject = document.createElement('span'); subject.textContent = t('titleSubject');
-  title.append(lead, ui.locale === 'zh' ? '' : ' ', subject);
+  title.append(lead, ' ', subject);
   const intro = document.createElement('p'); intro.textContent = t('intro');
-  if (ui.locale === 'zh') {
-    const phrase = '实战经验强势驱动。';
-    const at = intro.textContent.lastIndexOf(phrase);
-    if (at !== -1) {
-      const finalPhrase = document.createElement('span');
-      finalPhrase.className = 'welcome-intro-phrase';
-      finalPhrase.textContent = phrase;
-      intro.replaceChildren(intro.textContent.slice(0, at), finalPhrase);
-    }
-  }
   welcome.append(mark, title, intro); log.append(welcome);
   animateComposerPosition(previous, welcome);
   renderSuggestions();
