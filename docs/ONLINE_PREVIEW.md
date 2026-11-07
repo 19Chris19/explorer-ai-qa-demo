@@ -67,7 +67,7 @@ See [the durable contract](DURABLE_TASKS.md) and [dated acceptance evidence](DUR
 3. Reserve a fixed HTTPS ngrok domain and tunnel only to `127.0.0.1:4327`.
    Never tunnel directly to 4317 or 3117. Verify `/admin` and `/internal/`
    return 404 through the gateway even with a valid key.
-4. In the private GitHub repository's Vercel project, set Root Directory to
+4. In the public GitHub repository's Vercel project, set Root Directory to
    `preview`. Enable Node Functions with Fluid compute. Set `PREVIEW_ORIGIN_URL`
    to the fixed HTTPS ngrok origin with trailing slash and
    `PREVIEW_ORIGIN_KEY` to the same gateway key. Use production deployment for
