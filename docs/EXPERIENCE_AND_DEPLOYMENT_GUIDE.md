@@ -31,7 +31,7 @@
 
 ## 地址与运行关系
 
-- 网站私有仓库：[19Chris19/explorer-ai-qa-demo](https://github.com/19Chris19/explorer-ai-qa-demo)
+- 网站公开仓库：[19Chris19/explorer-ai-qa-demo](https://github.com/19Chris19/explorer-ai-qa-demo)
 - Provider A 公开仓库：[19Chris19/ima-qa-web-agent](https://github.com/19Chris19/ima-qa-web-agent)
 
 ```text
@@ -90,7 +90,7 @@ M1 Max 从迁移包恢复，在保留登录态、签名、归属和管理兼容�
 
 ```text
 请协助我体验或部署知天下 AI 问答。
-网站私有仓库：https://github.com/19Chris19/explorer-ai-qa-demo
+网站公开仓库：https://github.com/19Chris19/explorer-ai-qa-demo
 Provider A 公开仓库：https://github.com/19Chris19/ima-qa-web-agent
 在线体验：https://explorer-ai-qa-demo.vercel.app/
 
@@ -111,7 +111,7 @@ Provider A 公开仓库：https://github.com/19Chris19/ima-qa-web-agent
 最后分别报告版本／镜像、地址、安装、连通、账号状态、真实问答、恢复方式和未验收项。保留共享远端未验收、全新扫码、Windows、Linux、手机与主站、长期运行等边界；不把维护者的历史证据当成本机通过。不自动购买付费服务。
 ```
 
-如需源码，申请并接受私有仓库邀请，在本机浏览器人工登录和完成 2FA。私有 GHCR 镜像权限另行核对。公开 Provider 源码不需要网站私有权限；在线体验无需 GitHub 登录。
+网站和 Provider 源码均可公开读取。GHCR 网站镜像权限另行核对：2026-11-07 对 v0.5.0 镜像的匿名拉取令牌请求返回 401，当前需先取得镜像授权；状态可能变化。需要登录或 2FA 时由本人在本机完成。在线体验无需 GitHub 登录。
 
 ## 体验反馈与结果判断
 

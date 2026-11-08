@@ -137,7 +137,9 @@ test('POST conflict keeps the draft and rejects visibly without adopting a task 
       submit(view, 'Synthetic conflicting draft');
       await until(() => /被拒绝|rejected/.test(view.document.querySelector('#requestStatus').textContent));
       assert.equal(view.document.querySelector('#question').value, 'Synthetic conflicting draft');
-      assert.equal(view.document.querySelector('.message.user'), null);
+      assert.equal(view.document.querySelectorAll('.message.user').length, 1);
+      assert.equal(view.document.querySelector('.message.user').dataset.sendState, 'failed');
+      assert.equal(view.document.querySelector('.message.assistant'), null);
       assert.equal(view.requests.some(row => row.url.includes('requestId=')), false);
       assert.equal(view.window.localStorage.getItem('qa-task-identities-v1'), '[]');
     }
@@ -347,7 +349,7 @@ test('queued questions remain editable and execute through their taskId subscrip
   try {
     submit(view); await until(() => activeStream);
     submit(view, 'Synthetic queued question');
-    await until(() => view.document.querySelector('.queued-question'));
+    await until(() => view.document.querySelector('.queued-controls button'));
     view.document.querySelector('.queued-controls button').click();
     view.document.querySelector('.queued-editor').value = 'Synthetic edited question';
     view.document.querySelector('.queued-controls button').click();

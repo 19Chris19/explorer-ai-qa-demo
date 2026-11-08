@@ -19,24 +19,28 @@ export function createQuestionRotation(items, random = Math.random) {
   }
 
   return {
-    next(count) {
+    next(count, { preferDistinctCategories = false } = {}) {
       if (!Number.isInteger(count) || count < 1 || count > items.length) throw new RangeError('Invalid question count');
       const selected = [];
       if (cursor >= bag.length) refill();
       const target = Math.min(count, bag.length - cursor);
       while (selected.length < target) {
         const blocked = item => item.id === lastId || selected.some(selectedItem => selectedItem.id === item.id);
-        if (blocked(bag[cursor])) {
-          const replacementIndex = bag.findIndex((item, index) => index > cursor && !blocked(item));
-          if (replacementIndex < 0) break;
-          [bag[cursor], bag[replacementIndex]] = [bag[replacementIndex], bag[cursor]];
+        const selectedCategories = new Set(selected.map(item => item.category).filter(Boolean));
+        const wantsDifferentCategory = preferDistinctCategories && bag[cursor].category && selectedCategories.has(bag[cursor].category);
+        if (blocked(bag[cursor]) || wantsDifferentCategory) {
+          let replacementIndex = bag.findIndex((item, index) => index > cursor && !blocked(item)
+            && (!wantsDifferentCategory || item.category && !selectedCategories.has(item.category)));
+          if (replacementIndex < 0 && blocked(bag[cursor])) replacementIndex = bag.findIndex((item, index) => index > cursor && !blocked(item));
+          if (replacementIndex >= 0) [bag[cursor], bag[replacementIndex]] = [bag[replacementIndex], bag[cursor]];
+          else if (blocked(bag[cursor])) break;
         }
         selected.push(bag[cursor]);
         cursor += 1;
       }
       if (!selected.length) {
         refill();
-        return this.next(count);
+        return this.next(count, { preferDistinctCategories });
       }
       lastId = selected.at(-1).id;
       return selected;

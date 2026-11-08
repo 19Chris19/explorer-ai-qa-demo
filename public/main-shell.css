@@ -116,14 +116,19 @@
 .app-page .mobile-brand { display: none; }
 .app-page .top-nav { gap: 40px; padding-left: 0; }
 .app-page .top-nav a,
-.app-page .top-nav span { font-size: 14px; color: #94a3b8; }
+.app-page .top-nav span,
+.app-page .top-nav button { font-size: 14px; color: #64748b; }
 .app-page .top-nav a.active { color: #0f172a; font-weight: 700; }
 .app-page .top-nav a.active::after { bottom: 20px; height: 2px; background: #0f172a; }
-.app-page .header-actions { padding: 0; }
+.app-page .header-actions { display: flex; align-items: center; gap: 4px; padding: 0; }
 .app-page .header-actions .more-toggle { color: #64748b; }
 .app-page .more-menu { right: 40px; top: 66px; }
 .app-page .history-panel { top: 74px; }
 .app-page.dark .site-nav a { color: var(--muted); }
+.app-page.dark .site-header,
+.app-page.dark .site-sidebar { background: var(--page); }
+.app-page.dark .brand img,
+.app-page.dark .mobile-brand img { filter: brightness(0) invert(1); }
 .app-page.dark .site-nav a:hover,
 .app-page.dark .site-nav a.active { color: var(--text); background: var(--hover); }
 .app-page.dark .site-user a { color: var(--muted); background: var(--hover); }

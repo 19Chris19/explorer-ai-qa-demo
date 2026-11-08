@@ -11,6 +11,7 @@ import { createAnswerCopy } from './answer-copy.mjs';
 import { createSelectionCopy } from './selection-copy.mjs';
 import { createHostBridge } from './host-bridge.mjs';
 import { createTaskClient, createTaskStore, isTerminalTask, createFrameUpdater } from './task-stream.mjs';
+import { playSendMotion } from './send-motion.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
@@ -37,8 +38,12 @@ const history = document.querySelector('#historySidebar');
 const historySearch = document.querySelector('#historySearch');
 const moreToggle = document.querySelector('#moreToggle');
 const moreMenu = document.querySelector('#moreMenu');
+const communityOpen = document.querySelector('#communityOpen');
+const communityDialog = document.querySelector('#communityDialog');
+const communityClose = document.querySelector('#communityClose');
 const suggestionStrip = document.querySelector('#suggestionStrip');
 const suggestionList = document.querySelector('#suggestionList');
+const suggestionMotion = { expand: 520, flight: 620, settle: 420 };
 const webSearchButton = document.querySelector('#webSearchButton');
 const webIntentLabel = document.querySelector('#webIntentLabel');
 const composerSparks = createPromptSparks(document.querySelector('#composerSparks'), { root: form });
@@ -73,7 +78,12 @@ let conversationItems = [];
 let archiveConversationId = '';
 let historyLoadError = false;
 let suggestionFlight = null;
-let composerImpact = null;
+let suggestionTextMotion = null;
+let suggestionLandingMotion = null;
+let composerResizeMotion = null;
+let activeSendMotion = null;
+let pendingQueueProjection = null;
+let welcomeAnchorHeld = false;
 let exitingWelcome = null;
 let webStateTimer = 0;
 const ui = {
@@ -86,7 +96,8 @@ const labels = {
     myNav: '我的创作', uploadNav: '上传作品', contestNav: '创作大赛', videoNav: '视频渲染', award: '奖', mainSiteLogin: '登录',
     qaNav: 'AI 问答', communityNav: '交流群', worldNav: '3DGS世界', computeNav: '免费计算', guideNav: '创作指南', aboutNav: '关于我们',
     newChat: '新建对话', recentChats: '最近对话', moreOptions: '更多选项', historyClose: '关闭最近对话', language: '语言', themeColor: '主题色', darkMode: '深色模式', serviceStatus: '服务状态', historyFoot: '对话记录保留 7 天。',
-    titleLead: '你的 3DGS 疑问，', titleSubject: '随时来聊。', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验强势驱动。', placeholder: '输入你的 3DGS 问题…',
+    titleLead: '你的 3DGS 疑问', titleSubject: '随时来聊', intro: '由一线 3DGS 社群的真实交流与持续积累的实战经验驱动', placeholder: '输入你的 3DGS 问题',
+    communityTitle: '3DGS 交流群', communityDescription: '和更多创作者交流实践与经验', communityPlaceholder: '示意 · 不可扫码', communityUnavailable: '入群方式待配置', communityClose: '关闭交流群', toDark: '切换深色模式', toLight: '切换浅色模式',
     searchHistory: '搜索对话', noHistory: '还没有对话', noMatches: '没有匹配的对话', newConversation: '新对话', deleteConfirm: '确定删除这段对话吗？',
     disclaimer: '回答可能不完整，请自行核对重要信息。', webRequested: '本轮请求联网', webIntentOn: '本轮将请求联网',
     webEvidence: '已取得可验证网页来源 {count} 条', webNoEvidence: '已请求联网 · 未取得可验证网页来源', evidenceUnverified: '来源信息无法验证',
@@ -108,7 +119,8 @@ const labels = {
     myNav: 'My creations', uploadNav: 'Upload', contestNav: 'Contest', videoNav: 'Video rendering', award: 'Prize', mainSiteLogin: 'Sign in',
     qaNav: 'AI Q&A', communityNav: 'Community', worldNav: '3DGS World', computeNav: 'Free Compute', guideNav: 'Guide', aboutNav: 'About',
     newChat: 'New conversation', recentChats: 'Recent conversations', moreOptions: 'More options', historyClose: 'Close recent conversations', language: 'Language', themeColor: 'Accent color', darkMode: 'Dark mode', serviceStatus: 'Service status', historyFoot: 'Conversations are kept for 7 days.',
-    titleLead: 'Have a 3DGS question?', titleSubject: "Let's talk.", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience.', placeholder: 'Ask a 3DGS question…',
+    titleLead: 'Have a 3DGS question', titleSubject: "Let's talk", intro: 'Powered by real 3DGS community conversations and a growing body of hands-on experience', placeholder: 'Ask a 3DGS question',
+    communityTitle: '3DGS community', communityDescription: 'Share experiences with other creators', communityPlaceholder: 'Preview · not scannable', communityUnavailable: 'Join details are not configured yet', communityClose: 'Close community', toDark: 'Switch to dark mode', toLight: 'Switch to light mode',
     searchHistory: 'Search conversations', noHistory: 'No conversations yet', noMatches: 'No matching conversations', newConversation: 'New conversation', deleteConfirm: 'Delete this conversation?',
     disclaimer: 'Answers may be incomplete. Verify important details.', webRequested: 'Request web sources for this turn', webIntentOn: 'Web sources requested for this turn',
     webEvidence: 'Verified web sources: {count}', webNoEvidence: 'Web requested · no verifiable web sources found', evidenceUnverified: 'Source evidence could not be verified',
@@ -144,6 +156,10 @@ function applyPreferences() {
   document.querySelectorAll('[data-i18n]').forEach(element => { element.textContent = t(element.dataset.i18n); });
   document.querySelector('#languageValue').textContent = ui.locale === 'zh' ? '中文' : 'English';
   document.querySelector('#darkModeButton').setAttribute('aria-pressed', String(ui.dark));
+  const themeQuickToggle = document.querySelector('#themeQuickToggle');
+  themeQuickToggle.setAttribute('aria-pressed', String(ui.dark));
+  themeQuickToggle.setAttribute('aria-label', t(ui.dark ? 'toLight' : 'toDark'));
+  themeQuickToggle.title = t(ui.dark ? 'toLight' : 'toDark');
   document.querySelectorAll('[data-color-option]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.colorOption === ui.color));
   });
@@ -156,6 +172,8 @@ function applyPreferences() {
   moreToggle.setAttribute('aria-label', t('moreOptions'));
   moreToggle.title = t('moreOptions');
   moreMenu.setAttribute('aria-label', t('moreOptions'));
+  communityClose.setAttribute('aria-label', t('communityClose'));
+  communityClose.title = t('communityClose');
   history.setAttribute('aria-label', t('recentChats'));
   document.querySelector('#historyClose').setAttribute('aria-label', t('historyClose'));
   document.querySelector('#historyClose').title = t('historyClose');
@@ -189,8 +207,30 @@ function restoreHeaderFocus() {
   else moreToggle.focus();
 }
 
+function closeCommunity() {
+  if (!communityDialog.open) return;
+  if (typeof communityDialog.close === 'function') communityDialog.close();
+  else communityDialog.removeAttribute('open');
+  communityOpen.setAttribute('aria-expanded', 'false');
+  communityOpen.focus();
+}
+
+communityOpen.addEventListener('click', () => {
+  if (communityDialog.open) return;
+  closeMore();
+  closeHistory();
+  if (typeof communityDialog.showModal === 'function') communityDialog.showModal();
+  else communityDialog.setAttribute('open', '');
+  communityOpen.setAttribute('aria-expanded', 'true');
+  communityClose.focus();
+});
+communityClose.addEventListener('click', closeCommunity);
+communityDialog.addEventListener('cancel', event => { event.preventDefault(); closeCommunity(); });
+communityDialog.addEventListener('click', event => { if (event.target === communityDialog) closeCommunity(); });
+
 document.querySelector('#newChat').addEventListener('click', async () => {
   voicePreview.stop();
+  interruptSendMotion();
   if (state.preparing || state.queueSubmitting) return;
   state.preparing = true;
   updateSendButton();
@@ -236,11 +276,13 @@ document.querySelectorAll('[data-color-option]').forEach(button => button.addEve
   localStorage.setItem(storageKey('qa-ui-color'), ui.color);
   applyPreferences();
 }));
-document.querySelector('#darkModeButton').addEventListener('click', () => {
+function toggleDarkMode() {
   ui.dark = !ui.dark;
   localStorage.setItem(storageKey('qa-ui-dark'), String(ui.dark));
   applyPreferences();
-});
+}
+document.querySelector('#darkModeButton').addEventListener('click', toggleDarkMode);
+document.querySelector('#themeQuickToggle').addEventListener('click', toggleDarkMode);
 micButton.addEventListener('click', () => {
   voicePreview.toggle();
   clearTimeout(voiceHintTimer);
@@ -251,6 +293,9 @@ micButton.addEventListener('click', () => {
 window.addEventListener('pagehide', () => {
   voicePreview.stop();
   composerSparks.setActive(false);
+  clearSuggestionMotion();
+  composerResizeMotion?.cancel();
+  composerResizeMotion = null;
 });
 window.addEventListener('pageshow', updateWebIntentControl);
 webSearchButton.addEventListener('click', () => {
@@ -267,33 +312,47 @@ suggestionStrip.addEventListener('focusout', event => {
 suggestionList.addEventListener('click', event => {
   const button = event.target.closest('[data-question-id]');
   if (!button || state.suggestionSelected || state.composing || question.value.trim()) return;
-  const source = button.getBoundingClientRect();
-  const computed = getComputedStyle(button);
-  const style = { font: computed.font, lineHeight: computed.lineHeight, color: computed.color };
+  const sourceText = button.querySelector('span:first-child') || button;
+  const source = sourceText.getBoundingClientRect();
+  const computed = window.getComputedStyle(sourceText);
+  const style = { font: computed.font, fontSize: computed.fontSize, lineHeight: computed.lineHeight, color: computed.color };
+  clearSuggestionMotion();
+  holdWelcomeAnchor();
+  if (!reducedMotion()) button.classList.add('is-flying');
   question.value = button.dataset.question;
-  resizeQuestion();
+  const target = resizeQuestion({ animate: true, duration: suggestionMotion.expand, captureTarget: true });
   updateSendButton();
   question.focus();
   question.setSelectionRange(question.value.length, question.value.length);
   state.suggestionSelected = true;
-  renderSuggestions();
+  updateSuggestionVisibility();
   updateCarouselTimer();
-  animateSuggestionSelection(button.dataset.question, source, style);
+  animateSuggestionSelection(button.dataset.question, source, style, target);
 });
 question.addEventListener('focus', updateCarouselTimer);
 question.addEventListener('blur', updateCarouselTimer);
-question.addEventListener('compositionstart', () => { state.composing = true; updateCarouselTimer(); });
+question.addEventListener('keydown', () => { interruptSuggestionMotion(); interruptSendMotion(); });
+question.addEventListener('pointerdown', () => { interruptSuggestionMotion(); interruptSendMotion(); });
+question.addEventListener('compositionstart', () => { clearSuggestionMotion(); interruptSendMotion(); state.composing = true; updateCarouselTimer(); });
 question.addEventListener('compositionend', () => { state.composing = false; updateSuggestionVisibility(); updateCarouselTimer(); });
 question.addEventListener('input', () => {
+  if (question.value.trim()) holdWelcomeAnchor();
+  interruptSuggestionMotion();
+  interruptSendMotion();
   if (state.suggestionSelected && !question.value.trim()) {
     state.suggestionSelected = false;
     clearSuggestionMotion();
     renderSuggestions();
   }
   updateSuggestionVisibility();
-  resizeQuestion(); updateSendButton(); updateCarouselTimer();
+  resizeQuestion({ animate: true }); updateSendButton(); updateCarouselTimer();
 });
 document.addEventListener('visibilitychange', updateCarouselTimer);
+window.addEventListener('resize', interruptSendMotion);
+window.visualViewport?.addEventListener('resize', interruptSendMotion);
+log.addEventListener('wheel', interruptSendMotion, { passive: true });
+log.addEventListener('touchstart', interruptSendMotion, { passive: true });
+log.addEventListener('scroll', () => activeSendMotion?.checkPosition?.(), { passive: true });
 new ResizeObserver(() => {
   if (main.classList.contains('is-empty')) return;
   const clearance = Math.ceil(composerWrap.getBoundingClientRect().height + 24);
@@ -305,6 +364,18 @@ document.addEventListener('pointerdown', event => {
   if (!event.target.closest('#historySidebar, #showHistory')) closeHistory();
 });
 document.addEventListener('keydown', event => {
+  if (communityDialog.open) {
+    if (event.key === 'Escape') { event.preventDefault(); closeCommunity(); return; }
+    if (event.key === 'Tab') {
+      const controls = [...communityDialog.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')];
+      const first = controls[0], last = controls.at(-1);
+      if (controls.length && (event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    }
+    return;
+  }
   if (event.key !== 'Escape') return;
   if (!history.hidden) closeHistory({ restore: true });
   else if (!moreMenu.hidden) closeMore({ restore: true });
@@ -414,7 +485,10 @@ function renderConversationList() {
         label.textContent = ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读';
         open.append(document.createElement('br'), label);
       }
-      open.addEventListener('click', () => { if (!state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived); });
+      open.addEventListener('click', () => {
+        interruptSendMotion();
+        if (!state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived);
+      });
       if (item.archived) { row.append(open); list.append(row); continue; }
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'conversation-delete';
       remove.textContent = '×'; remove.setAttribute('aria-label', `${t('deleteConfirm')} ${item.title || t('newConversation')}`);
@@ -541,12 +615,18 @@ function queueIcon(symbol, label) {
 function renderQueue() {
   queuedTurns.replaceChildren();
   const visible = state.queuedJobs.filter(job => job.id !== state.activeQueuedId || ['queued', 'paused', 'replay'].includes(job.status));
-  queuedTurns.hidden = main.classList.contains('is-empty') || !visible.length;
+  const pending = pendingQueueProjection?.epoch === state.viewEpoch ? pendingQueueProjection : null;
+  let matchedPending = false;
+  queuedTurns.hidden = main.classList.contains('is-empty') || (!visible.length && (!pending || pending.state === 'accepted'));
   for (const job of visible) {
-    const row = document.createElement('div'); row.className = 'queued-item';
+    const matches = pending && job.requestId && job.requestId === pending.requestId;
+    const row = matches ? pending.node : document.createElement('div');
+    if (matches) { row.replaceChildren(); matchedPending = true; pending.state = 'accepted'; row.dataset.sendState = 'accepted'; }
+    row.className = 'queued-item';
     const body = document.createElement('div'); body.className = 'queued-body';
     const stateLabel = document.createElement('span'); stateLabel.className = 'queued-state';
     stateLabel.textContent = t(job.status === 'paused' ? 'paused' : ['running', 'replay'].includes(job.status) ? 'starting' : 'queued');
+    if (matches) pending.label = stateLabel;
     const text = document.createElement('p'); text.className = 'queued-question'; text.textContent = job.question;
     body.append(stateLabel, text);
     row.append(body);
@@ -589,6 +669,7 @@ function renderQueue() {
     }
     queuedTurns.append(row);
   }
+  if (pending && !matchedPending && pending.state !== 'accepted') queuedTurns.append(pending.node);
 }
 
 async function syncQueue(autoConsume = true) {
@@ -614,7 +695,16 @@ async function syncQueue(autoConsume = true) {
       if (!task) {
         for (const record of taskStore.list().filter(row => row.conversationId === conversationId && row.queue && row.requestId)) {
           if (fresh.some(job => job.requestId === record.requestId)) continue;
-          task = await taskClient.lookup(record);
+          try { task = await taskClient.lookup(record); }
+          catch (error) {
+            if (epoch === state.viewEpoch && pendingQueueProjection?.requestId === record.requestId
+              && ['submission_rejected', 'submission_cancelled'].includes(error.code)) {
+              interruptSendMotion();
+              pendingQueueProjection.state = 'failed';
+              setProjectionLabel(pendingQueueProjection, 'failed');
+            }
+            throw error;
+          }
           if (epoch !== state.viewEpoch || state.controller) return false;
           if (task && !state.completedTasks.has(task.id)) {
             task.question ||= previous.find(job => job.id === record.jobId)?.question;
@@ -668,27 +758,95 @@ async function submitQuestion() {
     await loadConversation(state.conversationId);
     return;
   }
+  if (pendingQueueProjection?.state === 'failed') {
+    pendingQueueProjection.node.remove(); pendingQueueProjection = null; renderQueue();
+  }
   if (state.busy) { await enqueueQuestion(text); return; }
   if (state.queuedJobs.some(job => job.status === 'paused')) { status(ui.locale === 'en' ? 'Remove the paused queued question before continuing.' : '请先删除上一轮未完成的待发问题，再继续提问。', true); return; }
-  await ask(text);
+  if (state.recoveryRequired || !state.durableTasksSupported || state.legacyMode || archiveConversationId) { await ask(text); return; }
+  const projection = beginSendProjection(text);
+  await ask(text, { projection });
 }
 
 async function enqueueQuestion(text) {
   if (!state.conversationId) { status('正在准备会话，请稍后再发送。', true); return; }
+  const epoch = state.viewEpoch;
+  const conversationId = state.conversationId;
+  const webRequested = state.webRequested;
+  const requestId = crypto.randomUUID();
+  const projection = beginSendProjection(text, { queue: true, requestId });
   state.queueSubmitting = true;
   updateSendButton();
   status(t('queueSubmitting'));
   try {
-    const data = await taskClient.submit({ question: text, conversationId: state.conversationId,
-      requestId: crypto.randomUUID(), ...(state.webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
+    const data = await taskClient.submit({ question: text, conversationId,
+      requestId, ...(webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
+    if (epoch !== state.viewEpoch) return;
+    projection.state = 'accepted';
     if (question.value.trim() === text) { question.value = ''; resizeQuestion(); }
+    activeSendMotion?.releaseSource();
     state.webRequested = false;
     updateWebIntentControl();
     if (data.job) state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== data.job.id), data.job];
     renderQueue();
     status(t('queueAdded'));
-  } catch (error) { status(error.code === 'submission_unknown' ? t('taskConfirming') : userError(error), true); }
-  finally { state.queueSubmitting = false; updateSendButton(); }
+  } catch (error) {
+    if (epoch !== state.viewEpoch) return;
+    projection.state = error.code === 'submission_unknown' ? 'confirming' : 'failed';
+    setProjectionLabel(projection, projection.state);
+    if (projection.state === 'failed') { interruptSendMotion(); projection.node.remove(); if (pendingQueueProjection === projection) pendingQueueProjection = null; renderQueue(); }
+    status(error.code === 'submission_unknown' ? t('taskConfirming') : userError(error), true);
+  }
+  finally { if (epoch === state.viewEpoch) { state.queueSubmitting = false; updateSendButton(); } }
+}
+
+function interruptSendMotion() {
+  activeSendMotion?.cancel();
+  activeSendMotion = null;
+}
+
+function setProjectionLabel(projection, phase) {
+  if (!projection?.label) return;
+  const en = ui.locale === 'en';
+  projection.label.textContent = phase === 'accepted' ? ''
+    : phase === 'failed' ? (en ? 'Not sent · draft retained' : '未发送 · 草稿已保留')
+      : phase === 'confirming' ? (en ? 'Confirming…' : '正在确认…')
+        : projection.queue ? t('queueSubmitting') : t('sendingQuestion');
+  projection.label.hidden = phase === 'accepted';
+  projection.node.dataset.sendState = phase;
+  const action = userMessageActions.get(projection.node);
+  if (action?.button) action.button.hidden = phase !== 'accepted';
+}
+
+function beginSendProjection(text, { queue = false, requestId = '' } = {}) {
+  const sourceRect = question.getBoundingClientRect();
+  clearSuggestionMotion();
+  interruptSendMotion();
+  let node, label;
+  if (queue) {
+    node = document.createElement('div'); node.className = 'queued-item';
+    const body = document.createElement('div'); body.className = 'queued-body';
+    label = document.createElement('span'); label.className = 'queued-state';
+    const content = document.createElement('p'); content.className = 'queued-question'; content.textContent = text;
+    body.append(label, content); node.append(body);
+    queuedTurns.hidden = false; queuedTurns.append(node);
+  } else {
+    const thread = currentThread();
+    node = [...thread.querySelectorAll('.message.user[data-send-state="failed"]')]
+      .find(item => item.querySelector('.message-content')?.textContent === text);
+    if (node) label = node.querySelector('.send-delivery-status');
+    else {
+      node = createMessage('user', text);
+      label = document.createElement('span'); label.className = 'send-delivery-status'; label.setAttribute('role', 'status');
+      node.append(label); thread.append(node);
+    }
+    scrollBottom();
+  }
+  const projection = { node, label, text, queue, requestId, epoch: state.viewEpoch, state: 'pending' };
+  if (queue) pendingQueueProjection = projection;
+  setProjectionLabel(projection, 'pending');
+  activeSendMotion = playSendMotion({ source: question, sourceRect, target: node, text, holdSource: true });
+  return projection;
 }
 
 function updateFloatingControls() {
@@ -699,8 +857,49 @@ function updateFloatingControls() {
   composerFloatActions.hidden = empty;
 }
 
-function resizeQuestion() {
+function holdWelcomeAnchor() {
+  if (!main.classList.contains('is-empty') || welcomeAnchorHeld) return;
+  const margin = parseFloat(window.getComputedStyle(log).marginTop);
+  if (!Number.isFinite(margin)) return;
+  log.style.marginTop = `${margin}px`;
+  main.classList.add('is-welcome-anchored');
+  welcomeAnchorHeld = true;
+}
+
+function releaseWelcomeAnchor() {
+  if (!welcomeAnchorHeld) return;
+  log.style.removeProperty('margin-top');
+  main.classList.remove('is-welcome-anchored');
+  welcomeAnchorHeld = false;
+}
+
+function resizeQuestion({ animate = false, duration = 280, captureTarget = false } = {}) {
+  const shouldAnimate = animate && !reducedMotion() && typeof form.animate === 'function';
+  const before = shouldAnimate ? form.getBoundingClientRect().height : 0;
+  if (composerResizeMotion) {
+    const previous = composerResizeMotion;
+    composerResizeMotion = null;
+    previous.cancel();
+  }
   resizeComposer(form, question);
+  const after = shouldAnimate ? form.getBoundingClientRect().height : before;
+  // Capture the settled position before the height animation moves the input.
+  const target = captureTarget ? question.getBoundingClientRect() : null;
+  if (!shouldAnimate || Math.abs(after - before) < 1) {
+    if (!question.value.trim() && !state.composing) releaseWelcomeAnchor();
+    return target;
+  }
+  const motion = form.animate([{ height: `${before}px` }, { height: `${after}px` }], {
+    duration, easing: 'cubic-bezier(.33, 1, .68, 1)',
+  });
+  composerResizeMotion = motion;
+  motion.onfinish = () => {
+    if (composerResizeMotion !== motion) return;
+    composerResizeMotion = null;
+    if (!question.value.trim() && !state.composing) releaseWelcomeAnchor();
+  };
+  motion.oncancel = () => { if (composerResizeMotion === motion) composerResizeMotion = null; };
+  return target;
 }
 
 function updateWebIntentControl() {
@@ -756,7 +955,7 @@ async function loadQuestionBank() {
 function renderSuggestions(advance = false) {
   if (!suggestionList || !state.questionRotation) return;
   const items = advance || !state.currentSuggestions
-    ? state.questionRotation.next(1)
+    ? state.questionRotation.next(3, { preferDistinctCategories: true })
     : state.currentSuggestions;
   state.currentSuggestions = items;
   suggestionList.replaceChildren();
@@ -806,10 +1005,18 @@ function updateCarouselTimer() {
 }
 
 function clearSuggestionMotion() {
+  const textMotion = suggestionTextMotion;
+  suggestionTextMotion = null;
+  textMotion?.cancel();
+  const landingMotion = suggestionLandingMotion;
+  suggestionLandingMotion = null;
+  landingMotion?.cancel();
   suggestionFlight?.remove();
   suggestionFlight = null;
-  composerImpact?.cancel();
-  composerImpact = null;
+}
+
+function interruptSuggestionMotion() {
+  if (suggestionFlight || suggestionTextMotion || suggestionLandingMotion) clearSuggestionMotion();
 }
 
 function reducedMotion() {
@@ -879,10 +1086,10 @@ function settleAnswerLifecycle(lifecycle, ticker, timing, outcome) {
   });
 }
 
-function animateSuggestionSelection(text, source, style) {
-  clearSuggestionMotion();
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const target = question.getBoundingClientRect();
+function animateSuggestionSelection(text, source, style, target) {
+  if (reducedMotion() || typeof question.animate !== 'function') return;
+  target ||= question.getBoundingClientRect();
+  const targetStyle = window.getComputedStyle(question);
   const flight = document.createElement('span');
   flight.className = 'suggestion-flight';
   flight.textContent = text;
@@ -898,19 +1105,32 @@ function animateSuggestionSelection(text, source, style) {
     if (suggestionFlight === flight) suggestionFlight = null;
     flight.remove();
   };
+  const destination = `translate(${target.left - source.left}px, ${target.top - source.top}px)`;
+  const destinationText = { fontSize: targetStyle.fontSize, lineHeight: targetStyle.lineHeight, width: `${target.width}px` };
   const motion = flight.animate([
-    { transform: 'translate(0, 0)', opacity: 1 },
-    { transform: `translate(${target.left - source.left}px, ${target.top - source.top}px)`, opacity: 0 },
-  ], { duration: 240, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    { transform: 'translate(0, 0)', fontSize: style.fontSize, lineHeight: style.lineHeight,
+      width: `${source.width}px`, opacity: 1, offset: 0, easing: 'cubic-bezier(.33, 1, .68, 1)' },
+    { transform: destination, ...destinationText, opacity: .8, offset: .84 },
+    { transform: destination, ...destinationText, opacity: 0, offset: 1 },
+  ], { duration: suggestionMotion.flight, easing: 'linear' });
   motion.onfinish = finish;
   motion.oncancel = finish;
-  composerImpact = form.animate([
-    { transform: 'translateY(0)' },
-    { transform: 'translateY(3px)', offset: .52 },
-    { transform: 'translateY(-1px)', offset: .78 },
-    { transform: 'translateY(0)' },
-  ], { duration: 260, easing: 'ease-out' });
-  composerImpact.onfinish = () => { composerImpact = null; };
+  const textMotion = question.animate([
+    { opacity: 0, offset: 0 }, { opacity: 0, offset: .72 }, { opacity: 1, offset: 1 },
+  ], { duration: suggestionMotion.flight, easing: 'linear' });
+  suggestionTextMotion = textMotion;
+  textMotion.onfinish = () => { if (suggestionTextMotion === textMotion) suggestionTextMotion = null; };
+  textMotion.oncancel = () => { if (suggestionTextMotion === textMotion) suggestionTextMotion = null; };
+  // Let the moving text finish its crossfade before the input responds to the landing.
+  const landingMotion = form.animate([
+    { transform: 'translateY(0) scale(1)', offset: 0 },
+    { transform: 'translateY(-2px) scaleX(1.004) scaleY(.982)', offset: .24 },
+    { transform: 'translateY(.6px) scaleX(.998) scaleY(1.006)', offset: .6 },
+    { transform: 'translateY(0) scale(1)', offset: 1 },
+  ], { delay: suggestionMotion.flight, duration: suggestionMotion.settle, easing: 'ease-out' });
+  suggestionLandingMotion = landingMotion;
+  landingMotion.onfinish = () => { if (suggestionLandingMotion === landingMotion) suggestionLandingMotion = null; };
+  landingMotion.oncancel = () => { if (suggestionLandingMotion === landingMotion) suggestionLandingMotion = null; };
 }
 
 function captureComposerPosition() {
@@ -972,6 +1192,7 @@ function welcome() {
   const previous = main.classList.contains('is-empty') ? null : captureComposerPosition();
   clearWelcomeExit();
   clearSuggestionMotion();
+  releaseWelcomeAnchor();
   messageShapes.reset();
   log.replaceChildren();
   main.classList.add('is-empty');
@@ -991,18 +1212,8 @@ function welcome() {
   const title = document.createElement('h2');
   const lead = document.createElement('span'); lead.textContent = t('titleLead');
   const subject = document.createElement('span'); subject.textContent = t('titleSubject');
-  title.append(lead, ui.locale === 'zh' ? '' : ' ', subject);
+  title.append(lead, ' ', subject);
   const intro = document.createElement('p'); intro.textContent = t('intro');
-  if (ui.locale === 'zh') {
-    const phrase = '实战经验强势驱动。';
-    const at = intro.textContent.lastIndexOf(phrase);
-    if (at !== -1) {
-      const finalPhrase = document.createElement('span');
-      finalPhrase.className = 'welcome-intro-phrase';
-      finalPhrase.textContent = phrase;
-      intro.replaceChildren(intro.textContent.slice(0, at), finalPhrase);
-    }
-  }
   welcome.append(mark, title, intro); log.append(welcome);
   animateComposerPosition(previous, welcome);
   renderSuggestions();
@@ -1016,6 +1227,7 @@ function renderThread(messages, { restoring = false } = {}) {
   if (fromWelcome && !restoring) fadeWelcomeOut();
   if (restoring) for (const animation of form.getAnimations()) animation.cancel();
   clearSuggestionMotion();
+  releaseWelcomeAnchor();
   messageShapes.reset();
   log.replaceChildren();
   main.classList.remove('is-empty');
@@ -1170,6 +1382,11 @@ function renderAnswer(element, text, sources = [], answerComplete = true, presen
 }
 
 function detachTaskView() {
+  interruptSendMotion();
+  pendingQueueProjection = null;
+  state.preparing = false;
+  state.queueSubmitting = false;
+  state.submissionPhase = '';
   state.recoveryRequired = false;
   latestControl.cancel();
   globalThis.ChatPresentation?.closeCard();
@@ -1260,35 +1477,55 @@ async function ask(raw, options = {}) {
   if (!text || state.busy || state.preparing || state.recoveryRequired || !state.durableTasksSupported) return false;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
   if (!state.conversationId && archiveConversationId) { archiveConversationId = ''; welcome(); }
+  const epoch = state.viewEpoch;
+  let conversationId = state.conversationId;
+  const webRequested = options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested;
   state.preparing = true;
-  state.submissionPhase = state.conversationId ? 'sendingQuestion' : 'preparingConversation';
+  state.submissionPhase = conversationId ? 'sendingQuestion' : 'preparingConversation';
   updateSendButton();
   status(t(state.submissionPhase));
   let createdConversation = false;
   try {
-    if (!state.conversationId) {
+    if (!conversationId) {
       const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
-      setConversation(data.conversation.conversationId);
+      conversationId = data.conversation.conversationId;
+      if (epoch === state.viewEpoch) setConversation(conversationId);
       createdConversation = true;
     }
-    state.submissionPhase = 'sendingQuestion';
-    updateSendButton();
-    status(t(state.submissionPhase));
-    const input = { question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(),
-      ...((options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested) ? { sourceIntent: 'web' } : {}) };
+    if (epoch === state.viewEpoch) {
+      state.submissionPhase = 'sendingQuestion';
+      updateSendButton();
+      status(t(state.submissionPhase));
+    }
+    const input = { question: text, conversationId, requestId: crypto.randomUUID(),
+      ...(webRequested ? { sourceIntent: 'web' } : {}) };
     try {
       const { task } = await taskClient.submit(input);
-      state.followLatest = true;
-      void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null, options.preserveDraft ? {} : { clearDraft: text });
+      if (epoch === state.viewEpoch) {
+        state.followLatest = true;
+        void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null,
+          { ...(options.preserveDraft ? {} : { clearDraft: text }), projection: options.projection });
+      }
     } catch (error) {
       if (error.code !== 'submission_unknown') throw error;
-      state.followLatest = true;
-      void streamAnswer(null, null, { record: input, ...(options.preserveDraft ? {} : { clearDraft: text }) });
+      if (epoch === state.viewEpoch) {
+        setProjectionLabel(options.projection, 'confirming');
+        state.followLatest = true;
+        void streamAnswer(null, null, { record: input, projection: options.projection, ...(options.preserveDraft ? {} : { clearDraft: text }) });
+      }
     }
-    if (createdConversation) void loadConversations();
+    if (createdConversation && epoch === state.viewEpoch) void loadConversations();
     return true;
-  } catch (error) { status(userError(error), true); return false; }
-  finally { state.preparing = false; state.submissionPhase = ''; updateSendButton(); }
+  } catch (error) {
+    if (epoch === state.viewEpoch) {
+      interruptSendMotion();
+      setProjectionLabel(options.projection, 'failed');
+      status(userError(error), true);
+    }
+    return false;
+  } finally {
+    if (epoch === state.viewEpoch) { state.preparing = false; state.submissionPhase = ''; updateSendButton(); }
+  }
 }
 
 async function streamAnswer(initialTask, job = null, pending = {}) {
@@ -1301,9 +1538,12 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   let task = initialTask;
   let reply, userMessage, content, lifecycle, processView, lifecycleTiming, lifecycleTicker = 0;
   let processCount = 0, lastView = null, settled = false, queuedReceipt = false;
+  const queueProjection = pending.record?.queue && pendingQueueProjection?.requestId === pending.record.requestId
+    ? pendingQueueProjection : null;
   const current = () => !controller.signal.aborted && epoch === state.viewEpoch;
   const connectionNotice = phase => {
     if (!current()) return;
+    if (phase === 'confirming') setProjectionLabel(pending.projection, 'confirming');
     if (phase !== 'connected') status(t(phase === 'confirming' ? 'taskConfirming' : 'taskReconnecting'));
     else status(t(lastView?.text ? 'taskGenerating' : state.activeTask?.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
   };
@@ -1313,9 +1553,14 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     const thread = currentThread();
     thread.querySelector('.chat-notice')?.remove();
     if (task.question) {
-      userMessage = createMessage('user', task.question);
-      thread.append(userMessage);
-      animateContentIn(userMessage, { distance: 6, duration: 220 });
+      if (pending.projection?.epoch === epoch && pending.projection.node.isConnected) {
+        userMessage = pending.projection.node;
+        setProjectionLabel(pending.projection, 'accepted');
+      } else {
+        userMessage = createMessage('user', task.question);
+        thread.append(userMessage);
+        animateContentIn(userMessage, { distance: 6, duration: 220 });
+      }
     }
     const queued = currentTask.status === 'queued';
     reply = createMessage('assistant', queued ? '' : t('taskConnecting'));
@@ -1367,14 +1612,22 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (!task) task = await taskClient.resolve(pending.record, { signal: controller.signal, onConnection: connectionNotice });
     if (!current()) return;
     task = { ...task, requestId: task.requestId || task.clientRequestId || pending.record?.requestId,
-      question: task.question || pending.record?.question, sourceIntent: task.sourceIntent || pending.record?.sourceIntent };
+      question: task.question || pending.record?.question || queueProjection?.text, sourceIntent: task.sourceIntent || pending.record?.sourceIntent };
     taskClient.remember(task);
+    setProjectionLabel(pending.projection, 'accepted');
+    if (queueProjection) {
+      queueProjection.state = 'accepted';
+      if (question.value.trim() === queueProjection.text) { question.value = ''; resizeQuestion(); updateSendButton(); }
+      activeSendMotion?.releaseSource();
+      renderQueue();
+    }
     state.activeTask = task;
     state.activeWebRequest = task.sourceIntent === 'web';
     setWebRequestState(state.activeWebRequest && task.status === 'running' ? 'searching' : 'idle');
     if (pending.clearDraft && question.value.trim() === pending.clearDraft) {
       question.value = ''; resizeQuestion(); question.blur(); updateSendButton();
     }
+    if (pending.projection) activeSendMotion?.releaseSource();
     if (pending.clearDraft) state.webRequested = false;
     updateWebIntentControl();
     status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
@@ -1436,8 +1689,21 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   } catch (error) {
     frameUpdate.flush();
     if (!current()) return;
+    if (['submission_rejected', 'submission_cancelled'].includes(error.code)) {
+      interruptSendMotion();
+      setProjectionLabel(pending.projection, 'failed');
+      if (queueProjection) { queueProjection.state = 'failed'; setProjectionLabel(queueProjection, 'failed'); renderQueue(); }
+    }
+    else if (!task) setProjectionLabel(pending.projection, 'confirming');
     if (error.code === 'submission_queued') {
       queuedReceipt = true;
+      if (queueProjection) {
+        queueProjection.state = 'accepted';
+        if (question.value.trim() === queueProjection.text) { question.value = ''; resizeQuestion(); updateSendButton(); }
+        activeSendMotion?.releaseSource();
+        state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== error.job.id), error.job];
+        renderQueue();
+      }
       status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
     } else status(error.code === 'submission_rejected' ? userError(error)
       : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), !reply);
