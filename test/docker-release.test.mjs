@@ -5,7 +5,7 @@ import { parseStartOptions } from '../scripts/docker-start.mjs';
 
 test('Docker gateway serves every browser module required by the accepted UI', () => {
   const config=readFileSync(new URL('../deploy/docker/nginx.conf',import.meta.url),'utf8');
-  for(const name of ['turn-lifecycle','answer-process','prompt-sparks','voice-preview','message-shape','composer-shape','composer-controls','answer-copy','selection-copy']) {
+  for(const name of ['turn-lifecycle','answer-process','prompt-sparks','voice-preview','message-shape','composer-shape','composer-controls','send-motion','answer-copy','selection-copy']) {
     assert.ok(config.includes(name),`Missing gateway asset ${name}`);
   }
 });

@@ -62,6 +62,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     copyFileSync(join(root, 'public/voice-preview.mjs'), join(moduleDir, 'voice-preview.mjs'));
     copyFileSync(join(root, 'public/message-shape.mjs'), join(moduleDir, 'message-shape.mjs'));
     copyFileSync(join(root, 'public/composer-shape.mjs'), join(moduleDir, 'composer-shape.mjs'));
+    copyFileSync(join(root, 'public/send-motion.mjs'), join(moduleDir, 'send-motion.mjs'));
     copyFileSync(join(root, 'public/composer-controls.mjs'), join(moduleDir, 'composer-controls.mjs'));
     copyFileSync(join(root, 'public/answer-copy.mjs'), join(moduleDir, 'answer-copy.mjs'));
     copyFileSync(join(root, 'public/selection-copy.mjs'), join(moduleDir, 'selection-copy.mjs'));

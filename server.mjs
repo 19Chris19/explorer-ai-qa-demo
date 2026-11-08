@@ -79,6 +79,7 @@ const staticFiles = new Map([
   ['/voice-preview.mjs', ['public/voice-preview.mjs', 'text/javascript; charset=utf-8']],
   ['/message-shape.mjs', ['public/message-shape.mjs', 'text/javascript; charset=utf-8']],
   ['/composer-shape.mjs', ['public/composer-shape.mjs', 'text/javascript; charset=utf-8']],
+  ['/send-motion.mjs', ['public/send-motion.mjs', 'text/javascript; charset=utf-8']],
   ['/composer-controls.mjs', ['public/composer-controls.mjs', 'text/javascript; charset=utf-8']],
   ['/answer-copy.mjs', ['public/answer-copy.mjs', 'text/javascript; charset=utf-8']],
   ['/selection-copy.mjs', ['public/selection-copy.mjs', 'text/javascript; charset=utf-8']],

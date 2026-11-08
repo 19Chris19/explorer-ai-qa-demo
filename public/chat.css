@@ -425,7 +425,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
   font: inherit; font-size: 14px; line-height: 1.5; text-align: left;
   white-space: normal; overflow-wrap: anywhere; cursor: pointer;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  opacity: 1; visibility: visible; transition: color .15s ease, opacity .18s ease;
+  opacity: 1; visibility: visible; transition: color .15s ease, opacity .32s ease;
 }
 .app-page .suggestion-question > span:first-child { flex: 1; min-width: 0; }
 .app-page .suggestion-arrow { flex: none; opacity: .65; }
@@ -433,7 +433,7 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
 .app-page .suggestion-question:hover, .app-page .suggestion-question:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
 .app-page .suggestion-strip.has-draft .suggestion-question {
   opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity .18s ease, visibility 0s linear .18s;
+  transition: opacity .32s ease, visibility 0s linear .32s;
 }
 .app-page .suggestion-strip.has-draft .suggestion-question.is-flying { visibility: hidden; transition: none; }
 .suggestion-flight { position: fixed; z-index: 10; pointer-events: none; white-space: normal; overflow-wrap: anywhere; }
@@ -525,6 +525,12 @@ body.app-page.dark[data-color="graphite"] { --accent: #b7c4da; --accent-hover: #
   padding: 10px 18px; background: var(--accent-soft); border-radius: 22px;
 }
 .app-page .message.user .message-content { line-height: 24px; overflow-wrap: anywhere; }
+.app-page .send-delivery-status {
+  position: absolute; top: calc(100% + 7px); right: 48px;
+  color: var(--muted); font-size: 11px; line-height: 1.4; white-space: nowrap;
+}
+.app-page .send-delivery-status[hidden] { display: none; }
+.app-page .message.user[data-send-state]:not([data-send-state="accepted"]) .message-actions-trigger { display: none; }
 .app-page .message.user[data-text-shape="medium"] { border-radius: 20px; }
 .app-page .message.user[data-text-shape="long"] { border-radius: 16px; }
 @media (max-width: 599px) {

@@ -11,6 +11,7 @@ import { createAnswerCopy } from './answer-copy.mjs';
 import { createSelectionCopy } from './selection-copy.mjs';
 import { createHostBridge } from './host-bridge.mjs';
 import { createTaskClient, createTaskStore, isTerminalTask, createFrameUpdater } from './task-stream.mjs';
+import { playSendMotion } from './send-motion.mjs';
 
 const assetPrefix = document.querySelector('meta[name="qa-asset-prefix"]')?.content || '';
 const sitePath = path => `${assetPrefix}${path}`;
@@ -42,6 +43,7 @@ const communityDialog = document.querySelector('#communityDialog');
 const communityClose = document.querySelector('#communityClose');
 const suggestionStrip = document.querySelector('#suggestionStrip');
 const suggestionList = document.querySelector('#suggestionList');
+const suggestionMotion = { expand: 520, flight: 620, settle: 420 };
 const webSearchButton = document.querySelector('#webSearchButton');
 const webIntentLabel = document.querySelector('#webIntentLabel');
 const composerSparks = createPromptSparks(document.querySelector('#composerSparks'), { root: form });
@@ -77,7 +79,10 @@ let archiveConversationId = '';
 let historyLoadError = false;
 let suggestionFlight = null;
 let suggestionTextMotion = null;
+let suggestionLandingMotion = null;
 let composerResizeMotion = null;
+let activeSendMotion = null;
+let pendingQueueProjection = null;
 let welcomeAnchorHeld = false;
 let exitingWelcome = null;
 let webStateTimer = 0;
@@ -225,6 +230,7 @@ communityDialog.addEventListener('click', event => { if (event.target === commun
 
 document.querySelector('#newChat').addEventListener('click', async () => {
   voicePreview.stop();
+  interruptSendMotion();
   if (state.preparing || state.queueSubmitting) return;
   state.preparing = true;
   updateSendButton();
@@ -309,27 +315,30 @@ suggestionList.addEventListener('click', event => {
   const sourceText = button.querySelector('span:first-child') || button;
   const source = sourceText.getBoundingClientRect();
   const computed = window.getComputedStyle(sourceText);
-  const style = { font: computed.font, lineHeight: computed.lineHeight, color: computed.color };
+  const style = { font: computed.font, fontSize: computed.fontSize, lineHeight: computed.lineHeight, color: computed.color };
   clearSuggestionMotion();
   holdWelcomeAnchor();
   if (!reducedMotion()) button.classList.add('is-flying');
   question.value = button.dataset.question;
-  resizeQuestion({ animate: true });
+  const target = resizeQuestion({ animate: true, duration: suggestionMotion.expand, captureTarget: true });
   updateSendButton();
   question.focus();
   question.setSelectionRange(question.value.length, question.value.length);
   state.suggestionSelected = true;
   updateSuggestionVisibility();
   updateCarouselTimer();
-  animateSuggestionSelection(button.dataset.question, source, style);
+  animateSuggestionSelection(button.dataset.question, source, style, target);
 });
 question.addEventListener('focus', updateCarouselTimer);
 question.addEventListener('blur', updateCarouselTimer);
-question.addEventListener('compositionstart', () => { clearSuggestionMotion(); state.composing = true; updateCarouselTimer(); });
+question.addEventListener('keydown', () => { interruptSuggestionMotion(); interruptSendMotion(); });
+question.addEventListener('pointerdown', () => { interruptSuggestionMotion(); interruptSendMotion(); });
+question.addEventListener('compositionstart', () => { clearSuggestionMotion(); interruptSendMotion(); state.composing = true; updateCarouselTimer(); });
 question.addEventListener('compositionend', () => { state.composing = false; updateSuggestionVisibility(); updateCarouselTimer(); });
 question.addEventListener('input', () => {
   if (question.value.trim()) holdWelcomeAnchor();
-  if (suggestionFlight || suggestionTextMotion) clearSuggestionMotion();
+  interruptSuggestionMotion();
+  interruptSendMotion();
   if (state.suggestionSelected && !question.value.trim()) {
     state.suggestionSelected = false;
     clearSuggestionMotion();
@@ -339,6 +348,11 @@ question.addEventListener('input', () => {
   resizeQuestion({ animate: true }); updateSendButton(); updateCarouselTimer();
 });
 document.addEventListener('visibilitychange', updateCarouselTimer);
+window.addEventListener('resize', interruptSendMotion);
+window.visualViewport?.addEventListener('resize', interruptSendMotion);
+log.addEventListener('wheel', interruptSendMotion, { passive: true });
+log.addEventListener('touchstart', interruptSendMotion, { passive: true });
+log.addEventListener('scroll', () => activeSendMotion?.checkPosition?.(), { passive: true });
 new ResizeObserver(() => {
   if (main.classList.contains('is-empty')) return;
   const clearance = Math.ceil(composerWrap.getBoundingClientRect().height + 24);
@@ -471,7 +485,10 @@ function renderConversationList() {
         label.textContent = ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读';
         open.append(document.createElement('br'), label);
       }
-      open.addEventListener('click', () => { if (!state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived); });
+      open.addEventListener('click', () => {
+        interruptSendMotion();
+        if (!state.preparing && !state.queueSubmitting) void loadConversation(item.conversationId, item.archived);
+      });
       if (item.archived) { row.append(open); list.append(row); continue; }
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'conversation-delete';
       remove.textContent = '×'; remove.setAttribute('aria-label', `${t('deleteConfirm')} ${item.title || t('newConversation')}`);
@@ -598,12 +615,18 @@ function queueIcon(symbol, label) {
 function renderQueue() {
   queuedTurns.replaceChildren();
   const visible = state.queuedJobs.filter(job => job.id !== state.activeQueuedId || ['queued', 'paused', 'replay'].includes(job.status));
-  queuedTurns.hidden = main.classList.contains('is-empty') || !visible.length;
+  const pending = pendingQueueProjection?.epoch === state.viewEpoch ? pendingQueueProjection : null;
+  let matchedPending = false;
+  queuedTurns.hidden = main.classList.contains('is-empty') || (!visible.length && (!pending || pending.state === 'accepted'));
   for (const job of visible) {
-    const row = document.createElement('div'); row.className = 'queued-item';
+    const matches = pending && job.requestId && job.requestId === pending.requestId;
+    const row = matches ? pending.node : document.createElement('div');
+    if (matches) { row.replaceChildren(); matchedPending = true; pending.state = 'accepted'; row.dataset.sendState = 'accepted'; }
+    row.className = 'queued-item';
     const body = document.createElement('div'); body.className = 'queued-body';
     const stateLabel = document.createElement('span'); stateLabel.className = 'queued-state';
     stateLabel.textContent = t(job.status === 'paused' ? 'paused' : ['running', 'replay'].includes(job.status) ? 'starting' : 'queued');
+    if (matches) pending.label = stateLabel;
     const text = document.createElement('p'); text.className = 'queued-question'; text.textContent = job.question;
     body.append(stateLabel, text);
     row.append(body);
@@ -646,6 +669,7 @@ function renderQueue() {
     }
     queuedTurns.append(row);
   }
+  if (pending && !matchedPending && pending.state !== 'accepted') queuedTurns.append(pending.node);
 }
 
 async function syncQueue(autoConsume = true) {
@@ -671,7 +695,16 @@ async function syncQueue(autoConsume = true) {
       if (!task) {
         for (const record of taskStore.list().filter(row => row.conversationId === conversationId && row.queue && row.requestId)) {
           if (fresh.some(job => job.requestId === record.requestId)) continue;
-          task = await taskClient.lookup(record);
+          try { task = await taskClient.lookup(record); }
+          catch (error) {
+            if (epoch === state.viewEpoch && pendingQueueProjection?.requestId === record.requestId
+              && ['submission_rejected', 'submission_cancelled'].includes(error.code)) {
+              interruptSendMotion();
+              pendingQueueProjection.state = 'failed';
+              setProjectionLabel(pendingQueueProjection, 'failed');
+            }
+            throw error;
+          }
           if (epoch !== state.viewEpoch || state.controller) return false;
           if (task && !state.completedTasks.has(task.id)) {
             task.question ||= previous.find(job => job.id === record.jobId)?.question;
@@ -725,27 +758,95 @@ async function submitQuestion() {
     await loadConversation(state.conversationId);
     return;
   }
+  if (pendingQueueProjection?.state === 'failed') {
+    pendingQueueProjection.node.remove(); pendingQueueProjection = null; renderQueue();
+  }
   if (state.busy) { await enqueueQuestion(text); return; }
   if (state.queuedJobs.some(job => job.status === 'paused')) { status(ui.locale === 'en' ? 'Remove the paused queued question before continuing.' : '请先删除上一轮未完成的待发问题，再继续提问。', true); return; }
-  await ask(text);
+  if (state.recoveryRequired || !state.durableTasksSupported || state.legacyMode || archiveConversationId) { await ask(text); return; }
+  const projection = beginSendProjection(text);
+  await ask(text, { projection });
 }
 
 async function enqueueQuestion(text) {
   if (!state.conversationId) { status('正在准备会话，请稍后再发送。', true); return; }
+  const epoch = state.viewEpoch;
+  const conversationId = state.conversationId;
+  const webRequested = state.webRequested;
+  const requestId = crypto.randomUUID();
+  const projection = beginSendProjection(text, { queue: true, requestId });
   state.queueSubmitting = true;
   updateSendButton();
   status(t('queueSubmitting'));
   try {
-    const data = await taskClient.submit({ question: text, conversationId: state.conversationId,
-      requestId: crypto.randomUUID(), ...(state.webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
+    const data = await taskClient.submit({ question: text, conversationId,
+      requestId, ...(webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
+    if (epoch !== state.viewEpoch) return;
+    projection.state = 'accepted';
     if (question.value.trim() === text) { question.value = ''; resizeQuestion(); }
+    activeSendMotion?.releaseSource();
     state.webRequested = false;
     updateWebIntentControl();
     if (data.job) state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== data.job.id), data.job];
     renderQueue();
     status(t('queueAdded'));
-  } catch (error) { status(error.code === 'submission_unknown' ? t('taskConfirming') : userError(error), true); }
-  finally { state.queueSubmitting = false; updateSendButton(); }
+  } catch (error) {
+    if (epoch !== state.viewEpoch) return;
+    projection.state = error.code === 'submission_unknown' ? 'confirming' : 'failed';
+    setProjectionLabel(projection, projection.state);
+    if (projection.state === 'failed') { interruptSendMotion(); projection.node.remove(); if (pendingQueueProjection === projection) pendingQueueProjection = null; renderQueue(); }
+    status(error.code === 'submission_unknown' ? t('taskConfirming') : userError(error), true);
+  }
+  finally { if (epoch === state.viewEpoch) { state.queueSubmitting = false; updateSendButton(); } }
+}
+
+function interruptSendMotion() {
+  activeSendMotion?.cancel();
+  activeSendMotion = null;
+}
+
+function setProjectionLabel(projection, phase) {
+  if (!projection?.label) return;
+  const en = ui.locale === 'en';
+  projection.label.textContent = phase === 'accepted' ? ''
+    : phase === 'failed' ? (en ? 'Not sent · draft retained' : '未发送 · 草稿已保留')
+      : phase === 'confirming' ? (en ? 'Confirming…' : '正在确认…')
+        : projection.queue ? t('queueSubmitting') : t('sendingQuestion');
+  projection.label.hidden = phase === 'accepted';
+  projection.node.dataset.sendState = phase;
+  const action = userMessageActions.get(projection.node);
+  if (action?.button) action.button.hidden = phase !== 'accepted';
+}
+
+function beginSendProjection(text, { queue = false, requestId = '' } = {}) {
+  const sourceRect = question.getBoundingClientRect();
+  clearSuggestionMotion();
+  interruptSendMotion();
+  let node, label;
+  if (queue) {
+    node = document.createElement('div'); node.className = 'queued-item';
+    const body = document.createElement('div'); body.className = 'queued-body';
+    label = document.createElement('span'); label.className = 'queued-state';
+    const content = document.createElement('p'); content.className = 'queued-question'; content.textContent = text;
+    body.append(label, content); node.append(body);
+    queuedTurns.hidden = false; queuedTurns.append(node);
+  } else {
+    const thread = currentThread();
+    node = [...thread.querySelectorAll('.message.user[data-send-state="failed"]')]
+      .find(item => item.querySelector('.message-content')?.textContent === text);
+    if (node) label = node.querySelector('.send-delivery-status');
+    else {
+      node = createMessage('user', text);
+      label = document.createElement('span'); label.className = 'send-delivery-status'; label.setAttribute('role', 'status');
+      node.append(label); thread.append(node);
+    }
+    scrollBottom();
+  }
+  const projection = { node, label, text, queue, requestId, epoch: state.viewEpoch, state: 'pending' };
+  if (queue) pendingQueueProjection = projection;
+  setProjectionLabel(projection, 'pending');
+  activeSendMotion = playSendMotion({ source: question, sourceRect, target: node, text, holdSource: true });
+  return projection;
 }
 
 function updateFloatingControls() {
@@ -772,7 +873,7 @@ function releaseWelcomeAnchor() {
   welcomeAnchorHeld = false;
 }
 
-function resizeQuestion({ animate = false } = {}) {
+function resizeQuestion({ animate = false, duration = 280, captureTarget = false } = {}) {
   const shouldAnimate = animate && !reducedMotion() && typeof form.animate === 'function';
   const before = shouldAnimate ? form.getBoundingClientRect().height : 0;
   if (composerResizeMotion) {
@@ -782,12 +883,14 @@ function resizeQuestion({ animate = false } = {}) {
   }
   resizeComposer(form, question);
   const after = shouldAnimate ? form.getBoundingClientRect().height : before;
+  // Capture the settled position before the height animation moves the input.
+  const target = captureTarget ? question.getBoundingClientRect() : null;
   if (!shouldAnimate || Math.abs(after - before) < 1) {
     if (!question.value.trim() && !state.composing) releaseWelcomeAnchor();
-    return;
+    return target;
   }
   const motion = form.animate([{ height: `${before}px` }, { height: `${after}px` }], {
-    duration: 280, easing: 'cubic-bezier(.2, .8, .2, 1)',
+    duration, easing: 'cubic-bezier(.33, 1, .68, 1)',
   });
   composerResizeMotion = motion;
   motion.onfinish = () => {
@@ -796,6 +899,7 @@ function resizeQuestion({ animate = false } = {}) {
     if (!question.value.trim() && !state.composing) releaseWelcomeAnchor();
   };
   motion.oncancel = () => { if (composerResizeMotion === motion) composerResizeMotion = null; };
+  return target;
 }
 
 function updateWebIntentControl() {
@@ -904,8 +1008,15 @@ function clearSuggestionMotion() {
   const textMotion = suggestionTextMotion;
   suggestionTextMotion = null;
   textMotion?.cancel();
+  const landingMotion = suggestionLandingMotion;
+  suggestionLandingMotion = null;
+  landingMotion?.cancel();
   suggestionFlight?.remove();
   suggestionFlight = null;
+}
+
+function interruptSuggestionMotion() {
+  if (suggestionFlight || suggestionTextMotion || suggestionLandingMotion) clearSuggestionMotion();
 }
 
 function reducedMotion() {
@@ -975,9 +1086,10 @@ function settleAnswerLifecycle(lifecycle, ticker, timing, outcome) {
   });
 }
 
-function animateSuggestionSelection(text, source, style) {
+function animateSuggestionSelection(text, source, style, target) {
   if (reducedMotion() || typeof question.animate !== 'function') return;
-  const target = question.getBoundingClientRect();
+  target ||= question.getBoundingClientRect();
+  const targetStyle = window.getComputedStyle(question);
   const flight = document.createElement('span');
   flight.className = 'suggestion-flight';
   flight.textContent = text;
@@ -993,18 +1105,32 @@ function animateSuggestionSelection(text, source, style) {
     if (suggestionFlight === flight) suggestionFlight = null;
     flight.remove();
   };
+  const destination = `translate(${target.left - source.left}px, ${target.top - source.top}px)`;
+  const destinationText = { fontSize: targetStyle.fontSize, lineHeight: targetStyle.lineHeight, width: `${target.width}px` };
   const motion = flight.animate([
-    { transform: 'translate(0, 0)', opacity: 1 },
-    { transform: `translate(${target.left - source.left}px, ${target.top - source.top}px)`, opacity: 0 },
-  ], { duration: 300, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    { transform: 'translate(0, 0)', fontSize: style.fontSize, lineHeight: style.lineHeight,
+      width: `${source.width}px`, opacity: 1, offset: 0, easing: 'cubic-bezier(.33, 1, .68, 1)' },
+    { transform: destination, ...destinationText, opacity: .8, offset: .84 },
+    { transform: destination, ...destinationText, opacity: 0, offset: 1 },
+  ], { duration: suggestionMotion.flight, easing: 'linear' });
   motion.onfinish = finish;
   motion.oncancel = finish;
   const textMotion = question.animate([
-    { opacity: 0, offset: 0 }, { opacity: 0, offset: .55 }, { opacity: 1, offset: 1 },
-  ], { duration: 300, easing: 'linear' });
+    { opacity: 0, offset: 0 }, { opacity: 0, offset: .72 }, { opacity: 1, offset: 1 },
+  ], { duration: suggestionMotion.flight, easing: 'linear' });
   suggestionTextMotion = textMotion;
   textMotion.onfinish = () => { if (suggestionTextMotion === textMotion) suggestionTextMotion = null; };
   textMotion.oncancel = () => { if (suggestionTextMotion === textMotion) suggestionTextMotion = null; };
+  // Let the moving text finish its crossfade before the input responds to the landing.
+  const landingMotion = form.animate([
+    { transform: 'translateY(0) scale(1)', offset: 0 },
+    { transform: 'translateY(-2px) scaleX(1.004) scaleY(.982)', offset: .24 },
+    { transform: 'translateY(.6px) scaleX(.998) scaleY(1.006)', offset: .6 },
+    { transform: 'translateY(0) scale(1)', offset: 1 },
+  ], { delay: suggestionMotion.flight, duration: suggestionMotion.settle, easing: 'ease-out' });
+  suggestionLandingMotion = landingMotion;
+  landingMotion.onfinish = () => { if (suggestionLandingMotion === landingMotion) suggestionLandingMotion = null; };
+  landingMotion.oncancel = () => { if (suggestionLandingMotion === landingMotion) suggestionLandingMotion = null; };
 }
 
 function captureComposerPosition() {
@@ -1256,6 +1382,11 @@ function renderAnswer(element, text, sources = [], answerComplete = true, presen
 }
 
 function detachTaskView() {
+  interruptSendMotion();
+  pendingQueueProjection = null;
+  state.preparing = false;
+  state.queueSubmitting = false;
+  state.submissionPhase = '';
   state.recoveryRequired = false;
   latestControl.cancel();
   globalThis.ChatPresentation?.closeCard();
@@ -1346,35 +1477,55 @@ async function ask(raw, options = {}) {
   if (!text || state.busy || state.preparing || state.recoveryRequired || !state.durableTasksSupported) return false;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
   if (!state.conversationId && archiveConversationId) { archiveConversationId = ''; welcome(); }
+  const epoch = state.viewEpoch;
+  let conversationId = state.conversationId;
+  const webRequested = options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested;
   state.preparing = true;
-  state.submissionPhase = state.conversationId ? 'sendingQuestion' : 'preparingConversation';
+  state.submissionPhase = conversationId ? 'sendingQuestion' : 'preparingConversation';
   updateSendButton();
   status(t(state.submissionPhase));
   let createdConversation = false;
   try {
-    if (!state.conversationId) {
+    if (!conversationId) {
       const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
-      setConversation(data.conversation.conversationId);
+      conversationId = data.conversation.conversationId;
+      if (epoch === state.viewEpoch) setConversation(conversationId);
       createdConversation = true;
     }
-    state.submissionPhase = 'sendingQuestion';
-    updateSendButton();
-    status(t(state.submissionPhase));
-    const input = { question: text, conversationId: state.conversationId, requestId: crypto.randomUUID(),
-      ...((options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested) ? { sourceIntent: 'web' } : {}) };
+    if (epoch === state.viewEpoch) {
+      state.submissionPhase = 'sendingQuestion';
+      updateSendButton();
+      status(t(state.submissionPhase));
+    }
+    const input = { question: text, conversationId, requestId: crypto.randomUUID(),
+      ...(webRequested ? { sourceIntent: 'web' } : {}) };
     try {
       const { task } = await taskClient.submit(input);
-      state.followLatest = true;
-      void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null, options.preserveDraft ? {} : { clearDraft: text });
+      if (epoch === state.viewEpoch) {
+        state.followLatest = true;
+        void streamAnswer({ ...task, question: text, sourceIntent: input.sourceIntent }, null,
+          { ...(options.preserveDraft ? {} : { clearDraft: text }), projection: options.projection });
+      }
     } catch (error) {
       if (error.code !== 'submission_unknown') throw error;
-      state.followLatest = true;
-      void streamAnswer(null, null, { record: input, ...(options.preserveDraft ? {} : { clearDraft: text }) });
+      if (epoch === state.viewEpoch) {
+        setProjectionLabel(options.projection, 'confirming');
+        state.followLatest = true;
+        void streamAnswer(null, null, { record: input, projection: options.projection, ...(options.preserveDraft ? {} : { clearDraft: text }) });
+      }
     }
-    if (createdConversation) void loadConversations();
+    if (createdConversation && epoch === state.viewEpoch) void loadConversations();
     return true;
-  } catch (error) { status(userError(error), true); return false; }
-  finally { state.preparing = false; state.submissionPhase = ''; updateSendButton(); }
+  } catch (error) {
+    if (epoch === state.viewEpoch) {
+      interruptSendMotion();
+      setProjectionLabel(options.projection, 'failed');
+      status(userError(error), true);
+    }
+    return false;
+  } finally {
+    if (epoch === state.viewEpoch) { state.preparing = false; state.submissionPhase = ''; updateSendButton(); }
+  }
 }
 
 async function streamAnswer(initialTask, job = null, pending = {}) {
@@ -1387,9 +1538,12 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   let task = initialTask;
   let reply, userMessage, content, lifecycle, processView, lifecycleTiming, lifecycleTicker = 0;
   let processCount = 0, lastView = null, settled = false, queuedReceipt = false;
+  const queueProjection = pending.record?.queue && pendingQueueProjection?.requestId === pending.record.requestId
+    ? pendingQueueProjection : null;
   const current = () => !controller.signal.aborted && epoch === state.viewEpoch;
   const connectionNotice = phase => {
     if (!current()) return;
+    if (phase === 'confirming') setProjectionLabel(pending.projection, 'confirming');
     if (phase !== 'connected') status(t(phase === 'confirming' ? 'taskConfirming' : 'taskReconnecting'));
     else status(t(lastView?.text ? 'taskGenerating' : state.activeTask?.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
   };
@@ -1399,9 +1553,14 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     const thread = currentThread();
     thread.querySelector('.chat-notice')?.remove();
     if (task.question) {
-      userMessage = createMessage('user', task.question);
-      thread.append(userMessage);
-      animateContentIn(userMessage, { distance: 6, duration: 220 });
+      if (pending.projection?.epoch === epoch && pending.projection.node.isConnected) {
+        userMessage = pending.projection.node;
+        setProjectionLabel(pending.projection, 'accepted');
+      } else {
+        userMessage = createMessage('user', task.question);
+        thread.append(userMessage);
+        animateContentIn(userMessage, { distance: 6, duration: 220 });
+      }
     }
     const queued = currentTask.status === 'queued';
     reply = createMessage('assistant', queued ? '' : t('taskConnecting'));
@@ -1453,14 +1612,22 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     if (!task) task = await taskClient.resolve(pending.record, { signal: controller.signal, onConnection: connectionNotice });
     if (!current()) return;
     task = { ...task, requestId: task.requestId || task.clientRequestId || pending.record?.requestId,
-      question: task.question || pending.record?.question, sourceIntent: task.sourceIntent || pending.record?.sourceIntent };
+      question: task.question || pending.record?.question || queueProjection?.text, sourceIntent: task.sourceIntent || pending.record?.sourceIntent };
     taskClient.remember(task);
+    setProjectionLabel(pending.projection, 'accepted');
+    if (queueProjection) {
+      queueProjection.state = 'accepted';
+      if (question.value.trim() === queueProjection.text) { question.value = ''; resizeQuestion(); updateSendButton(); }
+      activeSendMotion?.releaseSource();
+      renderQueue();
+    }
     state.activeTask = task;
     state.activeWebRequest = task.sourceIntent === 'web';
     setWebRequestState(state.activeWebRequest && task.status === 'running' ? 'searching' : 'idle');
     if (pending.clearDraft && question.value.trim() === pending.clearDraft) {
       question.value = ''; resizeQuestion(); question.blur(); updateSendButton();
     }
+    if (pending.projection) activeSendMotion?.releaseSource();
     if (pending.clearDraft) state.webRequested = false;
     updateWebIntentControl();
     status(t(task.status === 'queued' ? 'taskQueued' : 'taskConnecting'));
@@ -1522,8 +1689,21 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
   } catch (error) {
     frameUpdate.flush();
     if (!current()) return;
+    if (['submission_rejected', 'submission_cancelled'].includes(error.code)) {
+      interruptSendMotion();
+      setProjectionLabel(pending.projection, 'failed');
+      if (queueProjection) { queueProjection.state = 'failed'; setProjectionLabel(queueProjection, 'failed'); renderQueue(); }
+    }
+    else if (!task) setProjectionLabel(pending.projection, 'confirming');
     if (error.code === 'submission_queued') {
       queuedReceipt = true;
+      if (queueProjection) {
+        queueProjection.state = 'accepted';
+        if (question.value.trim() === queueProjection.text) { question.value = ''; resizeQuestion(); updateSendButton(); }
+        activeSendMotion?.releaseSource();
+        state.queuedJobs = [...state.queuedJobs.filter(job => job.id !== error.job.id), error.job];
+        renderQueue();
+      }
       status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
     } else status(error.code === 'submission_rejected' ? userError(error)
       : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), !reply);

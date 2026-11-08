@@ -40,6 +40,9 @@ test('send feedback precedes both POSTs; history refresh and task snapshot do no
     draft.value = 'Synthetic question';
     draft.dispatchEvent(new view.window.Event('input', { bubbles: true }));
     submit(view);
+    const pendingMessage = view.document.querySelector('.message.user');
+    assert.ok(pendingMessage);
+    assert.equal(pendingMessage.dataset.sendState, 'pending');
     assert.equal(button.classList.contains('is-submitting'), true);
     assert.equal(button.getAttribute('aria-busy'), 'true');
     assert.equal(button.disabled, true);
@@ -51,10 +54,13 @@ test('send feedback precedes both POSTs; history refresh and task snapshot do no
     await until(() => input);
     assert.match(status.textContent, /正在发送问题/);
     assert.equal(historyReads, 1, 'do not refresh history before submitting the task');
-    assert.equal(view.document.querySelector('.message.user'), null);
+    assert.equal(view.document.querySelector('.message.user'), pendingMessage);
+    assert.equal(pendingMessage.dataset.sendState, 'pending');
     post.release();
-    await until(() => view.document.querySelector('.message.user'));
+    await until(() => view.document.querySelector('.message.assistant'));
     assert.equal(view.document.querySelectorAll('.message.user').length, 1);
+    assert.equal(view.document.querySelector('.message.user'), pendingMessage);
+    assert.equal(pendingMessage.dataset.sendState, 'accepted');
     assert.equal(view.document.querySelectorAll('.message.assistant').length, 1);
     assert.equal(draft.value, '');
     assert.equal(button.classList.contains('is-submitting'), false);
