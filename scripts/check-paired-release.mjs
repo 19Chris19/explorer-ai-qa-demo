@@ -19,7 +19,13 @@ export async function checkPairedRelease(base, manifest, request = fetch) {
       || health.providerRelease?.version !== manifest.providerBaseline || health.providerRelease?.revision !== manifest.providerRevision
       || health.providerRelease?.taskRecordFormat !== manifest.taskRecordFormat) throw Error('running_release_mismatch');
   const assets=Object.entries(manifest.websiteAssets || {});
-  if (assets.length!==5 || assets.some(([path,hash])=>!/^\/(?:app\.js|chat-presentation\.(?:js|css)|task-stream\.mjs|answer-markdown\.js)$/.test(path)||!/^[a-f0-9]{64}$/.test(hash))) throw Error('invalid_asset_manifest');
+  // Older releases recorded five assets; later releases added both controls and
+  // then the send-motion module. Reject incomplete or unexpected combinations.
+  const core=['/app.js','/chat-presentation.js','/chat-presentation.css','/task-stream.mjs','/answer-markdown.js'];
+  const controls=['/chat-controls.js','/chat-controls.css'];
+  const versions=[core,[...core,...controls],[...core,...controls,'/send-motion.mjs']];
+  if (!versions.some(paths=>paths.length===assets.length && paths.every(path=>Object.hasOwn(manifest.websiteAssets,path)))
+      || assets.some(([,hash])=>typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash))) throw Error('invalid_asset_manifest');
   for (const [path,hash] of assets) if(createHash('sha256').update(await read(path)).digest('hex')!==hash) throw Error('served_asset_mismatch');
   return {matched:true,website:manifest.version,provider:manifest.providerBaseline,assets:assets.length,ready:true};
 }
