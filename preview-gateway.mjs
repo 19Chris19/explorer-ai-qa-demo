@@ -16,11 +16,12 @@ const assets = new Set([
   '/host-bridge.mjs',
   '/main-shell.css', '/site/logo.png', '/site/dm-sans-latin.woff2',
   ...['compass-3-line', 'chat-3-line', 'shapes-line', 'cpu-line', 'cloud-line', 'trophy-line', 'clapperboard-line', 'graduation-cap-line', 'information-line'].map(icon => `/site/${icon}.svg`),
-  '/app.js', '/answer-markdown.js', '/vendor/marked.umd.js', '/vendor/purify.min.js',
+  '/model-picker.js', '/model-picker.css', '/app.js', '/answer-markdown.js', '/vendor/marked.umd.js', '/vendor/purify.min.js',
 ]);
 
 export function allowedPreviewRoute(path, method) {
   if (assets.has(path)) return method === 'GET' || method === 'HEAD';
+  if (path === '/api/qa/chat-capabilities') return method === 'GET';
   if (path === '/api/qa/health') return method === 'GET';
   if (['/api/qa/source-preview', '/api/qa/source-preview/image'].includes(path)) return method === 'GET';
   if (path === '/api/qa/archive/conversations' || /^\/api\/qa\/archive\/conversations\/archive(?::|%3A)[a-zA-Z0-9-]{1,100}$/iu.test(path)) return method === 'GET';

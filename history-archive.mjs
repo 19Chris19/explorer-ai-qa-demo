@@ -62,8 +62,14 @@ export function parseHistoryArchive(input) {
     if (turns > ARCHIVE_LIMITS.turns) fail();
     let previous = timestamp(row.createdAt);
     for (const turn of row.turns) {
-      const fields = ['question', 'answer', 'createdAt', 'sources', 'searchSummary', 'evidence', 'citationMap', 'suggestions', 'process'];
+      const fields = ['question', 'answer', 'createdAt', 'sources', 'searchSummary', 'evidence', 'citationMap', 'suggestions', 'process', 'modelSelection', 'webEvidence', 'webEvidenceStatus'];
       keys(turn, fields, ['question', 'answer', 'createdAt']);
+      if (turn.modelSelection !== undefined) {
+        const m=chatPresentation.metadata({modelSelection:turn.modelSelection}).modelSelection;
+        if (!m || JSON.stringify(m)!==JSON.stringify(turn.modelSelection)) fail();
+      }
+      if (turn.webEvidence !== undefined && typeof turn.webEvidence !== 'boolean') fail();
+      if (turn.webEvidenceStatus !== undefined && !['verified','not_observed','unverified'].includes(turn.webEvidenceStatus)) fail();
       string(turn.question, 2000); string(turn.answer, 200000); date(turn.createdAt);
       const at = timestamp(turn.createdAt);
       if (at < previous || at > timestamp(row.updatedAt)) fail();

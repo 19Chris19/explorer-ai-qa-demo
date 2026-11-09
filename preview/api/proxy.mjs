@@ -4,7 +4,7 @@ import { failure, validResponseType, boundedPreviewBody } from './failure.mjs';
 export const maxDuration = 300;
 
 const assets = new Set(['', 'styles.css', 'chat.css', 'chat-presentation.js', 'chat-presentation.css', 'chat-controls.js', 'chat-controls.css', 'icons.svg', 'brand-orbit.png', 'questions.json',
-  'question-rotation.mjs', 'source-evidence.mjs', 'app.js', 'answer-markdown.js', 'message-shape.mjs',
+  'question-rotation.mjs', 'source-evidence.mjs', 'model-picker.js', 'model-picker.css', 'app.js', 'answer-markdown.js', 'message-shape.mjs',
   'turn-lifecycle.mjs', 'prompt-sparks.mjs', 'answer-process.mjs', 'voice-preview.mjs',
   'composer-shape.mjs', 'composer-controls.mjs', 'send-motion.mjs',
   'answer-copy.mjs',
@@ -17,6 +17,7 @@ const assets = new Set(['', 'styles.css', 'chat.css', 'chat-presentation.js', 'c
 
 function allowed(path, method) {
   if (assets.has(path)) return ['GET', 'HEAD'].includes(method);
+  if (path === 'api/qa/chat-capabilities') return method === 'GET';
   if (path === 'api/qa/health') return method === 'GET';
   if (['api/qa/source-preview', 'api/qa/source-preview/image'].includes(path)) return method === 'GET';
   if (path === 'api/qa/conversations') return ['GET', 'POST'].includes(method);
