@@ -1,5 +1,7 @@
 # 知天下 AI 问答
 
+> 本分支为 **v0.6.0-rc.1 / Provider v0.8.0-rc.1 本地联合候选**，尚未发布、部署或验收生产账号池。下方稳定版本介绍保留；候选部署要求明确指定审阅过的本地镜像，不能假定这些候选镜像已在 GHCR 可下载。
+
 ![知天下 AI 问答：从品牌光圈进入 3DGS 知识问答界面](assets/readme/hero-aperture.gif)
 
 [静态首图](assets/readme/hero-aperture-static.png)
