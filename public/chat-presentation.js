@@ -447,7 +447,8 @@
         const control = button(container.ownerDocument, 'suggestion', question);
         control.addEventListener('click', () => {
           if (control.disabled || input.value.trim()) return;
-          input.value = question; input.dispatchEvent(new root.Event('input', { bubbles: true })); input.focus();
+          input.value = question; input.dispatchEvent(new root.Event('input', { bubbles: true }));
+          if (!root.matchMedia?.('(pointer: coarse)')?.matches) input.focus({ preventScroll: true });
         }); section.append(control);
       }
     }

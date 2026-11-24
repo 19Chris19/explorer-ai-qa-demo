@@ -46,7 +46,8 @@ const suggestionList = document.querySelector('#suggestionList');
 const suggestionMotion = { expand: 520, flight: 620, settle: 420 };
 const webSearchButton = document.querySelector('#webSearchButton');
 const modelPicker = globalThis.ChatModelPicker.create({mount:document.querySelector('.composer-tools'),
-  load: id => api(sitePath('/api/qa/chat-capabilities') + (id ? '?conversationId=' + encodeURIComponent(id) : '')),
+  load: id => api(sitePath('/api/qa/chat-capabilities') + (id ? '?conversationId=' + encodeURIComponent(id) : ''),
+    { signal: AbortSignal.timeout(15000) }),
   notice: text => status(text, true), webRequested: () => state.webRequested});
 
 const webIntentLabel = document.querySelector('#webIntentLabel');
@@ -69,7 +70,7 @@ const state = {
   activeWebRequest: false, webRequestState: 'idle',
   queuedJobs: [], queueSubmitting: false, preparing: false, submissionPhase: '', activeQueuedId: '',
   questionBank: [], questionRotation: null, currentSuggestions: null, carouselTimer: 0, carouselHover: false, carouselFocus: false, suggestionSelected: false, composing: false,
-  followLatest: true, recoveryRequired: false,
+  followLatest: true, recoveryRequired: false, nextQuestionInNewChat: false, openingConversation: false,
   durableTasksSupported: false, activeTask: null, viewEpoch: 0, completedTasks: new Set(), queueTimer: 0,
 };
 const latestControl = window.ChatControls.latest({ log, button: jumpLatest,
@@ -235,22 +236,12 @@ communityDialog.addEventListener('click', event => { if (event.target === commun
 document.querySelector('#newChat').addEventListener('click', async () => {
   voicePreview.stop();
   interruptSendMotion();
-  if (state.preparing || state.queueSubmitting) return;
-  state.preparing = true;
-  updateSendButton();
   try {
-    const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
-    detachTaskView();
-    setConversation(data.conversation.conversationId);
-    question.value = '';
-    state.suggestionSelected = false;
-    welcome();
-    await loadConversations();
+    if (!await openNewConversation()) return;
     closeMore();
     closeHistory();
-    question.focus();
+    if (!window.matchMedia?.('(pointer: coarse)')?.matches) question.focus({ preventScroll: true });
   } catch (error) { status(userError(error), true); closeMore(); }
-  finally { state.preparing = false; updateSendButton(); }
 });
 moreToggle.addEventListener('click', event => {
   closeHistory();
@@ -326,8 +317,10 @@ suggestionList.addEventListener('click', event => {
   question.value = button.dataset.question;
   const target = resizeQuestion({ animate: true, duration: suggestionMotion.expand, captureTarget: true });
   updateSendButton();
-  question.focus();
-  question.setSelectionRange(question.value.length, question.value.length);
+  if (!window.matchMedia?.('(pointer: coarse)')?.matches) {
+    question.focus({ preventScroll: true });
+    question.setSelectionRange(question.value.length, question.value.length);
+  }
   state.suggestionSelected = true;
   updateSuggestionVisibility();
   updateCarouselTimer();
@@ -526,8 +519,7 @@ async function loadConversation(id, archived = false) {
     if (state.legacyMode) status('这段历史可查看。继续提问请新建会话，使用原生知识库 Agent。', true);
     if (archived) status(ui.locale === 'en' ? 'Pre-migration record, read-only' : '迁移前记录，只读', true);
     closeHistory({ restore: true });
-    await loadConversations();
-    if (epoch !== state.viewEpoch) return;
+    void loadConversations();
     if (!archived && await restoreTaskView(data.messages || [], epoch)) { await syncQueue(false); return; }
     await syncQueue();
   } catch (error) {
@@ -535,6 +527,26 @@ async function loadConversation(id, archived = false) {
     if (id === state.conversationId) { setConversation(''); welcome(); }
     status(userError(error), true);
   } finally { if (epoch === state.viewEpoch) { state.preparing = false; updateSendButton(); } }
+}
+
+async function openNewConversation(keepSelection = false) {
+  if (state.openingConversation) return false;
+  state.openingConversation = true;
+  updateSendButton();
+  try {
+    const epoch = state.viewEpoch;
+    const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
+    if (epoch !== state.viewEpoch) return false;
+    detachTaskView();
+    setConversation(data.conversation.conversationId, keepSelection);
+    state.suggestionSelected = false;
+    welcome();
+    void loadConversations();
+    return true;
+  } finally {
+    state.openingConversation = false;
+    updateSendButton();
+  }
 }
 
 function setConversation(id, keepSelection = false) {
@@ -588,7 +600,7 @@ function updateSendButton() {
   const submitting = Boolean(state.submissionPhase || state.queueSubmitting);
   const label = t(state.submissionPhase || (state.queueSubmitting ? 'queueSubmitting' : action));
   sendButton.type = stopping ? 'button' : 'submit';
-  sendButton.disabled = disabled || state.recoveryRequired;
+  sendButton.disabled = state.openingConversation || disabled || (state.recoveryRequired && !state.nextQuestionInNewChat);
   for (const control of retryControls) {
     if (!control.button.isConnected) retryControls.delete(control); else control.refresh();
   }
@@ -752,8 +764,18 @@ async function syncQueue(autoConsume = true) {
 async function submitQuestion() {
   voicePreview.stop();
   const text = question.value.trim();
-  if (!text || state.preparing || state.queueSubmitting) return;
+  if (!text || state.openingConversation || state.preparing || state.queueSubmitting) return;
   if (state.access !== 'ready') { status(t(state.access), true); return; }
+  if (state.nextQuestionInNewChat) {
+    try {
+      if (!await openNewConversation(true)) return;
+    } catch (error) {
+      status(userError(error), true);
+      return;
+    }
+    if (question.value.trim() === text) await ask(text, { animate: true });
+    return;
+  }
   if (taskStore.list().some(row => row.conversationId === state.conversationId && !row.id && !row.jobId)) {
     status(t('taskConfirming'), true);
     if (!state.controller) await loadConversation(state.conversationId);
@@ -769,8 +791,7 @@ async function submitQuestion() {
   if (state.busy) { await enqueueQuestion(text); return; }
   if (state.queuedJobs.some(job => job.status === 'paused')) { status(ui.locale === 'en' ? 'Remove the paused queued question before continuing.' : '请先删除上一轮未完成的待发问题，再继续提问。', true); return; }
   if (state.recoveryRequired || !state.durableTasksSupported || state.legacyMode || archiveConversationId) { await ask(text); return; }
-  const projection = beginSendProjection(text);
-  await ask(text, { projection });
+  await ask(text, { animate: true });
 }
 
 async function enqueueQuestion(text) {
@@ -1395,6 +1416,7 @@ function detachTaskView() {
   state.queueSubmitting = false;
   state.submissionPhase = '';
   state.recoveryRequired = false;
+  state.nextQuestionInNewChat = false;
   latestControl.cancel();
   globalThis.ChatPresentation?.closeCard();
   state.viewEpoch += 1;
@@ -1439,7 +1461,7 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
     const historyAt = typeof lastAnswer?.createdAt === 'number' ? lastAnswer.createdAt : Date.parse(lastAnswer?.createdAt);
     const terminalAt = latest?.trace?.terminalAt;
     const unfinished = item => ['failed', 'cancelled', 'indeterminate'].includes(item?.status);
-    const latestPartial = unfinished(latest) && !latest.eventsExpired && (!lastAnswer || receiptIndex > 0
+    const latestPartial = unfinished(latest) && (!latest.eventsExpired || latest.status === 'indeterminate') && (!lastAnswer || receiptIndex > 0
       || (receiptIndex < 0 && Number.isFinite(historyAt) && Number.isFinite(terminalAt) && terminalAt > historyAt)) ? latest : null;
     const candidates = tasks.filter(item => {
       if (item.eventsExpired && ['failed', 'cancelled'].includes(item.status)) {
@@ -1491,9 +1513,19 @@ async function ask(raw, options = {}) {
   if (!text || state.busy || state.preparing || state.recoveryRequired || !state.durableTasksSupported) return false;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
   if (!state.conversationId && archiveConversationId) { archiveConversationId = ''; welcome(); }
+  const epoch = state.viewEpoch;
+  const catalog = modelPicker.pending();
+  if (catalog) {
+    state.preparing = true;
+    updateSendButton();
+    status(ui.locale === 'en' ? 'Checking available models…' : '正在核对可用模型…');
+    try { await catalog; }
+    finally { if (epoch === state.viewEpoch) { state.preparing = false; updateSendButton(); } }
+    if (epoch !== state.viewEpoch || (!options.preserveDraft && question.value.trim() !== text)) return false;
+  }
   const modelSelection = options.modelSelection || modelPicker.capture();
   if (modelSelection === null) return false;
-  const epoch = state.viewEpoch;
+  if (options.animate) options.projection = beginSendProjection(text);
   let conversationId = state.conversationId;
   const webRequested = options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested;
   state.preparing = true;
@@ -1660,6 +1692,12 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       if (!current()) return;
       const messages = Array.isArray(history.messages) ? history.messages : [];
       const historicAnswer = messages.find(message => message.role === 'assistant' && message.taskId === task.id);
+      if (view.task.status === 'indeterminate' && (!historicAnswer?.content?.trim() || historicAnswer.complete === false || historicAnswer.interrupted)) {
+        state.nextQuestionInNewChat = true;
+        state.recoveryRequired = true;
+        status(ui.locale === 'en' ? 'Previous outcome is unknown. Your next question will start a new conversation.' : '上条结果未确认，下一条问题将在新对话中发送。', true);
+        return;
+      }
       if (!historicAnswer?.content?.trim()) throw Object.assign(new Error('task_history_unavailable'), {
         code: ['succeeded', 'failed', 'cancelled'].includes(view.task.status) ? 'expired_terminal_history_unavailable' : 'task_history_unavailable',
       });
@@ -1702,9 +1740,13 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       if (task.sourceIntent === 'web') setWebRequestState('idle');
     }
     state.recoveryRequired = view.task.status === 'indeterminate' || (!complete && !['failed', 'cancelled'].includes(view.task.status));
+    if (view.task.status === 'indeterminate') {
+      state.nextQuestionInNewChat = true;
+      status(ui.locale === 'en' ? 'Your next question will start a new conversation.' : '下一条问题将在新对话中发送，当前记录已保留。', true);
+    }
     attachAnswerRetry(reply, { ...task, status: view.task.status }, complete ? 'again' : state.recoveryRequired ? 'recover' : 'retry', userMessage);
     scrollBottom();
-    await loadConversations();
+    void loadConversations();
   } catch (error) {
     frameUpdate.flush();
     if (!current()) return;

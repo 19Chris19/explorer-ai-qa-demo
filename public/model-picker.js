@@ -54,7 +54,12 @@
       const next=e.key==='Home'?0:e.key==='End'?choices.length-1:(index+(['ArrowUp','ArrowLeft'].includes(e.key)?-1:1)+choices.length)%choices.length;
       choices[next]?.focus();
     });
-    async function refresh(conversationId='',keepSelection=false){
+    let pendingCatalog;
+    function refresh(conversationId='',keepSelection=false){
+      pendingCatalog=loadCatalog(conversationId,keepSelection);
+      return pendingCatalog;
+    }
+    async function loadCatalog(conversationId,keepSelection){
       const same=keepSelection||context===conversationId;context=conversationId;const current=++epoch;loading=true;render();
       try{const next=await load(conversationId);if(current!==epoch)return;data=next;error='';lastChecked=Date.now();
         const previous=same&&value;value=previous?previous:next.defaultSelection?{...next.defaultSelection}:null;
@@ -90,7 +95,7 @@
     global.addEventListener('scroll',place,true);
     dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
     global.addEventListener('resize',()=>{if(dialog.open)dialog.close();});
-    return {refresh,capture,render,button,dialog};
+    return {refresh,pending:()=>loading?pendingCatalog:null,capture,render,button,dialog};
   }
   function renderSelection(target,value){
     if(!value||!['quick','deep'].includes(value.mode)||typeof value.name!=='string')return;

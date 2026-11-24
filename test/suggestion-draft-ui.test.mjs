@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openUi } from '../test-support/ui-harness.mjs';
 
 test('suggestions protect unsent drafts, hide without removing space and never submit', async () => {
-  const ui = await openUi();
+  const ui = await openUi({ setup(window) { window.matchMedia = query => ({ matches: query.includes('reduced-motion') }); } });
   try {
     const input = ui.document.querySelector('#question');
     const strip = ui.document.querySelector('#suggestionStrip');
@@ -26,5 +26,19 @@ test('suggestions protect unsent drafts, hide without removing space and never s
     assert.equal(strip.classList.contains('has-draft'), true);
     assert.equal(ui.document.activeElement, input);
     assert.equal(ui.requests.some(item => item.options?.method === 'POST'), false);
+  } finally { ui.close(); }
+});
+
+test('touch selection fills a draft and leaves the keyboard closed until the user taps to edit', async () => {
+  const ui = await openUi();
+  try {
+    const input = ui.document.querySelector('#question');
+    const suggestion = ui.document.querySelector('.suggestion-question');
+    suggestion.click();
+    assert.equal(input.value, suggestion.dataset.question);
+    assert.notEqual(ui.document.activeElement, input);
+    assert.equal(ui.requests.some(item => item.options?.method === 'POST'), false);
+    input.focus();
+    assert.equal(ui.document.activeElement, input);
   } finally { ui.close(); }
 });
