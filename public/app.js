@@ -1442,7 +1442,7 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
     const latestPartial = unfinished(latest) && !latest.eventsExpired && (!lastAnswer || receiptIndex > 0
       || (receiptIndex < 0 && Number.isFinite(historyAt) && Number.isFinite(terminalAt) && terminalAt > historyAt)) ? latest : null;
     const candidates = tasks.filter(item => {
-      if (item.eventsExpired && ['succeeded', 'failed', 'cancelled'].includes(item.status)) {
+      if (item.eventsExpired && ['failed', 'cancelled'].includes(item.status)) {
         state.completedTasks.add(item.id);
         taskStore.forget(item.id);
         const requestId = item.requestId || item.clientRequestId;
@@ -1660,7 +1660,9 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       if (!current()) return;
       const messages = Array.isArray(history.messages) ? history.messages : [];
       const historicAnswer = messages.find(message => message.role === 'assistant' && message.taskId === task.id);
-      if (!historicAnswer?.content?.trim()) throw new Error('task_history_unavailable');
+      if (!historicAnswer?.content?.trim()) throw Object.assign(new Error('task_history_unavailable'), {
+        code: ['succeeded', 'failed', 'cancelled'].includes(view.task.status) ? 'expired_terminal_history_unavailable' : 'task_history_unavailable',
+      });
       renderThread(messages, { restoring: true });
       settled = true;
       state.completedTasks.add(task.id);
@@ -1724,7 +1726,8 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
     } else status(error.code === 'submission_rejected' ? userError(error)
       : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), !reply);
-    state.recoveryRequired = !['submission_rejected', 'submission_cancelled', 'submission_queued'].includes(error.code);
+    state.recoveryRequired = !['submission_rejected', 'submission_cancelled', 'submission_queued',
+      'expired_terminal_history_unavailable'].includes(error.code);
     if (state.recoveryRequired && !reply && pending.record) {
       const thread = currentThread();
       let notice = thread.querySelector('.chat-notice');

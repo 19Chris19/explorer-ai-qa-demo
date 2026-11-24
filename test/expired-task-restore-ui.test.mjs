@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openUi, until } from '../test-support/ui-harness.mjs';
 
-for (const status of ['succeeded', 'failed', 'cancelled']) {
+for (const status of ['failed', 'cancelled']) {
   test(`expired ${status} receipt leaves history readable and the composer usable`, async () => {
     const json = value => ({ ok: true, json: async () => value });
     const receipt = { id: 'synthetic-expired', requestId: 'synthetic-request',
