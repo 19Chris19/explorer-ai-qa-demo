@@ -1,5 +1,7 @@
 # 知天下 AI 问答
 
+> **v0.6.0 配套 Provider v0.8.0**。增加模型选择和快速／深度模式，同会话追问保留上下文。修复旧任务流记录过期后阻塞输入的问题。部署应使用这组固定版本，并保留原账号、密钥和历史。
+
 ![知天下 AI 问答：从品牌光圈进入 3DGS 知识问答界面](assets/readme/hero-aperture.gif)
 
 [静态首图](assets/readme/hero-aperture-static.png)
@@ -140,3 +142,8 @@ npm run build
 ```
 
 源码仓库公开；仅交付网站源码、合成测试和文档，不包含账号、真实历史或第二份 Provider 源码。`.env.local`、`runtime/`、浏览器 profile 与签名密钥不进入 Git。真实群配置、主站最终接入与生产权限须另行配置和验收。
+
+## IMApy 问答内核本地候选
+
+模型目录、快速／深度与配套选择器目前为默认关闭的实验接入，尚未真实验收或上线。
+详见 [模型控件与配套接口](docs/IMAPY_MODEL_CONTROLS.md)。

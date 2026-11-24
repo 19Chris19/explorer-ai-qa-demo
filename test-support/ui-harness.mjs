@@ -26,7 +26,7 @@ export async function openUi({ fetchImpl, setup, conversationId = '', presentati
   if (conversationId) window.sessionStorage.setItem('qa-native-conversation-id', conversationId);
   setup?.(window);
   const requests = [];
-  const globals = ['window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'fetch', 'ChatPresentation', 'ImaAnswerMarkdown'];
+  const globals = ['ChatModelPicker', 'window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'fetch', 'ChatPresentation', 'ImaAnswerMarkdown'];
   const saved = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const json = data => ({ ok: true, json: async () => data });
   const fetchMock = async (url, options) => {
@@ -35,6 +35,7 @@ export async function openUi({ fetchImpl, setup, conversationId = '', presentati
     url = parsed.pathname + (parsed.searchParams.size ? '?' + parsed.searchParams : '');
     const custom = await fetchImpl?.(url, options, window);
     if (custom) return custom;
+    if (url.startsWith('/api/qa/chat-capabilities')) return json({ enabled:false, models:[] });
     if (url === '/api/qa/health') return json({ connected: true, configured: true, authenticated: true, contractSupported: true, durableTasksSupported: true, ready: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(Array.from({ length: 50 }, (_, i) => ({ id: `q${i}`, zh: `合成问题 ${i}`, en: `Synthetic question ${i}` })));
     if (url === '/api/qa/conversations') return json({ conversations: [] });
@@ -62,6 +63,7 @@ export async function openUi({ fetchImpl, setup, conversationId = '', presentati
       getComputedStyle: window.getComputedStyle.bind(window),
     });
     window.eval(readFileSync(join(root, 'public/chat-controls.js'), 'utf8'));
+    window.eval(readFileSync(join(root, 'public/model-picker.js'), 'utf8'));globalThis.ChatModelPicker=window.ChatModelPicker;
     if (presentation) {
       for (const file of [join(require.resolve('marked'), '../marked.umd.js'), require.resolve('dompurify/dist/purify.min.js'),
         join(root, 'public/chat-presentation.js'), join(root, 'public/answer-markdown.js')]) window.eval(readFileSync(file, 'utf8'));

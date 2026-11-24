@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 export async function checkPairedRelease(base, manifest, request = fetch) {
   const url = new URL(base);
   if (url.username || url.password || url.search || url.hash || !(url.protocol === 'https:' || url.protocol === 'http:' && ['127.0.0.1','localhost','[::1]'].includes(url.hostname))) throw Error('invalid_public_entry');
-  if (!/^v\d+\.\d+\.\d+$/.test(manifest.version || '') || !/^[a-f0-9]{40}$/.test(manifest.revision || '')
+  if (!/^v\d+\.\d+\.\d+(?:-rc\.\d+)?$/.test(manifest.version || '') || !/^[a-f0-9]{40}$/.test(manifest.revision || '')
       || !/^[a-f0-9]{40}$/.test(manifest.providerRevision || '') || manifest.taskRecordFormat !== 'jsonl_v2') throw Error('invalid_stable_manifest');
   const read = async path => {
     const response = await request(new URL(path.replace(/^\//,''), url.href.replace(/\/?$/,'/')), {signal:AbortSignal.timeout(10000),redirect:'error'});
@@ -19,7 +19,16 @@ export async function checkPairedRelease(base, manifest, request = fetch) {
       || health.providerRelease?.version !== manifest.providerBaseline || health.providerRelease?.revision !== manifest.providerRevision
       || health.providerRelease?.taskRecordFormat !== manifest.taskRecordFormat) throw Error('running_release_mismatch');
   const assets=Object.entries(manifest.websiteAssets || {});
-  if (assets.length!==5 || assets.some(([path,hash])=>!/^\/(?:app\.js|chat-presentation\.(?:js|css)|task-stream\.mjs|answer-markdown\.js)$/.test(path)||!/^[a-f0-9]{64}$/.test(hash))) throw Error('invalid_asset_manifest');
+  // Older releases recorded five assets; later releases added both controls and
+  // then the send-motion module. Reject incomplete or unexpected combinations.
+  const core=['/app.js','/chat-presentation.js','/chat-presentation.css','/task-stream.mjs','/answer-markdown.js'];
+  const controls=['/chat-controls.js','/chat-controls.css'];
+  const modelAssets=[...core,...controls,'/send-motion.mjs','/model-picker.js','/model-picker.css'];
+  const v=/^v(\d+)\.(\d+)\./.exec(manifest.version),modern=Number(v[1])>0||Number(v[2])>=6;
+  if(manifest.version.includes('-rc.')&&manifest.channel!=='prerelease')throw Error('invalid_stable_manifest');
+  const versions=modern?[modelAssets]:[core,[...core,...controls],[...core,...controls,'/send-motion.mjs']];
+  if (!versions.some(paths=>paths.length===assets.length && paths.every(path=>Object.hasOwn(manifest.websiteAssets,path)))
+      || assets.some(([,hash])=>typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash))) throw Error('invalid_asset_manifest');
   for (const [path,hash] of assets) if(createHash('sha256').update(await read(path)).digest('hex')!==hash) throw Error('served_asset_mismatch');
   return {matched:true,website:manifest.version,provider:manifest.providerBaseline,assets:assets.length,ready:true};
 }

@@ -14,7 +14,7 @@ test('README presents the brand, paired version and independent deployment hones
     'sh onboard.sh doctor', 'sh onboard.sh init', '无需先手工部署两个仓库']) assert.ok(text.includes(value), value);
   assert.ok(text.length < 14000);
   assert.ok(text.indexOf('screenshots/welcome-desktop.png') < text.indexOf('## 开始部署'));
-  assert.match(bundle, /PROVIDER_TAG=v0\.7\.0/);
+  assert.match(bundle, /PROVIDER_TAG=v0\.8\.0/);
   assert.match(read('docs/AGENT_DEPLOYMENT.md'), /固定 v0\.5\.1 \/ Provider v0\.7\.0/);
 });
 

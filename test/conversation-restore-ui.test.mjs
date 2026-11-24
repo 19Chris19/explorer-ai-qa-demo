@@ -27,6 +27,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     const parsed = new URL(url, window.location.href); parsed.searchParams.delete('presentation');
     url = parsed.pathname + (parsed.searchParams.size ? '?' + parsed.searchParams : '');
     if (options.method === 'POST') submissions.push({ url, body: options.body });
+    if (url.startsWith('/api/qa/chat-capabilities')) return json({enabled:false,models:[]});
     if (url === '/api/qa/health') return json({ connected: true, authenticated: true, ready: true, durableTasksSupported: true, capacity: 1, webIntentSupported: true });
     if (url === '/questions.json') return json(questions);
     if (url === '/api/qa/archive/conversations') {
@@ -51,7 +52,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
     if (url === '/api/qa/tasks') return { ok: false, status: 400, json: async () => ({ error: '合成接入失败' }) };
     throw new Error(`Unexpected request: ${url}`);
   };
-  const globals = ['window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'fetch'];
+  const globals = ['ChatModelPicker', 'window', 'document', 'localStorage', 'sessionStorage', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'fetch'];
   const saved = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   try {
     copyFileSync(join(root, 'public/app.js'), join(moduleDir, 'app.mjs'));
@@ -76,6 +77,7 @@ test('restoring an empty conversation keeps the welcome screen and ID; history s
       fetch: fetchMock,
     });
     window.eval(readFileSync(join(root, 'public/chat-controls.js'), 'utf8'));
+    window.eval(readFileSync(join(root, 'public/model-picker.js'), 'utf8'));globalThis.ChatModelPicker=window.ChatModelPicker;
     await import(pathToFileURL(join(moduleDir, 'app.mjs')).href);
     await until(() => requests.includes('/api/qa/queue?conversationId=synthetic-empty'));
     const main = window.document.querySelector('#main');

@@ -424,6 +424,10 @@ test('expired events with missing history retain existing content and do not cla
     assert.equal(posts(view).length, 0);
     assert.equal(view.requests.some(row => row.url.includes('/events')), false);
     assert.match(view.window.localStorage.getItem('qa-task-identities-v1'), /synthetic-task/);
+    const draft = view.document.querySelector('#question');
+    draft.value = 'Synthetic next question after confirmed completion';
+    draft.dispatchEvent(new view.window.Event('input', { bubbles: true }));
+    await until(() => !view.document.querySelector('#sendButton').disabled);
   } finally { view.close(); }
 });
 

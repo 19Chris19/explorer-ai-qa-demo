@@ -1,3 +1,4 @@
+import { normalizeModelSelection } from './model-selection.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, fsyncSync, openSync, rmSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -10,15 +11,16 @@ const maxReplayWireBytes = 16 * 1024 * 1024;
 
 const ownerOf = clientId => createHash('sha256').update(clientId).digest('hex');
 const laneOf = (owner, conversationId) => `${owner}:${conversationId}`;
-const snapshot = job => ({ id: job.id, requestId: job.requestId, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt, ...(job.taskId ? { taskId: job.taskId } : {}) });
+const snapshot = job => ({ ...(job.modelSelection ? { modelSelection: structuredClone(job.modelSelection) } : {}), id: job.id, requestId: job.requestId, question: job.question, conversationId: job.conversationId, sourceIntent: job.sourceIntent, status: job.status, createdAt: job.createdAt, ...(job.taskId ? { taskId: job.taskId } : {}) });
 const statusEvent = (status, job) => `event: queue.status\ndata: ${JSON.stringify({ status, ...(status === 'running' ? { question: job.question, ...(job.taskId ? { taskId: job.taskId } : {}) } : {}) })}\n\n`;
 
 function validatePreservedRows(rows) {
   const keys = ['id', 'owner', 'conversationId', 'requestId', 'question', 'sourceIntent', 'preview', 'createdAt', 'status'];
   const ids = new Set();
   for (const row of rows) {
+    if (row) normalizeModelSelection(row.modelSelection);
     if (!row || typeof row !== 'object' || Array.isArray(row)
-        || Object.keys(row).some(key => ![...keys, 'taskId', 'submissionStarted', 'clientId', 'cancelRequested', 'providerStatus'].includes(key)) || !keys.every(key => Object.hasOwn(row, key))
+        || Object.keys(row).some(key => ![...keys, 'modelSelection', 'taskId', 'submissionStarted', 'clientId', 'cancelRequested', 'providerStatus'].includes(key)) || !keys.every(key => Object.hasOwn(row, key))
         || (row.submissionStarted !== undefined && typeof row.submissionStarted !== 'boolean')
         || (row.cancelRequested !== undefined && typeof row.cancelRequested !== 'boolean')
         || (row.clientId !== undefined && (typeof row.clientId !== 'string' || ownerOf(row.clientId) !== row.owner))
@@ -174,12 +176,13 @@ export class ConversationTurnQueue {
     return { activeDirect: this.active.size - running, running, queued, paused, pending: queued + paused, expiredPending };
   }
 
-  enqueue({ clientId, conversationId, requestId, question, sourceIntent = '', preview = false }) {
+  enqueue({ clientId, conversationId, requestId, question, sourceIntent = '', preview = false, modelSelection }) {
+    modelSelection = normalizeModelSelection(modelSelection);
     this.prune();
     const owner = ownerOf(clientId);
     const lane = laneOf(owner, conversationId);
     const existing = [...this.jobs.values()].find(job => job.owner === owner && job.requestId === requestId);
-    if (existing) return existing.conversationId === conversationId && existing.question === question && existing.sourceIntent === sourceIntent
+    if (existing) return existing.conversationId === conversationId && existing.question === question && existing.sourceIntent === sourceIntent && JSON.stringify(existing.modelSelection) === JSON.stringify(modelSelection)
       ? { job: snapshot(existing), repeated: true } : { error: 'conflict' };
     if (this.jobs.size >= this.maxJobs
       || [...this.jobs.values()].reduce((bytes, job) => bytes + job.bytes, 0) >= this.maxReplayBytes) return { error: 'busy' };
@@ -187,7 +190,7 @@ export class ConversationTurnQueue {
     if (jobs.some(job => job.status === 'paused')) return { error: 'paused' };
     if (jobs.filter(job => job.status === 'queued').length >= this.maxPendingPerConversation) return { error: 'full' };
     const job = {
-      id: randomUUID(), owner, clientId, conversationId, requestId, question, sourceIntent, preview,
+      id: randomUUID(), owner, clientId, conversationId, requestId, question, sourceIntent, preview, ...(modelSelection ? { modelSelection } : {}),
       createdAt: this.now(), status: 'queued', events: [], bytes: 0, subscribers: new Set(), controller: null, finishedAt: 0,
     };
     this.jobs.set(job.id, job);
@@ -347,7 +350,7 @@ export class ConversationTurnQueue {
 
   save() {
     const rows = [...this.jobs.values()].filter(job => ['queued', 'paused', 'running'].includes(job.status))
-      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, taskId, submissionStarted, clientId, cancelRequested, providerStatus }) => ({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, ...(taskId ? { taskId } : {}),
+      .map(({ id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, taskId, submissionStarted, clientId, cancelRequested, providerStatus, modelSelection }) => ({ ...(modelSelection ? { modelSelection } : {}), id, owner, conversationId, requestId, question, sourceIntent, preview, createdAt, status, ...(taskId ? { taskId } : {}),
         ...(cancelRequested ? { cancelRequested: true } : {}),
         ...(submissionStarted || taskId ? { submissionStarted: true, clientId, cancelRequested: Boolean(cancelRequested), ...(providerStatus ? { providerStatus } : {}) } : {}) }));
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });

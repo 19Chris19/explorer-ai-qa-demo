@@ -1,3 +1,4 @@
+import { normalizeModelSelection } from './model-selection.mjs';
 import chatPresentation from './chat-presentation.cjs';
 import { qaAdmissionConfig } from './qa-admission-config.mjs';
 import { createServer } from 'node:http';
@@ -84,6 +85,8 @@ const staticFiles = new Map([
   ['/answer-copy.mjs', ['public/answer-copy.mjs', 'text/javascript; charset=utf-8']],
   ['/selection-copy.mjs', ['public/selection-copy.mjs', 'text/javascript; charset=utf-8']],
   ['/host-bridge.mjs', ['public/host-bridge.mjs', 'text/javascript; charset=utf-8']],
+  ['/model-picker.js', ['public/model-picker.js', 'text/javascript; charset=utf-8']],
+  ['/model-picker.css', ['public/model-picker.css', 'text/css; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/task-stream.mjs', ['public/task-stream.mjs', 'text/javascript; charset=utf-8']],
   ['/answer-markdown.js', ['public/answer-markdown.js', 'text/javascript; charset=utf-8']],
@@ -130,6 +133,12 @@ const server = createServer(async (req, res) => {
         res.end(req.method === 'HEAD' ? undefined : readFileSync(join(root, file)));
       } else serveStatic(req, res, file, type);
       return;
+    }
+    if (pathname === '/api/qa/chat-capabilities' && req.method === 'GET') {
+      const clientId = getClientId(req, res); const id = url.searchParams.get('conversationId');
+      if (id && (!validConversationId(id) || !nativeSessions.belongsToNative(id, clientId))) { sendJson(res, 404, { error: '会话不存在' }); return; }
+      const response = await provider.request({route:'/api/chat-capabilities' + (id ? '?conversationId=' + encodeURIComponent(id) : ''),method:'GET',clientId,signal:AbortSignal.timeout(15000)});
+      sendJson(res,response.status,await response.json());return;
     }
     if (pathname === '/api/qa/health' && req.method === 'GET') {
       await health(res);
@@ -304,7 +313,7 @@ async function requireNativeContract(res, durable = false) {
   }
   return true;
 }
-const submissionFingerprint = input => createHash('sha256').update(JSON.stringify([input.conversationId, input.question.trim(), input.sourceIntent || ''])).digest('hex');
+const submissionFingerprint = input => createHash('sha256').update(JSON.stringify([input.conversationId, input.question.trim(), input.sourceIntent || '', ...(input.modelSelection ? [normalizeModelSelection(input.modelSelection)] : [])])).digest('hex');
 const taskIdOf = row => row.taskId || (!row.requestId ? row.id : null);
 const pendingPublicCount = () => turnQueue.previewPendingCount() + taskWatchStore.pendingCount();
 const activeWatch = row => !terminalTask(row.status) && row.status !== 'rejected';
@@ -331,7 +340,7 @@ async function postTaskOnce(row, input) {
   let response;
   try {
     response = await provider.request({ route: '/api/tasks', method: 'POST', clientId: row.clientId, requestId: row.requestId,
-      body: JSON.stringify({ question: input.question.trim(), conversationId: input.conversationId }), sourceIntent: input.sourceIntent,
+      body: JSON.stringify({ question: input.question.trim(), conversationId: input.conversationId, ...(input.modelSelection ? { modelSelection: normalizeModelSelection(input.modelSelection), webSearch: input.sourceIntent === 'web' } : {}) }), sourceIntent: input.sourceIntent,
       signal: AbortSignal.timeout(admissionConfig.submitTimeoutMs) });
     if (response.ok) {
       const data = await response.json();
@@ -361,7 +370,7 @@ async function taskRoute(req, res, pathname, params) {
     let input;
     try {
       input = await readBody(req); validateQueuedInput(input, true);
-      if (Object.keys(input).some(key => !['question', 'conversationId', 'requestId', 'sourceIntent'].includes(key))) throw new Error('不支持的请求字段');
+      if (Object.keys(input).some(key => !['question', 'conversationId', 'requestId', 'sourceIntent', 'modelSelection'].includes(key))) throw new Error('不支持的请求字段');
     } catch (error) { sendJson(res, 400, { error: error.message }); return; }
     if (!nativeSessions.belongsToNative(input.conversationId, clientId)) { sendJson(res, 404, { error: '会话不存在' }); return; }
     if (!taskWatchStore.findRequest(clientId, input.requestId)) {
@@ -582,12 +591,14 @@ async function queueRoute(req, res, pathname) {
   const result = turnQueue.enqueue({
     clientId, conversationId: input.conversationId, requestId: input.requestId,
     question: input.question.trim(), sourceIntent: input.sourceIntent || '', preview: Boolean(visitor),
+    ...(input.modelSelection ? { modelSelection: normalizeModelSelection(input.modelSelection) } : {}),
   });
   const errors = { conflict: '此请求编号已用于另一问题，请重新提交。', paused: '上一轮未完整结束，请先处理待发问题。', full: '本会话最多排队 3 条问题。', busy: '服务暂时繁忙，问题尚未接收，请稍后提交。' };
   sendJson(res, result.error === 'busy' ? 429 : result.error ? 409 : 202, result.error ? { error: errors[result.error] } : result);
 }
 
 function validateQueuedInput(input, requireIdentity) {
+  normalizeModelSelection(input.modelSelection);
   if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 2000) throw new Error('Question must be 1–2000 characters');
   if (input.sourceIntent !== undefined && input.sourceIntent !== 'web') throw new Error('sourceIntent 只能是 web');
   if (requireIdentity && (!validConversationId(input.conversationId) || !validRequestId(input.requestId))) throw new Error('会话或请求编号格式不正确');

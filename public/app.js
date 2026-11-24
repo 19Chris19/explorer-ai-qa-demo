@@ -45,6 +45,10 @@ const suggestionStrip = document.querySelector('#suggestionStrip');
 const suggestionList = document.querySelector('#suggestionList');
 const suggestionMotion = { expand: 520, flight: 620, settle: 420 };
 const webSearchButton = document.querySelector('#webSearchButton');
+const modelPicker = globalThis.ChatModelPicker.create({mount:document.querySelector('.composer-tools'),
+  load: id => api(sitePath('/api/qa/chat-capabilities') + (id ? '?conversationId=' + encodeURIComponent(id) : '')),
+  notice: text => status(text, true), webRequested: () => state.webRequested});
+
 const webIntentLabel = document.querySelector('#webIntentLabel');
 const composerSparks = createPromptSparks(document.querySelector('#composerSparks'), { root: form });
 const micButton = document.querySelector('#micButton');
@@ -533,10 +537,11 @@ async function loadConversation(id, archived = false) {
   } finally { if (epoch === state.viewEpoch) { state.preparing = false; updateSendButton(); } }
 }
 
-function setConversation(id) {
+function setConversation(id, keepSelection = false) {
   voicePreview.stop();
   archiveConversationId = '';
   state.conversationId = id;
+  void modelPicker.refresh(id, keepSelection);
   state.legacyMode = false;
   if (id) sessionStorage.setItem(storageKey('qa-native-conversation-id'), id);
   else sessionStorage.removeItem(storageKey('qa-native-conversation-id'));
@@ -769,6 +774,7 @@ async function submitQuestion() {
 }
 
 async function enqueueQuestion(text) {
+  const modelSelection = modelPicker.capture(); if (modelSelection === null) return;
   if (!state.conversationId) { status('正在准备会话，请稍后再发送。', true); return; }
   const epoch = state.viewEpoch;
   const conversationId = state.conversationId;
@@ -780,7 +786,7 @@ async function enqueueQuestion(text) {
   status(t('queueSubmitting'));
   try {
     const data = await taskClient.submit({ question: text, conversationId,
-      requestId, ...(webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
+      requestId, ...(modelSelection ? { modelSelection } : {}), ...(webRequested ? { sourceIntent: 'web' } : {}) }, { queue: true });
     if (epoch !== state.viewEpoch) return;
     projection.state = 'accepted';
     if (question.value.trim() === text) { question.value = ''; resizeQuestion(); }
@@ -1245,7 +1251,7 @@ function renderThread(messages, { restoring = false } = {}) {
     if (message.role === 'user') pairedUser = element;
     if (message.role === 'assistant') {
       if (message.taskId && pairedQuestion) attachAnswerRetry(element,
-        { id: message.taskId, conversationId: state.conversationId, question: pairedQuestion },
+        { id: message.taskId, conversationId: state.conversationId, question: pairedQuestion, modelSelection: message.modelSelection },
         message.complete === false || message.interrupted === true ? 'retry' : 'again', pairedUser);
       pairedQuestion = ''; pairedUser = null;
     }
@@ -1282,6 +1288,7 @@ function createMessage(role, text, sources = [], sourceCount, evidence = {}, his
         outcome: Number.isFinite(evidence.timing?.elapsed_ms) ? 'done' : 'history',
       });
     }
+    if (historic) globalThis.ChatModelPicker.renderSelection(outer, evidence.modelSelection);
     if (historic) createAnswerProcess(outer, { locale: ui.locale, history: evidence.process });
     if (historic) globalThis.ChatPresentation?.renderSuggestions(outer, evidence.suggestions, question, state.busy || Boolean(archiveConversationId) || state.legacyMode);
     setSourceCount(outer, sourceCount ?? evidence.source_count ?? sources.length);
@@ -1321,7 +1328,7 @@ function attachAnswerRetry(message, task, mode, userMessage) {
       if (state.queuedJobs.some(job => job.status === 'paused')) {
         return ui.locale === 'en' ? status('Handle the paused queued question first.', true) : status('请先处理已暂停的待发问题，再重试。', true);
       }
-      return ask(confirmed.question || task.question || '', { preserveDraft: true, sourceIntent: confirmed.sourceIntent || 'knowledge' });
+      return ask(confirmed.question || task.question || '', { preserveDraft: true, sourceIntent: confirmed.sourceIntent || 'knowledge', modelSelection: confirmed.modelSelection || task.modelSelection });
     },
     onError: () => ui.locale === 'en' ? 'Could not confirm the task. No question was sent.' : '暂时无法核对原任务，没有重新发送。请稍后再试。',
   });
@@ -1435,6 +1442,13 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
     const latestPartial = unfinished(latest) && !latest.eventsExpired && (!lastAnswer || receiptIndex > 0
       || (receiptIndex < 0 && Number.isFinite(historyAt) && Number.isFinite(terminalAt) && terminalAt > historyAt)) ? latest : null;
     const candidates = tasks.filter(item => {
+      if (item.eventsExpired && ['failed', 'cancelled'].includes(item.status)) {
+        state.completedTasks.add(item.id);
+        taskStore.forget(item.id);
+        const requestId = item.requestId || item.clientRequestId;
+        if (requestId) taskStore.forget(requestId);
+        return false;
+      }
       if (unfinished(item) && item !== latestPartial && !item.eventsExpired) {
         state.completedTasks.add(item.id);
         taskStore.forget(item.id);
@@ -1477,6 +1491,8 @@ async function ask(raw, options = {}) {
   if (!text || state.busy || state.preparing || state.recoveryRequired || !state.durableTasksSupported) return false;
   if (state.legacyMode) { status('请先新建会话，再使用原生知识库 Agent 提问。', true); return; }
   if (!state.conversationId && archiveConversationId) { archiveConversationId = ''; welcome(); }
+  const modelSelection = options.modelSelection || modelPicker.capture();
+  if (modelSelection === null) return false;
   const epoch = state.viewEpoch;
   let conversationId = state.conversationId;
   const webRequested = options.sourceIntent ? options.sourceIntent === 'web' : state.webRequested;
@@ -1489,7 +1505,7 @@ async function ask(raw, options = {}) {
     if (!conversationId) {
       const data = await api(sitePath('/api/qa/conversations'), { method: 'POST' });
       conversationId = data.conversation.conversationId;
-      if (epoch === state.viewEpoch) setConversation(conversationId);
+      if (epoch === state.viewEpoch) setConversation(conversationId, true);
       createdConversation = true;
     }
     if (epoch === state.viewEpoch) {
@@ -1497,7 +1513,7 @@ async function ask(raw, options = {}) {
       updateSendButton();
       status(t(state.submissionPhase));
     }
-    const input = { question: text, conversationId, requestId: crypto.randomUUID(),
+    const input = { question: text, conversationId, requestId: crypto.randomUUID(), ...(modelSelection ? { modelSelection } : {}),
       ...(webRequested ? { sourceIntent: 'web' } : {}) };
     try {
       const { task } = await taskClient.submit(input);
@@ -1644,7 +1660,9 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       if (!current()) return;
       const messages = Array.isArray(history.messages) ? history.messages : [];
       const historicAnswer = messages.find(message => message.role === 'assistant' && message.taskId === task.id);
-      if (!historicAnswer?.content?.trim()) throw new Error('task_history_unavailable');
+      if (!historicAnswer?.content?.trim()) throw Object.assign(new Error('task_history_unavailable'), {
+        code: ['succeeded', 'failed', 'cancelled'].includes(view.task.status) ? 'expired_terminal_history_unavailable' : 'task_history_unavailable',
+      });
       renderThread(messages, { restoring: true });
       settled = true;
       state.completedTasks.add(task.id);
@@ -1660,6 +1678,7 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
     const complete = view.task.status === 'succeeded' && Boolean(view.text.trim()) && Boolean(view.done);
     const outcome = complete ? 'done' : view.task.status === 'cancelled' ? 'cancelled' : 'interrupted';
     renderAnswer(content, view.text, view.sources, true, { ...view, partial: !complete });
+    globalThis.ChatModelPicker.renderSelection(reply, view.done?.modelSelection);
     content.classList.remove('typing');
     processView.settle(outcome);
     if (complete) globalThis.ChatPresentation?.renderSuggestions(reply, view.suggestions, question, true);
@@ -1707,7 +1726,8 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       status(t(error.job.status === 'paused' ? 'paused' : 'queued'));
     } else status(error.code === 'submission_rejected' ? userError(error)
       : t(error.code === 'submission_cancelled' ? 'taskCancelled' : 'taskUnavailable'), !reply);
-    state.recoveryRequired = !['submission_rejected', 'submission_cancelled', 'submission_queued'].includes(error.code);
+    state.recoveryRequired = !['submission_rejected', 'submission_cancelled', 'submission_queued',
+      'expired_terminal_history_unavailable'].includes(error.code);
     if (state.recoveryRequired && !reply && pending.record) {
       const thread = currentThread();
       let notice = thread.querySelector('.chat-notice');
@@ -1764,3 +1784,5 @@ if (document.body.classList.contains('qa-embedded')) {
   window.addEventListener('pagehide', () => hostBridge.dispose(), { once: true });
 }
 
+
+queueMicrotask(() => void modelPicker.refresh(state.conversationId));
