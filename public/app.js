@@ -1442,6 +1442,13 @@ async function restoreTaskView(messages = [], epoch = state.viewEpoch) {
     const latestPartial = unfinished(latest) && !latest.eventsExpired && (!lastAnswer || receiptIndex > 0
       || (receiptIndex < 0 && Number.isFinite(historyAt) && Number.isFinite(terminalAt) && terminalAt > historyAt)) ? latest : null;
     const candidates = tasks.filter(item => {
+      if (item.eventsExpired && ['succeeded', 'failed', 'cancelled'].includes(item.status)) {
+        state.completedTasks.add(item.id);
+        taskStore.forget(item.id);
+        const requestId = item.requestId || item.clientRequestId;
+        if (requestId) taskStore.forget(requestId);
+        return false;
+      }
       if (unfinished(item) && item !== latestPartial && !item.eventsExpired) {
         state.completedTasks.add(item.id);
         taskStore.forget(item.id);
