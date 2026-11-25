@@ -112,7 +112,7 @@ const labels = {
     copyAnswer: '复制回答 Markdown', copyPartial: '复制已收到的部分回答', copied: '已复制', copyFailed: '复制失败，请选择下面的文字复制', closeCopyText: '关闭可复制文字',
     copySelection: '复制选中文字', selectionActions: '选中文字操作', selectionCopyFailed: '复制失败，可选择下方文字复制',
     taskReconnecting: '连接暂时中断，正在恢复同一任务。已收到的内容会保留，无需重新提交。',
-    taskConfirming: '正在确认任务是否已接收，请勿重复提交。草稿已保留。',
+    taskConfirming: '上条提交尚未确认。可直接输入新问题，在新对话中发送。',
     taskFailed: '回答未完成，请重试。', taskCancelled: '已停止回答。',
     taskIndeterminate: '结果尚无法确认，请先检查原任务。',
     taskUnavailable: '暂时无法恢复任务，请稍后从最近对话重新打开。请勿重复提交。',
@@ -135,7 +135,7 @@ const labels = {
     copyAnswer: 'Copy answer Markdown', copyPartial: 'Copy received partial answer', copied: 'Copied', copyFailed: 'Copy failed; select the text below to copy', closeCopyText: 'Close selectable text',
     copySelection: 'Copy selected text', selectionActions: 'Selected text actions', selectionCopyFailed: 'Copy failed; select the text below',
     taskReconnecting: 'Connection interrupted. Reconnecting to the same task; received text is kept. No need to resubmit.',
-    taskConfirming: 'Checking whether the task was accepted. Your draft is kept; please do not resubmit.',
+    taskConfirming: 'Previous submission unconfirmed. You can send a new question in a new chat.',
     taskFailed: 'Answer incomplete. Please retry.', taskCancelled: 'Answer stopped.',
     taskIndeterminate: 'The task outcome is uncertain. Received text is kept; please do not resubmit.',
     taskUnavailable: 'The task cannot be restored right now. Reopen it from recent conversations later; please do not resubmit.',
@@ -638,11 +638,11 @@ function updateSendButton() {
   for (const section of log.querySelectorAll('.chat-suggestions')) {
     for (const control of section.querySelectorAll('button')) control.disabled = Boolean(question.value.trim()) || state.busy || state.access !== 'ready' || Boolean(archiveConversationId) || state.legacyMode || state.preparing || state.queueSubmitting || Boolean(state.submissionPhase);
   }
-  const { stopping, disabled, action } = composerControlState({ ...state, draft: question.value });
+  const { stopping, disabled, action } = composerControlState({ ...state, busy: state.busy && !hasUnconfirmedSubmission(), draft: question.value });
   const submitting = Boolean(state.submissionPhase || state.queueSubmitting);
   const label = t(state.submissionPhase || (state.queueSubmitting ? 'queueSubmitting' : action));
   sendButton.type = stopping ? 'button' : 'submit';
-  sendButton.disabled = state.openingConversation || disabled || (state.recoveryRequired && !state.nextQuestionInNewChat);
+  sendButton.disabled = state.openingConversation || disabled || (state.recoveryRequired && !state.nextQuestionInNewChat && !hasUnconfirmedSubmission());
   for (const control of retryControls) {
     if (!control.button.isConnected) retryControls.delete(control); else control.refresh();
   }
@@ -803,12 +803,16 @@ async function syncQueue(autoConsume = true) {
   }
 }
 
+function hasUnconfirmedSubmission() {
+  return taskStore.list().some(row => row.conversationId === state.conversationId && !row.id && !row.jobId);
+}
+
 async function submitQuestion() {
   voicePreview.stop();
   const text = question.value.trim();
   if (!text || state.openingConversation || state.preparing || state.queueSubmitting) return;
   if (state.access !== 'ready') { status(t(state.access), true); return; }
-  if (state.nextQuestionInNewChat) {
+  if (state.nextQuestionInNewChat || hasUnconfirmedSubmission()) {
     try {
       if (!await openNewConversation(true)) return;
     } catch (error) {
@@ -816,11 +820,6 @@ async function submitQuestion() {
       return;
     }
     if (question.value.trim() === text) await ask(text, { animate: true });
-    return;
-  }
-  if (taskStore.list().some(row => row.conversationId === state.conversationId && !row.id && !row.jobId)) {
-    status(t('taskConfirming'), true);
-    if (!state.controller) await loadConversation(state.conversationId);
     return;
   }
   if (!state.busy && taskStore.list().some(row => row.conversationId === state.conversationId && row.id)) {
@@ -1817,7 +1816,8 @@ async function streamAnswer(initialTask, job = null, pending = {}) {
       let notice = thread.querySelector('.chat-notice');
       if (!notice) { notice = document.createElement('div'); notice.className = 'chat-notice'; thread.append(notice); }
       const actions = document.createElement('span'); actions.className = 'answer-tools';
-      notice.replaceChildren(document.createTextNode(t('taskUnavailable')), actions);
+      notice.replaceChildren(document.createTextNode(t(hasUnconfirmedSubmission() ? 'taskConfirming' : 'taskUnavailable')), actions);
+      if (hasUnconfirmedSubmission()) status(t('taskConfirming'));
       attachAnswerRetry(notice, pending.record, 'recover');
     }
     if (reply) {

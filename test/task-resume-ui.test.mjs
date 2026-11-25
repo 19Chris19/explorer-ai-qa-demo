@@ -554,3 +554,35 @@ test('an explicit new chat can leave a slow history restoration without clearing
     assert.equal(posts(view).length, 1);
   } finally { finishOldRead(json({})); view.close(); }
 });
+
+test('reopened browser with a receiptless local request can send a fresh turn without clearing storage', async () => {
+  const old = { conversationId: 'synthetic-conversation', requestId: 'old-unconfirmed' };
+  const fresh = task('fresh-task', 'fresh-chat', { status: 'succeeded' });
+  const submitted = [];
+  const view = await openUi({ setup(window) {
+    window.localStorage.setItem('qa-task-identities-v1', JSON.stringify([old]));
+  }, fetchImpl(url, options = {}) {
+    if (url.startsWith('/api/qa/tasks?')) return json({ tasks: [] });
+    if (url === '/api/qa/conversations' && options.method === 'POST') return json({ conversation: { conversationId: fresh.conversationId } });
+    if (url === '/api/qa/tasks' && options.method === 'POST') {
+      submitted.push(JSON.parse(options.body)); return json({ task: fresh });
+    }
+    if (url === '/api/qa/tasks/fresh-task') return snapshot(fresh, [delta(1, 'Fresh answer'), done(2), terminal(3)]);
+    return conversations(url, options);
+  } });
+  try {
+    await eventually(() => view.document.querySelector('.chat-notice .answer-retry'));
+    assert.equal(posts(view).length, 0);
+    const draft = view.document.querySelector('#question');
+    draft.value = 'New question';
+    draft.dispatchEvent(new view.window.Event('input', { bubbles: true }));
+    const send = view.document.querySelector('#sendButton');
+    assert.equal(send.disabled, false);
+    send.click(); send.click();
+    await until(() => answer(view) === 'Fresh answer');
+    assert.equal(submitted.length, 1);
+    assert.equal(submitted[0].conversationId, fresh.conversationId);
+    assert.notEqual(submitted[0].requestId, old.requestId);
+    assert.deepEqual(JSON.parse(view.window.localStorage.getItem('qa-task-identities-v1')), [old]);
+  } finally { view.close(); }
+});

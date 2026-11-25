@@ -203,7 +203,8 @@ export function createTaskClient({ fetch: request = globalThis.fetch, path = val
       try { const task = await lookup(record, signal); if (task) return task; }
       catch (error) { if (['submission_rejected', 'submission_cancelled', 'submission_queued'].includes(error.code) || [401, 403, 404].includes(error.status)) throw error; }
       onConnection('confirming');
-      await delay(Math.min(1000 * 2 ** Math.min(attempts++, 4), 15000), signal);
+      if (++attempts >= 2) throw fault('submission_unknown');
+      await delay(1000, signal);
     }
     throw fault('detached');
   }

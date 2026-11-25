@@ -85,7 +85,8 @@ test('an unknown submission with no task ID still offers recovery of the origina
   p.document.querySelector('.answer-retry').click();
   await until(() => p.document.querySelector('.answer-retry')?.textContent === '恢复连接' && !p.document.querySelector('.answer-retry').disabled);
   assert.equal(posts, 1); assert.equal(p.window.localStorage.getItem('qa-task-identities-v1'), identity);
-  assert.equal(p.document.querySelector('#sendButton').disabled, true);
+  input.value = 'a different question'; input.dispatchEvent(new p.window.Event('input'));
+  assert.equal(p.document.querySelector('#sendButton').disabled, false);
 });
 
 test('restoring history places the composer directly instead of flying across answer actions', async t => {
