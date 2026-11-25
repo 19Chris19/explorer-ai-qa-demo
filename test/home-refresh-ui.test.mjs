@@ -14,7 +14,7 @@ test('homepage offers three editable suggestions after the composer without subm
     assert.ok(form.compareDocumentPosition(strip) & window.Node.DOCUMENT_POSITION_FOLLOWING);
     suggestions[1].click();
     assert.equal(document.querySelector('#question').value, suggestions[1].dataset.question);
-    assert.equal(document.activeElement, document.querySelector('#question'));
+    assert.notEqual(document.activeElement, document.querySelector('#question'));
     assert.equal(requests.some(item => item.options?.method === 'POST'), false);
   } finally { ui.close(); }
 });

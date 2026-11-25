@@ -487,3 +487,70 @@ test('fast queued completion missing from queue is recovered with requestId and 
     assert.equal(posts(view).filter(row => row.url === '/api/qa/tasks').length, 1);
   } finally { view.close(); }
 });
+
+test('indeterminate turn stays in its own session and the next explicit question dispatches once', async () => {
+  const first = task('uncertain', 'synthetic-conversation', { status: 'indeterminate' });
+  const next = task('next', 'fresh', { status: 'succeeded' });
+  const sent = [];
+  const view = await openUi({ conversationId: first.conversationId, fetchImpl(url, options = {}) {
+    if (url.startsWith('/api/qa/tasks?')) return json({ tasks: url.includes(first.conversationId) ? [first] : [] });
+    if (url === '/api/qa/tasks/uncertain') return snapshot(first, [delta(1, 'Partial only'), terminal(2, 'indeterminate')]);
+    if (url === '/api/qa/conversations' && options.method === 'POST') return json({ conversation: { conversationId: 'fresh' } });
+    if (url === '/api/qa/tasks' && options.method === 'POST') { sent.push(JSON.parse(options.body)); return json({ task: next }); }
+    if (url === '/api/qa/tasks/next') return snapshot(next, [delta(1, 'Second answer'), done(2), terminal(3)]);
+    return conversations(url, options);
+  } });
+  try {
+    await until(() => view.document.querySelector('#requestStatus').textContent.includes('新对话'));
+    assert.equal(answer(view), 'Partial only');
+    submit(view, 'Different question');
+    await until(() => answer(view) === 'Second answer');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].conversationId, 'fresh');
+    assert.equal(sent[0].question, 'Different question');
+    assert.equal(posts(view).filter(row => row.url === '/api/qa/conversations').length, 1);
+  } finally { view.close(); }
+});
+
+test('sending while the model list is loading waits for validation without a phantom message or duplicate dispatch', async () => {
+  let release;
+  const catalog = new Promise(resolve => { release = resolve; });
+  const item = task(undefined, undefined, { status: 'succeeded' });
+  const view = await openUi({ fetchImpl(url, options = {}) {
+    if (url.startsWith('/api/qa/chat-capabilities')) return catalog;
+    if (url === '/api/qa/tasks' && options.method === 'POST') return json({ task: item });
+    if (url === '/api/qa/tasks/' + item.id) return snapshot(item, [delta(1, 'Accepted'), done(2), terminal(3)]);
+    return conversations(url, options);
+  } });
+  try {
+    submit(view, 'Wait for the model');
+    submit(view, 'Wait for the model');
+    assert.equal(posts(view).length, 0);
+    assert.equal(view.document.querySelectorAll('.message.user').length, 0);
+    release(json({ enabled: false, models: [] }));
+    await until(() => answer(view) === 'Accepted');
+    assert.equal(posts(view).filter(row => row.url === '/api/qa/tasks').length, 1);
+  } finally { release(json({ enabled: false, models: [] })); view.close(); }
+});
+
+test('an explicit new chat can leave a slow history restoration without clearing the draft', async () => {
+  let finishOldRead;
+  const oldRead = new Promise(resolve => { finishOldRead = resolve; });
+  const view = await openUi({ conversationId: 'slow', fetchImpl(url, options = {}) {
+    if (url === '/api/qa/conversations/slow') return oldRead;
+    if (url === '/api/qa/conversations' && options.method === 'POST') return json({ conversation: { conversationId: 'fresh' } });
+    return conversations(url, options);
+  } });
+  try {
+    await until(() => view.requests.some(row => row.url.includes('/conversations/slow')));
+    view.document.querySelector('#question').value = 'Draft for the next conversation';
+    view.document.querySelector('#newChat').click();
+    view.document.querySelector('#newChat').click();
+    await until(() => view.window.sessionStorage.getItem('qa-native-conversation-id') === 'fresh');
+    finishOldRead(json({ conversation: { conversationId: 'slow' }, messages: [] }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(view.window.sessionStorage.getItem('qa-native-conversation-id'), 'fresh');
+    assert.equal(view.document.querySelector('#question').value, 'Draft for the next conversation');
+    assert.equal(posts(view).length, 1);
+  } finally { finishOldRead(json({})); view.close(); }
+});

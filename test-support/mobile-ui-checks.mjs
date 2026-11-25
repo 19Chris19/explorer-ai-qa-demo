@@ -129,6 +129,35 @@ export async function runMobileUiChecks(page, baseUrl, paths = ['/', '/embed.htm
     await page.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, x: point.x, y: point.y });
     assert.equal(await evaluate(() => window.componentPrevented), false, 'desktop single source preserves native link activation');
     await evaluate(() => window.ChatPresentation.closeCard());
+    if (await evaluate(() => window.mobileFixture.website)) {
+      for (const width of [320, 390, 1280]) {
+        await page.cdp('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width < 500 });
+        await page.cdp('Emulation.setTouchEmulationEnabled', { enabled: width < 500 });
+        await frames();
+        const positions = await evaluate(async () => {
+          const models = ['DeepSeek V4.1 Flash', 'GLM 5.3'].map((name, index) => ({
+            modelRef: 'synthetic-' + index, name, modes: { quick: { webSearch: true } }
+          }));
+          const picker = window.ChatModelPicker.create({ mount: document.querySelector('.composer-tools'),
+            load: async () => ({ enabled: true, models, defaultSelection: { modelRef: models[0].modelRef, mode: 'quick' } }) });
+          await picker.refresh();
+          picker.button.click();
+          const measure = () => [picker.button, picker.dialog, document.querySelector('#sendButton')].map(node => {
+            const rect = node.getBoundingClientRect();
+            return node === picker.button ? rect.right : [rect.x, rect.width];
+          });
+          const before = measure();
+          picker.dialog.querySelector('[data-model-ref="synthetic-1"]').click();
+          const after = measure();
+          const selected = picker.button.getAttribute('aria-label');
+          picker.dialog.close();
+          picker.button.remove(); picker.dialog.remove();
+          return { before, after, selected };
+        });
+        assert.match(positions.selected, /GLM 5.3/);
+        assert.deepEqual(positions.after, positions.before, 'model switch must keep the trigger, menu and send button aligned at width ' + width);
+      }
+    }
   }
   await page.cdp('Emulation.setTouchEmulationEnabled', { enabled: false });
   await page.cdp('Emulation.clearDeviceMetricsOverride');

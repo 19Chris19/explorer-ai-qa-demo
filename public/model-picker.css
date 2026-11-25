@@ -1,6 +1,6 @@
 /* Shared compact model menu: one model list and one mode control. */
-.model-picker-trigger{display:inline-flex;align-items:center;gap:8px;min-height:44px;max-width:260px;padding:7px 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer}
-.model-picker-current{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.model-picker-trigger{box-sizing:border-box;inline-size:210px;display:inline-flex;align-items:center;gap:8px;min-height:44px;max-width:260px;padding:7px 10px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer}
+.model-picker-current{flex:1;min-width:0;text-align:start;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .model-picker-current-mode{flex:none;color:#697180;font-size:12px}
 .model-picker-chevron{flex:none;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-2px) rotate(45deg);opacity:.6}
 .model-picker-trigger:hover{background:rgba(100,110,125,.08)}
