@@ -714,3 +714,58 @@ body.app-page.dark .message-error { background: none; color: color-mix(in srgb, 
   .app-page .composer-tools { min-width: 0; }
   .app-page .composer-tools .model-picker-trigger { max-width: min(220px, calc(100vw - 210px)); }
 }
+
+.app-page .composer-tools .model-picker-trigger{inline-size:auto;gap:5px;padding-inline:5px;max-width:min(210px,38vw)}
+.app-page .model-picker-current{flex:0 1 auto}
+.app-page .composer .composer-foot{justify-content:flex-end}
+.app-page .composer[data-layout=stacked]{border-radius:24px}
+.app-page .composer[data-layout=stacked] textarea{width:100%}
+
+body[data-mobile-editor] #main #composerWrap {
+  position: fixed;
+  inset: auto 0 var(--editor-bottom) 0;
+  z-index: 5;
+  width: auto;
+  margin: 0;
+  padding: 0 12px var(--editor-gap, 8px);
+  background: transparent;
+  transform: none;
+}
+body[data-mobile-editor] #main.is-empty .welcome,
+body[data-mobile-editor] .composer-meta { display: none; }
+body[data-mobile-editor] #askForm {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  border-radius: 23px;
+}
+body[data-mobile-editor] #question {
+  width: 100%;
+  flex: none;
+  max-height: var(--editor-text-limit);
+  overflow-y: auto;
+  font-size: 16px;
+}
+body[data-mobile-editor] #askForm .composer-foot {width: 100%; justify-content: flex-end;}
+body[data-mobile-editor] #main:not(.is-empty) #chatLog {padding-bottom: calc(var(--editor-bottom) + var(--editor-height, 110px) + 12px);}
+body[data-mobile-editor] #main.is-empty #suggestionStrip:not([hidden]) {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  inset-inline: 8px;
+  width: auto;
+  margin: 0;
+  min-height: 0;
+  max-height: var(--editor-suggestions-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body[data-mobile-editor] #suggestionList button {
+  min-height: 44px;
+}
+body[data-mobile-editor] #suggestionStrip.has-draft:not(.is-selected) button {
+  opacity: .72;
+  visibility: visible;
+  pointer-events: none;
+}
+body[data-mobile-editor] #suggestionStrip.has-draft .suggestion-arrow {opacity: 0}

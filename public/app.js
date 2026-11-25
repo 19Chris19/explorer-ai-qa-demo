@@ -345,6 +345,48 @@ question.addEventListener('input', () => {
   resizeQuestion({ animate: true }); updateSendButton(); updateCarouselTimer();
 });
 document.addEventListener('visibilitychange', updateCarouselTimer);
+
+// Follow the visible editing area as the keyboard and its accessory bars change.
+function installMobileEditor() {
+  const viewport = window.visualViewport;
+  const narrow = window.matchMedia('(max-width:640px), (max-width:900px) and (max-height:500px)');
+  let lift;
+  function position() {
+    const editing = narrow.matches && document.activeElement === question;
+    const entering = editing && !document.body.hasAttribute('data-mobile-editor')
+      && !suggestionStrip.hidden && !state.suggestionSelected;
+    const previousTop = entering ? suggestionStrip.getBoundingClientRect().top : 0;
+    document.body.toggleAttribute('data-mobile-editor', editing);
+    if (!editing) { lift?.cancel(); return; }
+    const bottom = viewport ? Math.max(0, innerHeight - viewport.offsetTop - viewport.height) : 0;
+    const style = document.body.style;
+    style.setProperty('--editor-bottom', bottom + 'px');
+    style.setProperty('--editor-gap', bottom ? '8px' : 'max(8px, env(safe-area-inset-bottom))');
+    style.setProperty('--editor-text-limit', Math.max(26, Math.min(160, (innerHeight - bottom) * .32)) + 'px');
+    style.setProperty('--editor-height', form.offsetHeight + 'px');
+    const headerBottom = document.querySelector('.site-header')?.getBoundingClientRect().bottom || 0;
+    const space = form.getBoundingClientRect().top - Math.max(0, headerBottom, viewport?.offsetTop || 0) - 16;
+    style.setProperty('--editor-suggestions-height', Math.max(0, space) + 'px');
+    if (entering && space > 0 && !reducedMotion()) {
+      const offset = previousTop - suggestionStrip.getBoundingClientRect().top;
+      lift = suggestionStrip.animate([
+        { transform: 'translateY(' + offset + 'px)', opacity: .7 },
+        { transform: 'translateY(0)', opacity: 1 }
+      ], { duration: 520, easing: 'cubic-bezier(.22,1,.36,1)' });
+    }
+  }
+  suggestionList.addEventListener('pointerdown', event => {
+    if (narrow.matches && document.activeElement === question && event.target.closest('button')) event.preventDefault();
+  });
+  question.addEventListener('focus', position);
+  question.addEventListener('blur', () => requestAnimationFrame(position));
+  viewport?.addEventListener('resize', position);
+  viewport?.addEventListener('scroll', position);
+  window.addEventListener('resize', position);
+  if (window.ResizeObserver) new ResizeObserver(position).observe(form);
+}
+installMobileEditor();
+
 window.addEventListener('resize', interruptSendMotion);
 window.visualViewport?.addEventListener('resize', interruptSendMotion);
 log.addEventListener('wheel', interruptSendMotion, { passive: true });

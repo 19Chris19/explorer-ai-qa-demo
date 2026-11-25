@@ -78,7 +78,7 @@
         return;
       }
       const r=button.getBoundingClientRect();dialog.style.position='fixed';dialog.style.margin='0';
-      dialog.style.left=Math.max(16,Math.min(r.left,innerWidth-dialog.offsetWidth-16))+'px';
+      dialog.style.left=Math.max(16,Math.min(r.right-dialog.offsetWidth,innerWidth-dialog.offsetWidth-16))+'px';
       const above=r.top-dialog.offsetHeight-10,below=r.bottom+10;
       dialog.style.top=Math.max(12,Math.min(above>=12?above:below,innerHeight-dialog.offsetHeight-12))+'px';
     }

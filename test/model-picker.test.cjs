@@ -37,8 +37,8 @@ test('removed selection is not replaced by refreshed default and disabled choice
 
 test('desktop menu anchors above its trigger and repositions when a model note changes its height',async t=>{
  const {w,picker}=await setup(t);Object.defineProperty(picker.dialog,'offsetHeight',{get:()=>320});Object.defineProperty(picker.dialog,'offsetWidth',{get:()=>320});
- picker.button.getBoundingClientRect=()=>({left:200,top:450,bottom:494});picker.button.click();
+ picker.button.getBoundingClientRect=()=>({left:200,right:520,top:450,bottom:494});picker.button.click();
  assert.equal(picker.dialog.style.top,'120px');assert.equal(picker.dialog.style.left,'200px');
- picker.button.getBoundingClientRect=()=>({left:210,top:440,bottom:484});w.dispatchEvent(new w.Event('scroll'));
+ picker.button.getBoundingClientRect=()=>({left:210,right:530,top:440,bottom:484});w.dispatchEvent(new w.Event('scroll'));
  assert.equal(picker.dialog.style.top,'110px');assert.equal(picker.dialog.style.left,'210px');
 });

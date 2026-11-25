@@ -144,7 +144,7 @@ export async function runMobileUiChecks(page, baseUrl, paths = ['/', '/embed.htm
           picker.button.click();
           const measure = () => [picker.button, picker.dialog, document.querySelector('#sendButton')].map(node => {
             const rect = node.getBoundingClientRect();
-            return [rect.x, rect.width];
+            return node === picker.button ? rect.right : [rect.x, rect.width];
           });
           const before = measure();
           picker.dialog.querySelector('[data-model-ref="synthetic-1"]').click();
